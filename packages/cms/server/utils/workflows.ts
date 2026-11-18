@@ -3,6 +3,7 @@ import type { H3Event } from 'h3'
 import type { WorkflowAction, WorkflowStep, WorkflowTrigger } from '../database/schema'
 import type { CmsEvent } from './events'
 import type { ModuleWorkflowEvent } from './modules'
+import { adminEntryPath } from '../../shared/admin-paths'
 
 type WorkflowRow = typeof schema.workflows.$inferSelect
 type Context = Record<string, Record<string, string>>
@@ -108,7 +109,7 @@ function buildContext(event: H3Event, payload: CmsEvent): { context: Context; su
     const def = getDef(payload.type)
     context.entry = {
       title: payload.title, type: def.label, locale: payload.locale ?? '', url: payload.url ?? '',
-      adminUrl: `${origin}/admin/${payload.type}/${payload.id}`,
+      adminUrl: `${origin}${adminEntryPath(payload.type, payload.id)}`,
     }
     if (payload.name === 'entry.review_requested') context.request = { by: payload.requester, note: payload.note }
     summary = def.kind === 'collection'

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CmsMedia } from '../../composables/useCms'
+import { adminEntryPath } from '../../../shared/admin-paths'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -93,7 +94,7 @@ async function copyUrl() {
             <div class="text-base-content/60 mb-1">Utilisé dans</div>
             <div v-if="usage === null" class="text-base-content/50">Recherche…</div>
             <div v-else-if="usage.length" class="flex flex-wrap gap-1">
-              <NuxtLink v-for="u in usage" :key="u.id" :to="`/admin/${u.type}/${u.id}`" class="badge badge-sm badge-ghost">{{ u.title }}</NuxtLink>
+              <NuxtLink v-for="u in usage" :key="u.id" :to="adminEntryPath(u.type, u.id)" class="badge badge-sm badge-ghost">{{ u.title }}</NuxtLink>
             </div>
             <div v-else class="text-base-content/50">Aucun contenu. Peut être supprimé sans risque.</div>
           </div>

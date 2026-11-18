@@ -376,6 +376,8 @@ export async function refreshCmsUnreadMessages() {
 /** Un module tel que l'API du back-office le décrit : ses réglages, sans jamais la valeur d'une clé d'API. */
 export type CmsModuleState = {
   id: string; label: string; description: string
+  /** Logo affiché à côté du nom (tracés SVG 24 × 24). */
+  logo: { style: 'fill' | 'stroke'; paths: string[]; color: string } | null
   settings: {
     key: string; label: string; type: 'text' | 'secret'; help?: string; placeholder?: string; required?: boolean
     env?: { name: string }

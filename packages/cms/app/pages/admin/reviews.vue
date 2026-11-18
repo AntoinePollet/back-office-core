@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { adminEntryPath } from '../../../shared/admin-paths'
+
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
 type Review = { id: string; type: string; typeLabel: string; title: string; by: string; note: string | null; at: string; mine: boolean; canHandle: boolean }
@@ -21,7 +23,7 @@ const mine = computed(() => reviews.value.filter(r => r.mine && !r.canHandle))
       <div v-if="group.items.length" class="mb-6">
         <h2 class="text-sm font-semibold mb-2">{{ group.title }} <span class="opacity-60">{{ group.items.length }}</span></h2>
         <div class="card bg-base-100 border border-base-300 divide-y divide-base-300">
-          <NuxtLink v-for="r in group.items" :key="r.id" :to="`/admin/${r.type}/${r.id}`" class="block p-4 hover:bg-base-200">
+          <NuxtLink v-for="r in group.items" :key="r.id" :to="adminEntryPath(r.type, r.id)" class="block p-4 hover:bg-base-200">
             <div class="flex flex-wrap items-baseline gap-x-3">
               <span class="font-medium">{{ r.title }}</span>
               <span class="text-xs text-base-content/50">{{ r.typeLabel }}</span>

@@ -24,7 +24,11 @@ export default async function (t) {
     await clickText(page, 'aside a', 'Modules'); await says(page, 'Les fonctions ajoutées à ce site')
     const cards = await page.$$eval('main a.card', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
     check(cards.length === 2 && cards[0].startsWith('Brevo À régler') && cards[1].startsWith('Formulaires Actif'), cards.join(' | '))
+    // Logo officiel de Brevo dans sa couleur, icône dessinée pour les formulaires.
+    const logos = await page.$$eval('main a.card > span[aria-hidden] svg', els => els.map(s => s.getAttribute('fill') + '/' + s.getAttribute('stroke')))
+    check(logos.join() === '#0B996E/none,none/currentColor', 'logos : ' + logos.join())
   })
+  await t.shot(page, 'liste')
   await step('sans clé : les workflows le disent et renvoient vers le réglage', async () => {
     await page.goto(B + '/admin/workflows', { waitUntil: 'networkidle0' })
     await says(page, 'L\'envoi d\'e-mails n\'est pas configuré')

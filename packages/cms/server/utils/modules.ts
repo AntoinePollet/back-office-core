@@ -47,9 +47,17 @@ export type ModuleWorkflowEvent = {
 
 export type MailMessage = { to: string[]; subject: string; html: string; replyTo?: string }
 
+/**
+ * Logo d'un module, affiché dans l'écran « Modules ». Un tracé SVG dans une grille de 24 × 24.
+ * - `fill` : logo officiel d'une marque, rempli de sa couleur (tracés de https://simpleicons.org, couleur de la marque) ;
+ * - `stroke` : icône dessinée au trait (style Lucide), pour un module sans marque.
+ */
+export type ModuleLogo = { style: 'fill' | 'stroke'; paths: string[]; color: string }
+
 export type CmsModuleDefinition = {
   id: string
   label: string
+  logo?: ModuleLogo
   /** Une phrase : à quoi sert le module. */
   description: string
   settings?: ModuleSettingField[]
@@ -157,6 +165,7 @@ export async function describeModule(event: H3Event, definition: CmsModuleDefini
     id: definition.id,
     label: definition.label,
     description: definition.description,
+    logo: definition.logo ?? null,
     settings,
     /** Tous les réglages obligatoires sont renseignés (ou le module n'en a pas). */
     configured: missing.length === 0,

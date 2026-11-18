@@ -15,6 +15,10 @@ const type = route.params.type as string
 const schema = await useCmsSchema()
 const def = (schema.value.collections?.[type] ?? schema.value.singletons?.[type]) as Record<string, any> | undefined
 if (!def) throw createError({ statusCode: 404, message: 'Type de contenu inconnu.', fatal: true })
+// Une page unique s'ouvre à /admin/<type> (cette page y est affichée par [type]/index.vue) : l'ancienne adresse y renvoie.
+if (def.kind === 'singleton' && route.params.id) await navigateTo(`/admin/${type}`, { replace: true })
+/** Identifiant du contenu : celui de l'adresse, ou celui du type pour une page unique. */
+const entryId = (route.params.id as string | undefined) ?? type
 
 const locales = schema.value.site.locales as readonly string[]
 const defaultLocale = schema.value.site.defaultLocale
@@ -79,9 +83,9 @@ function hydrate(data?: any, unsaved = false) {
 }
 
 /** Contenu à copier (collections sans brouillons) : le formulaire s'ouvre prérempli, rien n'est créé avant l'enregistrement. */
-const copyOf = route.params.id === 'new' && isCollection && typeof route.query.copy === 'string' ? route.query.copy : null
+const copyOf = entryId === 'new' && isCollection && typeof route.query.copy === 'string' ? route.query.copy : null
 
-if (route.params.id === 'new') {
+if (entryId === 'new') {
   const source = copyOf ? await cmsApi<any>(`/api/cms/entries/${type}/${copyOf}`).catch(() => null) : null
   if (source) {
     const copy = copyValues(def as any, source.shared, Object.fromEntries(Object.entries<any>(source.locales).map(([l, state]) => [l, state.values])))
@@ -91,7 +95,7 @@ if (route.params.id === 'new') {
 }
 else {
   try {
-    hydrate(await cmsApi(`/api/cms/entries/${type}/${route.params.id}`))
+    hydrate(await cmsApi(`/api/cms/entries/${type}/${entryId}`))
   }
   catch (e) {
     throw createError({ statusCode: 404, message: cmsErrorMessage(e, 'Contenu introuvable.'), fatal: true })

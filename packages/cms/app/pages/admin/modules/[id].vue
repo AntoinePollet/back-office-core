@@ -76,6 +76,7 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas 
   <section class="max-w-3xl mx-auto">
     <div class="flex flex-wrap items-center gap-3 mb-5">
       <NuxtLink to="/admin/modules" class="btn btn-ghost btn-sm btn-square" title="Retour aux modules" aria-label="Retour aux modules"><ArrowLeft :size="18" /></NuxtLink>
+      <CmsModuleLogo :logo="state.logo" :size="40" />
       <div class="min-w-0">
         <div class="text-xs text-base-content/50">Modules</div>
         <h1 class="text-lg font-bold truncate">{{ state.label }}</h1>

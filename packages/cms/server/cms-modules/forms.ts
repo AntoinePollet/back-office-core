@@ -9,6 +9,8 @@ const definitions = () => formDefinitions(cmsConfig)
 export const formsModule: CmsModuleDefinition = {
   id: 'forms',
   label: 'Formulaires',
+  // Icône « boîte de réception » de Lucide.
+  logo: { style: 'stroke', color: 'currentColor', paths: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'] },
   description: 'Formulaires du site (contact, devis…) : chaque message est enregistré, visible dans « Messages reçus », et peut déclencher un workflow.',
   adminPage: { to: '/admin/forms', label: 'Messages reçus' },
 

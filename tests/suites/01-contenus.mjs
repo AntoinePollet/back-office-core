@@ -71,7 +71,7 @@ export default async function (t) {
   await t.shot(page, 'liste')
 
   await step('accueil : lien vers une page, relation multiple', async () => {
-    await clickText(page, 'aside a', 'Accueil'); await page.waitForFunction(() => location.pathname.endsWith('/home/home'))
+    await clickText(page, 'aside a', 'Accueil'); await page.waitForFunction(() => location.pathname === '/admin/home')
     await typeIn(page, 'Titre principal', 'Un conseil clair')
     const link = await fieldset(page, 'Bouton principal')
     const selects = () => link.$$('select')

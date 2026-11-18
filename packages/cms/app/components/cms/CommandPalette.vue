@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import { ExternalLink, FileText, LogOut, Plus, Search, UserRound } from '@lucide/vue'
 import type { CmsConfig } from '../../../shared/format'
 import { matchScore, searchWords } from '../../../shared/search'
+import { adminEntryPath } from '../../../shared/admin-paths'
 
 /**
  * Recherche et navigation rapide : le bouton « Rechercher » de la barre du haut et la fenêtre qu'il ouvre (aussi par ⌘K / Ctrl+K).
@@ -92,7 +93,7 @@ const sections = computed(() => {
     if (props.schema.site.locales.length > 1 && item.locale !== props.schema.site.defaultLocale)
       badges.push({ label: item.locale.toUpperCase(), cls: 'badge-ghost' })
     if (def?.drafts && statusMeta[item.status]) badges.push(statusMeta[item.status]!)
-    return { id: `content-${item.id}`, label: item.title, icon: iconOf(item.type), hint: def?.labelSingular ?? def?.label, badges, run: () => go(`/admin/${item.type}/${item.id}`) }
+    return { id: `content-${item.id}`, label: item.title, icon: iconOf(item.type), hint: def?.labelSingular ?? def?.label, badges, run: () => go(adminEntryPath(item.type, item.id)) }
   })
   if (contents.length) out.push({ key: 'contents', label: more.value ? `Contenus (les ${contents.length} premiers)` : 'Contenus', options: contents })
 

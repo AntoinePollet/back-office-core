@@ -53,8 +53,16 @@ export default async function (t) {
     const r = await anon.evaluate(async () => (await fetch('/api/cms/admin-color', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{"color":"#000000"}' })).status); check(r === 401, 'modification sans connexion : ' + r)
     await context.close()
   })
-  await step('fenêtre de choix d\'image : même apparence', async () => {
+  await step('page unique : une seule adresse (/admin/home), l\'ancienne y renvoie', async () => {
+    await page.goto(B + '/admin', { waitUntil: 'networkidle0' })
+    const href = await page.$$eval('aside .menu a', links => links.find(a => a.textContent.trim() === 'Accueil')?.getAttribute('href'))
+    check(href === '/admin/home', 'lien du menu : ' + href)
     await page.goto(B + '/admin/home/home', { waitUntil: 'networkidle0' })
+    await page.waitForFunction(() => location.pathname === '/admin/home')
+    await page.waitForFunction(() => [...document.querySelectorAll('legend')].some(l => l.textContent.includes('Image')))
+  })
+  await step('fenêtre de choix d\'image : même apparence', async () => {
+    await page.goto(B + '/admin/home', { waitUntil: 'networkidle0' })
     await clickText(page, 'button', 'Choisir une image'); await page.waitForSelector('.modal-open .btn-primary')
     const button = await css('.modal-open .btn-primary', 'backgroundColor'), box = await css('.modal-open .modal-box', 'backgroundColor')
     check(button === rgb(COLOR) && white(box), button + ' / ' + box)

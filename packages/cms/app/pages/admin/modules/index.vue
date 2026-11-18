@@ -19,6 +19,7 @@ const modules = await cmsApi<CmsModuleState[]>('/api/cms/modules')
     </div>
     <div v-else class="space-y-3">
       <NuxtLink v-for="m in modules" :key="m.id" :to="`/admin/modules/${m.id}`" class="card bg-base-100 border border-base-300 p-4 flex-row items-center gap-4 hover:border-primary transition-colors">
+        <CmsModuleLogo :logo="m.logo" />
         <div class="min-w-0 grow">
           <div class="flex items-center gap-2">
             <span class="font-semibold">{{ m.label }}</span>

@@ -51,3 +51,21 @@
 .cms-admin .font-mono, .cms-admin code, .cms-admin kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 /* Un texte d'aide long passe à la ligne au lieu d'élargir son champ. */
 .cms-admin .fieldset .label { white-space: normal; }
+
+/*
+ * Pastilles et messages « doux » : daisyUI écrit le texte dans la couleur pure sur un fond presque blanc,
+ * ce qui est trop pâle pour le jaune, le vert ou le bleu clair (« À régler », « Publié »…).
+ * Ici le texte est assombri, le fond un peu plus teinté et le contour visible : lisible pour toutes les couleurs.
+ */
+.cms-admin .badge-soft {
+  color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 50%, black);
+  background-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 16%, var(--color-base-100));
+  border-color: color-mix(in oklab, var(--badge-color, var(--color-base-content)) 40%, var(--color-base-100));
+}
+.cms-admin .alert-soft {
+  color: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 45%, black);
+  background: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 13%, var(--color-base-100));
+  --alert-border-color: color-mix(in oklab, var(--alert-color, var(--color-base-content)) 35%, var(--color-base-100));
+}
+/* Pastille neutre ou « fantôme » (contenus liés, rubriques) : un contour pour qu'elle se détache du fond. */
+.cms-admin .badge-ghost { border-color: var(--color-base-300); color: var(--color-base-content); }

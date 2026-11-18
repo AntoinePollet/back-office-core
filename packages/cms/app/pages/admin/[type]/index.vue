@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Copy, GripVertical, Plus, Search } from '@lucide/vue'
+// Une page unique n'a pas de liste : son formulaire s'affiche directement à /admin/<type>.
+import EntryEditor from './[id].vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -9,7 +11,7 @@ const route = useRoute()
 const type = route.params.type as string
 const schema = await useCmsSchema()
 
-if (schema.value.singletons?.[type]) await navigateTo(`/admin/${type}/${type}`, { replace: true })
+const singleton = !!schema.value.singletons?.[type]
 const def = schema.value.collections?.[type]
 if (!def && !schema.value.singletons?.[type]) throw createError({ statusCode: 404, message: 'Type de contenu inconnu.', fatal: true })
 
@@ -92,7 +94,8 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
 </script>
 
 <template>
-  <section v-if="def" class="max-w-6xl mx-auto">
+  <EntryEditor v-if="singleton" />
+  <section v-else-if="def" class="max-w-6xl mx-auto">
     <CmsSiteDelayNotice />
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div>

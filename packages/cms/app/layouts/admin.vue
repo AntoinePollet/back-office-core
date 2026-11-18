@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import { ArrowLeftRight, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
+import { adminEntryPath } from '../../shared/admin-paths'
 import '../assets/css/admin.css'
 
 const schema = await useCmsSchema()
@@ -29,7 +30,7 @@ const groups = computed(() => {
     if (!out.has(group)) out.set(group, [])
     // Icône choisie dans cms.config.ts (nom Lucide), sinon une icône selon la nature du contenu.
     const icon = (def.icon && configIcons[def.icon]) || (def.kind === 'singleton' ? FileText : LayoutList)
-    out.get(group)!.push({ key, label: def.label, icon, to: def.kind === 'singleton' ? `/admin/${key}/${key}` : `/admin/${key}` })
+    out.get(group)!.push({ key, label: def.label, icon, to: def.kind === 'singleton' ? adminEntryPath(key, key) : `/admin/${key}` })
   }
   // La médiathèque est une page du back-office, pas un contenu du fichier de configuration.
   if (!out.has('Site')) out.set('Site', [])
