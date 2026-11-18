@@ -32,7 +32,8 @@ async function put(body: Record<string, unknown>, done: string) {
     state.value = await cmsApi<CmsModuleState>(url, { method: 'PUT', body })
     reset()
     testResult.value = null
-    toast.success(done)
+    // Un module qui change les pages du site (balise, clé publique) vide le cache : on prévient si cela a échoué.
+    toast.success(cmsSiteUpdated(state.value) ? done : `${done} ; le site peut mettre jusqu'à une heure à en tenir compte`)
     return true
   }
   catch (e) {

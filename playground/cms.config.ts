@@ -1,5 +1,5 @@
 import { defineCms, collection, singleton, f, type InferEntry } from 'backoffice-core/config'
-import { brevo, forms } from 'backoffice-core/modules'
+import { analytics, brevo, forms, turnstile } from 'backoffice-core/modules'
 
 const config = defineCms({
   site: { name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr' },
@@ -7,6 +7,10 @@ const config = defineCms({
   // Fonctions ajoutées au site. Les clés d'API se saisissent dans le back-office, écran « Modules ».
   modules: [
     brevo(),
+    // Mesure d'audience sans cookie (Cloudflare Web Analytics) : écran « Audience » du back-office.
+    analytics(),
+    // Anti-robots des formulaires (Cloudflare Turnstile) : <CmsTurnstile /> dans la page de contact.
+    turnstile(),
     forms({
       contact: {
         label: 'Contact',

@@ -194,6 +194,8 @@ export default defineCms({
 | --- | --- |
 | `brevo()` | L'envoi des e-mails. Réglages : clé d'API, expéditeur. |
 | `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
+| `analytics()` | La fréquentation du site dans l'écran « Audience » (administrateurs et éditeurs) : visites, pages vues, courbe par jour, pages les plus vues, sites d'origine. Par Cloudflare Web Analytics, sans cookie ni bandeau de consentement. Réglages : jeton de la balise, identifiant du site, identifiant du compte, jeton d'API en lecture. |
+| `turnstile()` | Un anti-robots pour les formulaires du site (Cloudflare Turnstile), le plus souvent invisible pour les visiteurs. Réglages : clé du site, clé secrète. Côté page : `<CmsTurnstile />`. |
 
 ### Brancher un formulaire sur une page
 
@@ -223,6 +225,56 @@ envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 j
 Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
 « Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
 `{{ fields.email }}` dans « Répondre à ».
+
+### Protéger un formulaire des robots
+
+Ajouter `turnstile()` aux modules, puis une ligne dans le formulaire, au-dessus du bouton :
+
+```vue
+<form @submit.prevent="form.submit()">
+  <!-- … les champs … -->
+  <CmsTurnstile />
+  <p v-if="form.error.value">{{ form.error.value }}</p>
+  <button :disabled="form.pending.value">Envoyer</button>
+</form>
+```
+
+Le composant retrouve tout seul le formulaire de la page (`useCmsForm`) ; s'il y en a plusieurs, le préciser :
+`<CmsTurnstile :form="devis" />`. Options : `theme` (`auto`, `light`, `dark`) et `size` (`flexible` par défaut,
+`normal`, `compact`).
+
+- Tant que le module n'est pas réglé, le composant n'affiche rien et le formulaire marche comme avant.
+- Une fois réglé, le serveur refuse tout message sans jeton valable (vérifié auprès de Cloudflare avec l'adresse du
+  visiteur) et affiche un message clair ; le champ piège et la limite d'envois restent en place.
+- Le script de Cloudflare n'est chargé que sur les pages qui contiennent `<CmsTurnstile />`. Le jeton, valable
+  cinq minutes et une seule fois, est redemandé tout seul à son expiration et après chaque envoi.
+- Les clés se créent dans le tableau de bord Cloudflare, **Turnstile → Ajouter un widget** (domaine du site, mode
+  « Géré »), et se saisissent dans **Modules → Anti-robots**. Pour essayer en local : clé du site
+  `1x00000000000000000000AA` et clé secrète `1x0000000000000000000000000000000AA` (clés de test de Cloudflare, qui
+  réussissent toujours ; à remplacer avant la mise en ligne).
+
+La page de connexion du back-office n'utilise pas l'anti-robots : elle limite déjà les tentatives (8 échecs par
+compte, 40 par adresse en 15 minutes), et une clé mal saisie pourrait sinon empêcher l'administrateur de se connecter
+pour la corriger.
+
+### Mesure d'audience
+
+Ajouter `analytics()` aux modules, puis dans le tableau de bord Cloudflare :
+
+1. **Web Analytics → Ajouter un site** (nom de domaine du site). Dans le code proposé, copier la valeur de `"token"` :
+   c'est le *jeton de la balise*. Ne pas coller le code dans les pages : le core ajoute la balise tout seul.
+2. Ouvrir les statistiques du site : l'adresse de la page contient `siteTag~in=` suivi de l'*identifiant du site*.
+3. L'*identifiant du compte* (Account ID) : menu « ⋯ » du compte → « Copier l'ID du compte ».
+4. **Profil → Jetons d'API → Créer un jeton personnalisé**, autorisation *Compte → Account Analytics → Lecture* :
+   c'est le *jeton d'API*, qui ne sert qu'à lire les statistiques.
+
+Saisir ces quatre valeurs dans **Modules → Mesure d'audience**, puis « Vérifier la connexion ». La balise est ajoutée
+aux pages du site rendues par le serveur (jamais au back-office ni aux aperçus de brouillon) ; le cache du site est
+vidé à l'enregistrement, elle apparaît donc tout de suite. Les statistiques sont relues au plus toutes les cinq minutes.
+
+Si le site pose une politique de sécurité du contenu (en-tête `Content-Security-Policy`), y autoriser
+`https://static.cloudflareinsights.com` (script) et `https://cloudflareinsights.com` (envoi des mesures), et pour
+l'anti-robots `https://challenges.cloudflare.com` (script et cadre).
 
 ## Mettre à jour le core
 

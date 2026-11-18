@@ -44,6 +44,9 @@ useHead({ title: 'Contact — Cabinet Durand' })
       <!-- Champ piège : invisible pour une personne, rempli seulement par les robots. -->
       <input v-model="form.trap.value" name="website" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
 
+      <!-- Anti-robots (module « turnstile ») : n'affiche rien tant qu'il n'est pas réglé dans le back-office. -->
+      <CmsTurnstile />
+
       <p v-if="form.error.value" class="text-sm text-error" role="alert">{{ form.error.value }}</p>
       <button class="btn btn-primary" :disabled="form.pending.value">{{ form.pending.value ? 'Envoi…' : 'Envoyer' }}</button>
     </form>

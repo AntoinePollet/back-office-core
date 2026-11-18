@@ -1,4 +1,4 @@
-import type { MaybeRefOrGetter } from 'vue'
+import type { InjectionKey, MaybeRefOrGetter } from 'vue'
 import { adminVars, DEFAULT_ADMIN_COLOR } from '../../shared/theme'
 
 // Adresses d'images redimensionnées, utilisables dans les pages du site.
@@ -165,6 +165,7 @@ export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: { /** Ajou
  *
  * Le serveur valide tout (champs obligatoires, formats, longueurs) et renvoie un message par champ dans `errors`.
  * `trap` est un champ piège facultatif : laissé invisible, il n'est rempli que par les robots, dont l'envoi est ignoré.
+ * Anti-robots (module `turnstile`) : placer `<CmsTurnstile />` dans le formulaire ; son jeton part avec le message.
  */
 export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K]> = {}) {
   type T = Forms[K]
@@ -176,29 +177,57 @@ export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K
   const pending = ref(false)
   const sent = ref(false)
   const trap = ref('')
+  const protection = cmsFormProtection()
+  // `<CmsTurnstile />` placé dans la même page retrouve ce formulaire tout seul.
+  if (getCurrentInstance()) provide(CMS_FORM_PROTECTION, protection)
 
   async function submit() {
     if (pending.value) return false
-    pending.value = true
     errors.value = {}
     error.value = null
+    if (protection.active.value && !protection.token.value) {
+      error.value = 'La vérification anti-robots n\'est pas terminée. Patientez une seconde, puis renvoyez le formulaire.'
+      return false
+    }
+    pending.value = true
+    // Un jeton anti-robots ne sert qu'une fois : il est relancé après chaque envoi que le serveur a pu vérifier.
+    let consumed = protection.active.value
     try {
-      await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value } })
+      await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value, ...(protection.active.value ? { turnstile: protection.token.value } : {}) } })
       sent.value = true
       for (const key of Object.keys(values)) delete (values as Record<string, unknown>)[key]
       Object.assign(values, initial)
       return true
     }
     catch (e: any) {
+      // Champs à corriger, trop d'envois : le serveur s'est arrêté avant de vérifier le jeton, il reste valable.
+      if (e?.statusCode === 422 || e?.statusCode === 429) consumed = false
       errors.value = e?.data?.data?.errors ?? {}
       error.value = Object.keys(errors.value).length ? 'Certains champs sont à corriger.' : cmsErrorMessage(e, 'L\'envoi a échoué. Réessayez dans un instant.')
       return false
     }
     finally {
+      if (consumed) protection.reset()
       pending.value = false
     }
   }
-  return { values, errors, error, pending, sent, trap, submit }
+  return { values, errors, error, pending, sent, trap, protection, submit }
+}
+
+/** Ce qui relie un formulaire du site à son anti-robots (`<CmsTurnstile>`). */
+export type CmsFormProtection = {
+  /** Vrai quand un anti-robots est affiché dans le formulaire : son jeton est alors exigé. */
+  active: Ref<boolean>
+  /** Jeton obtenu par le visiteur, null tant qu'il n'y en a pas (ou après expiration). */
+  token: Ref<string | null>
+  /** Relance la vérification (le composant y branche la sienne). */
+  reset: () => void
+}
+export const CMS_FORM_PROTECTION: InjectionKey<CmsFormProtection> = Symbol('cms-form-protection')
+
+function cmsFormProtection(): CmsFormProtection {
+  const protection: CmsFormProtection = { active: ref(false), token: ref(null), reset: () => { protection.token.value = null } }
+  return protection
 }
 
 // ───────────── Pour le back-office ─────────────
