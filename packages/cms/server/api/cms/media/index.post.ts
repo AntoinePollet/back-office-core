@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { slugify } from '../../../../shared/content'
 
 /** Importe un fichier : il est stocké dans R2 et référencé dans la médiathèque. */
@@ -13,7 +14,15 @@ export default defineEventHandler(async (event) => {
     const n = Number(parts?.find(p => p.name === name)?.data.toString())
     return Number.isInteger(n) && n > 0 && n < 100000 ? n : null
   }
-  const id = crypto.randomUUID()
+  // Identifiant choisi par l'appelant : l'outil d'import le calcule d'après le contenu du fichier, pour ne jamais
+  // envoyer deux fois le même. S'il est déjà dans la médiathèque, c'est ce fichier-là qui est renvoyé, sans rien écrire.
+  const wanted = parts?.find(p => p.name === 'id')?.data.toString()
+  if (wanted !== undefined) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(wanted)) throw createError({ statusCode: 400, message: 'id : un identifiant au format UUID est attendu.' })
+    const [known] = await useDb(event).select().from(schema.media).where(eq(schema.media.id, wanted))
+    if (known) return toAdminMedia(known)
+  }
+  const id = wanted ?? crypto.randomUUID()
   const dot = file.filename.lastIndexOf('.')
   const base = slugify(dot > 0 ? file.filename.slice(0, dot) : file.filename) || 'fichier'
   const ext = dot > 0 ? file.filename.slice(dot + 1).toLowerCase().replace(/[^a-z0-9]/g, '') : ''

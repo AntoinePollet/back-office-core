@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Copy, Eye, EyeOff, History, Trash2, Send } from '@lucide/vue'
-import { applyDefaults, copyValues, isEmpty, partition } from '../../../../shared/content'
+import { applyDefaults, copyValues, isEmpty, partition, pick } from '../../../../shared/content'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -131,9 +131,13 @@ async function send(extra: { publish?: string[]; unpublish?: string[] }, done: s
   // (et ce qui est publié : une publication met aussi en ligne les champs communs).
   const whole = wasNew || !def!.drafts
   const sent = locales.filter(l => whole || localeChanged(l) || extra.publish?.includes(l))
+  // Seuls les champs de la configuration sont envoyés, chacun dans sa partie : le serveur refuse tout le reste.
+  // Ce que le contenu porte d'autre (valeurs d'un champ retiré, mises de côté par une migration) reste en base tel quel.
+  const parts = partition(def!.fields)
+  const system = def!.seo ? ['seo'] : []
   const body = {
-    ...(whole || sharedChanged() || extra.publish?.length ? { shared: doc.value.shared } : {}),
-    locales: Object.fromEntries(sent.map(l => [l, { slug: doc.value.locales[l]!.slug, values: doc.value.locales[l]!.values }])),
+    ...(whole || sharedChanged() || extra.publish?.length ? { shared: pick(parts.shared, doc.value.shared, system) } : {}),
+    locales: Object.fromEntries(sent.map(l => [l, { slug: doc.value.locales[l]!.slug, values: pick(parts.localized, doc.value.locales[l]!.values, system) }])),
     ...extra,
     ...(wasNew ? (copyOf ? { after: copyOf } : {}) : { baseVersion: doc.value.version, ...(force ? { force: true } : {}) }),
   }

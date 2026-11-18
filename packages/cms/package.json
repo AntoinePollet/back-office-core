@@ -3,6 +3,9 @@
   "version": "0.2.0",
   "type": "module",
   "main": "./nuxt.config.ts",
+  "bin": {
+    "backoffice-import": "./bin/import.mjs"
+  },
   "exports": {
     ".": "./nuxt.config.ts",
     "./config": "./shared/format.ts",
@@ -10,7 +13,7 @@
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
-    "test": "node --import jiti/register --test \"shared/**/*.test.ts\""
+    "test": "node --import jiti/register --test \"shared/**/*.test.ts\" \"cli/**/*.test.ts\""
   },
   "dependencies": {
     "@lucide/vue": "^1.75.0",

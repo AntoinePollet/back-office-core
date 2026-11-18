@@ -122,16 +122,44 @@ export function validateValues(fields: Fields, values: Values, prefix = ''): Rec
   return errors
 }
 
-/** Prépare les valeurs pour le site : champs masqués vidés, interrupteurs et listes jamais null. */
+/** Un texte mis en forme sans aucun texte (« <p></p> », « <p><br></p> ») est vide. */
+const isBlankHtml = (html: string) => html.replace(/<[^>]*>/g, '').replace(/&nbsp;|\s/g, '') === ''
+
+/**
+ * Valeur d'un champ telle que le site la reçoit, avant le remplacement des références (`server/utils/resolve.ts`).
+ * Un champ vide a une seule forme par type, quelle que soit l'histoire du contenu (jamais rempli, vidé dans le
+ * formulaire, importé, champ ajouté après coup) : voir le tableau dans `format.ts`, au-dessus de `InferEntry`.
+ */
+function toPublicValue(field: AnyField, v: unknown): unknown {
+  switch (field.type) {
+    case 'boolean':
+      return typeof v === 'boolean' ? v : field.default ?? false
+    case 'repeater':
+      return Array.isArray(v) ? v.filter(item => item && typeof item === 'object').map(item => toPublicValues(field.fields as Fields, item as Values)) : []
+    case 'text': case 'textarea': case 'date':
+      return typeof v === 'string' && v !== '' ? v : null
+    case 'richText':
+      return typeof v === 'string' && !isBlankHtml(v) ? v : null
+    case 'number':
+      return typeof v === 'number' && !Number.isNaN(v) ? v : null
+    case 'select':
+      if (field.multiple) return (Array.isArray(v) ? v : v == null ? [] : [v]).filter(c => typeof c === 'string' && c !== '')
+      return typeof v === 'string' && v !== '' ? v : null
+    case 'image': case 'file':
+      return typeof v === 'string' && v !== '' ? v : null
+    case 'relation':
+      if (field.multiple) return (Array.isArray(v) ? v : v == null ? [] : [v]).filter(id => typeof id === 'string' && id !== '')
+      return typeof v === 'string' && v !== '' ? v : null
+    case 'link': {
+      const link = v as Partial<LinkValue> & { url?: unknown; id?: unknown } | null
+      return link && typeof link === 'object' && ((link.kind === 'url' && typeof link.url === 'string' && link.url !== '') || (link.kind === 'page' && typeof link.id === 'string' && link.id !== '')) ? v : null
+    }
+  }
+}
+
+/** Prépare les valeurs pour le site : champs masqués vidés, et une seule forme de « vide » par type de champ. */
 export function toPublicValues(fields: Fields, values: Values): Values {
   const out: Values = {}
-  for (const [key, field] of Object.entries(fields)) {
-    let v = isVisible(field, values) ? values[key] ?? null : null
-    if (field.type === 'boolean') v = v ?? field.default ?? false
-    else if (field.type === 'repeater') v = Array.isArray(v) ? v.map(item => toPublicValues(field.fields as Fields, item as Values)) : []
-    else if (field.type === 'select' && field.multiple) v = v ?? []
-    else if (field.type === 'relation' && field.multiple) v = v ?? []
-    out[key] = v
-  }
+  for (const [key, field] of Object.entries(fields)) out[key] = toPublicValue(field, isVisible(field, values) ? values[key] : undefined)
   return out
 }

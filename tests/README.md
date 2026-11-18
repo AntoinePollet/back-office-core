@@ -52,6 +52,8 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `05-apparence` | back-office clair sur un système en mode sombre, couleur du back-office |
 | `06-connexions` | limitation des tentatives de connexion (sans navigateur) |
 | `07-api-publique` | pagination, filtres, aperçu et liens de l'API publique (sans navigateur) |
+| `11-ecriture-a-plat` | API d'enregistrement : écriture à plat, refus des valeurs inconnues ou mal rangées, simulation, forme unique des champs vides |
+| `12-import` | outil d'import (`backoffice-import`) : simulation, import, relance sans doublon, mise à jour, erreurs, droits, exemple du playground |
 | `13-modules` | modules : clé d'API saisie dans le back-office (chiffrée, jamais renvoyée), vérification Brevo, formulaire du site, messages reçus, workflow « formulaire envoyé », droits, limite d'envois |
 
 ## Ajouter une suite
@@ -99,8 +101,10 @@ Chaque suite part d'une base vide : elle crée elle-même ce dont elle a besoin 
   Préférer un sélecteur précis (`.modal-open button`, la ligne du tableau qui porte un nom) à une position (« le 2ᵉ bouton ») :
   l'interface s'enrichit, les positions changent.
 - **`innerText` ne contient pas la valeur des champs de saisie** : lire `el.value`.
-- **Un singleton (Accueil, Réglages) n'existe qu'après sa première lecture** par `GET /api/cms/entries/<type>/<type>` (ce que fait
-  le formulaire). Un `PUT` direct sur une base vide répond 404.
+- **Un singleton (Accueil, Réglages) est créé à sa première lecture** par `GET /api/cms/entries/<type>/<type>` (ce que fait
+  le formulaire) ou à son premier enregistrement par `PUT`.
+- **L'API d'enregistrement refuse ce qu'elle ne sait pas ranger** (422) : un champ traduit dans `shared`, un champ commun dans
+  `locales.<langue>.values`, un nom inconnu. Pour ne pas avoir à le savoir, écrire à plat : `{ values: { … }, publish: ['fr'] }`.
 - **Attendre la fin d'un enregistrement avant de recharger** : attendre la notification (`says`) ou la réponse (`page.waitForResponse`),
   pas un délai fixe. Les seuls délais fixes de la suite vérifient qu'il ne se passe *rien* (un workflow qui ne doit pas se déclencher).
 - **Limitation des connexions** : 8 échecs par compte, 40 par adresse IP, sur 15 minutes. Tous les tests viennent de la même adresse :

@@ -52,6 +52,62 @@ sans cette option, c'est la langue par défaut.
 Pour ajouter un type de contenu : le déclarer dans `cms.config.ts` (le serveur de développement redémarre, le back-office
 affiche le nouveau menu), puis créer la page dans `app/pages/`. Il n'y a pas de migration de base à écrire.
 
+## Reprendre des contenus existants
+
+Pour remplir le back-office avec des contenus déjà écrits ailleurs (ancien site, tableur, textes en dur dans les pages),
+décrivez-les dans un fichier, par exemple `cms.import.json` à la racine du projet, puis lancez l'import contre un
+back-office qui tourne :
+
+```sh
+CMS_EMAIL=moi@exemple.fr pnpm cms:import --dry-run     # simulation : dit ce qui serait fait, n'écrit rien
+CMS_EMAIL=moi@exemple.fr pnpm cms:import               # en local (http://localhost:3000, `pnpm dev` lancé)
+CMS_EMAIL=moi@exemple.fr pnpm cms:import --url https://monsite.fr
+```
+
+Le compte est un compte du back-office : l'import a ses droits, et les contenus sont vérifiés comme dans le formulaire.
+Le mot de passe est demandé dans le terminal sans être affiché ; pour un lancement automatique, le donner par la
+variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'historique du terminal).
+
+```json
+{
+  "singletons": {
+    "settings": { "phone": "04 72 00 00 00", "email": "contact@exemple.fr" }
+  },
+  "collections": {
+    "articles": [
+      {
+        "id": "ouverture",
+        "title": "Ouverture du nouveau cabinet",
+        "date": "2026-09-01",
+        "excerpt": "Nous vous accueillons désormais rue de la République.",
+        "cover": { "file": "/photos/cabinet.jpg", "alt": "La façade du cabinet" },
+        "body": "<p>Venez nous rendre visite.</p>",
+        "en": { "title": "Our new office is open" }
+      }
+    ]
+  }
+}
+```
+
+- Les valeurs se donnent par nom de champ (ceux de `cms.config.ts`), dans la langue par défaut. Une autre langue s'écrit
+  dans un bloc à son code (`"en": { … }`), avec les seuls champs traduits.
+- `id` (obligatoire dans une collection) est un nom de votre choix, stable. **Relancer l'import ne crée pas de doublon** :
+  l'élément qui porte cet `id` est mis à jour. Seuls les champs écrits dans le fichier sont modifiés ; `null` vide un champ.
+- Image ou fichier : un chemin. `"/photos/a.jpg"` est lu dans `public/`, `"photos/a.jpg"` à côté du fichier d'import.
+  Le fichier est envoyé dans la médiathèque, une seule fois même s'il est cité plusieurs fois ou si l'import est relancé.
+  Texte alternatif : `{ "file": "…", "alt": "…" }`, ou `"alt": { "fr": "…", "en": "…" }`.
+- Relation : l'`id` d'un élément de la collection visée, présent dans le même fichier (un tableau pour un champ multiple).
+- Lien : `"https://…"`, `"/contact"`, `{ "url": "…", "label": "…", "newTab": true }`, ou une page du site :
+  `{ "page": "articles", "id": "ouverture" }` (`{ "page": "home" }` pour une page unique).
+- Liste d'éléments (répéteur) : un tableau d'objets. Texte mis en forme : du HTML. Date : `"2026-09-01"`.
+- `"slug"` fixe l'adresse de la page, `"seo": { "title", "description", "image", "noindex" }` le référencement.
+- Les éléments sont **publiés** ; `"status": "draft"` sur un élément (ou à la racine du fichier), ou l'option `--draft`,
+  les laisse en brouillon.
+
+Le fichier peut aussi être un module (`cms.import.mjs` ou `.ts`) dont l'export par défaut est cet objet, ou une fonction
+qui le renvoie : pratique pour le calculer à partir d'autres données. Le fichier est vérifié en entier avant le premier
+envoi ; ensuite, une erreur sur un élément n'empêche pas d'importer les autres, et la commande se termine en erreur.
+
 ## Mettre en ligne
 
 ### La première fois
