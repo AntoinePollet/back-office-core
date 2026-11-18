@@ -198,6 +198,7 @@ export default defineCms({
 | --- | --- |
 | `brevo()` | L'envoi des e-mails. Réglages : clé d'API, expéditeur. |
 | `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
+| `stripe({ … })` | Le paiement en ligne d'un produit à prix fixe, sur la page de paiement de Stripe. Le prix vient du back-office. Paiements visibles dans « Paiements » (administrateurs et éditeurs). Réglages : clé d'API, secret du webhook. |
 
 ### Brancher un formulaire sur une page
 
@@ -227,6 +228,106 @@ envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 j
 Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
 « Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
 `{{ fields.email }}` dans « Répondre à ».
+
+### Vendre des produits avec Stripe
+
+**1. Rendre une collection vendable.** Il lui faut un champ prix de type nombre, saisi en euros avec les centimes
+(`49.9`), commun à toutes les langues. Un prix vide ou nul : le produit n'est pas vendable.
+
+```ts
+import { stripe } from 'backoffice-core/modules'
+
+collections: {
+  products: collection({
+    label: 'Boutique',
+    titleField: 'title',
+    fields: {
+      title: f.text({ label: 'Nom du produit', required: true }),
+      image: f.image({ label: 'Photo' }),
+      price: f.number({ label: 'Prix', unit: '€ TTC', min: 0, step: 0.01 }),
+      onSale: f.boolean({ label: 'En vente', default: true }),
+    },
+  }),
+},
+modules: [
+  stripe({
+    // Par collection vendable : le champ du prix, et au choix le nom (défaut : titleField), l'image,
+    // l'interrupteur « en vente » et la quantité maximale par paiement (défaut : 10).
+    collections: { products: { price: 'price', image: 'image', available: 'onSale', maxQuantity: 5 } },
+    currency: 'eur',                          // défaut : 'eur'
+    shipping: { countries: ['FR', 'BE'] },    // facultatif : demande l'adresse de livraison
+    successPath: '/merci',                    // défaut : '/merci' ; Stripe y ajoute ?session_id=…
+    // cancelPath: '/boutique',               // défaut : la page d'où l'acheteur est parti
+  }),
+],
+```
+
+La configuration est vérifiée au démarrage : collection et champs existants, prix de type nombre, etc. L'adresse e-mail
+de l'acheteur est toujours demandée par Stripe.
+
+**2. Brancher le bouton.** Le site n'envoie que le produit et la quantité : le serveur relit le prix **publié** (un
+brouillon, un contenu retiré du site, sans prix ou « hors vente » est refusé), puis redirige vers Stripe.
+
+```vue
+<script setup lang="ts">
+const { data: products } = await useCollection('products')
+const { checkout, pending, error } = useCmsCheckout()
+const quantity = ref(1)
+</script>
+
+<template>
+  <div v-for="p in products" :key="p.id">
+    <h2>{{ p.title }} — {{ p.price }} €</h2>
+    <button v-if="p.price !== null && p.onSale" :disabled="pending" @click="checkout('products', p.id, { quantity })">Acheter</button>
+  </div>
+  <p v-if="error">{{ error }}</p>
+</template>
+```
+
+**3. La page de succès** (`pages/merci.vue`). Elle ne doit pas annoncer un paiement confirmé avant Stripe : seul le
+webhook le confirme, en général en quelques secondes.
+
+```vue
+<script setup lang="ts">
+const { result, loading } = useCmsCheckoutResult()
+</script>
+
+<template>
+  <p v-if="loading">Un instant…</p>
+  <p v-else-if="result?.status === 'paid'">Merci ! Votre paiement de {{ result.amount }} est confirmé.</p>
+  <p v-else>Merci ! Votre paiement est en cours de confirmation : vous recevrez un reçu par e-mail.</p>
+</template>
+```
+
+**4. Régler Stripe** (back-office, **Modules → Stripe**, administrateur) :
+
+- **Clé d'API** : tableau de bord Stripe, « Développeurs » → « Clés API » → « Créer une clé limitée », avec le seul droit
+  « Écriture » sur « Checkout Sessions ». Elle commence par `rk_test_` (essais) ou `rk_live_`. La clé secrète `sk_…`
+  fonctionne aussi mais donne tous les droits sur le compte.
+- **Webhook** : « Développeurs » → « Webhooks » → « Créer une destination d'événements » → « Votre compte », format
+  « Instantané » (snapshot), dernière version de l'API, type « Endpoint de webhook ». L'écran du module affiche
+  l'adresse à coller (`https://votre-site/api/stripe/webhook`) et les événements à cocher :
+  `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+  `charge.refunded`. Copiez ensuite le **secret de signature** (`whsec_…`) dans le back-office.
+- « Vérifier la connexion » dit si la clé est de test ou de production.
+
+Le paiement n'est enregistré qu'à la réception de l'événement signé de Stripe (jamais au simple retour du visiteur
+sur la page de succès). Un même événement reçu deux fois n'enregistre qu'un paiement. Les paiements différés
+(virement, prélèvement) apparaissent « En attente » puis « Payé » ou « Échoué » ; un remboursement fait dans Stripe
+les passe à « Remboursé ». Un même visiteur ne peut pas créer plus de dix paiements en dix minutes.
+
+Pour prévenir le client à chaque vente : **Workflows → Créer un workflow**, déclencheur « Un paiement est reçu »,
+action « Envoyer un e-mail » avec `{{ payment.product }}`, `{{ payment.quantity }}`, `{{ payment.amount }}`,
+`{{ payment.email }}`, `{{ payment.shipping }}` et `{{ payment.adminUrl }}`. Pour envoyer un reçu à l'acheteur,
+mettre `{{ payment.email }}` dans les destinataires (ou activer les reçus dans Stripe : « Paramètres » → « E-mails clients »).
+
+**5. Essayer en mode test.** Utilisez une clé `rk_test_…` et le webhook du mode test (chaque mode a son webhook et son
+secret). En local, Stripe ne peut pas joindre `localhost` : la commande `stripe listen --forward-to
+localhost:3000/api/stripe/webhook` de la CLI Stripe relaie les événements et affiche un secret `whsec_…` à saisir dans
+le back-office. Cartes de test (date future, code quelconque) : `4242 4242 4242 4242` (accepté),
+`4000 0000 0000 9995` (refusé), `4000 0025 0000 3155` (authentification 3D Secure). Les paiements de test sont rangés à
+part dans l'écran « Paiements ». Passer en production : remplacer la clé et le secret du webhook par ceux du mode
+production.
 
 ## Mettre à jour le core
 

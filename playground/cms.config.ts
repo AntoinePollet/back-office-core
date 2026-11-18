@@ -1,5 +1,5 @@
 import { defineCms, collection, section, singleton, f, type InferEntry } from 'backoffice-core/config'
-import { brevo, forms } from 'backoffice-core/modules'
+import { brevo, forms, stripe } from 'backoffice-core/modules'
 
 const config = defineCms({
   site: { name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr' },
@@ -18,6 +18,13 @@ const config = defineCms({
           consent: f.boolean({ label: 'J\'accepte que mes données soient utilisées pour me répondre', required: true }),
         },
       },
+    }),
+    // Paiement en ligne des produits de la boutique : le prix vient du champ « price », saisi dans le back-office.
+    stripe({
+      collections: { products: { price: 'price', image: 'image', available: 'onSale', maxQuantity: 5 } },
+      currency: 'eur',
+      shipping: { countries: ['FR', 'BE'] },
+      successPath: '/merci',
     }),
   ],
 
@@ -146,6 +153,24 @@ const config = defineCms({
         quote: f.textarea({ label: 'Citation', required: true }),
         photo: f.image({ label: 'Photo' }),
         visible: f.boolean({ label: 'Afficher sur l\'accueil', default: true }),
+      },
+    }),
+
+    products: collection({
+      label: 'Boutique',
+      icon: 'shopping-bag',
+      labelSingular: 'produit',
+      // Les prix sont encaissés en ligne : seuls les éditeurs (et l'administrateur) modifient la boutique.
+      access: { edit: ['editor'], publish: ['editor'], delete: ['editor'] },
+      titleField: 'title',
+      orderable: true,
+      list: { columns: ['price', 'onSale'], thumbnail: 'image' },
+      fields: {
+        title: f.text({ label: 'Nom du produit', required: true }),
+        description: f.textarea({ label: 'Description', max: 300 }),
+        image: f.image({ label: 'Photo' }),
+        price: f.number({ label: 'Prix', unit: '€ TTC', min: 0, step: 0.01, width: 'half', help: 'Prix payé en ligne, avec les centimes (49,90). Laissé vide : le produit ne peut pas être acheté.' }),
+        onSale: f.boolean({ label: 'En vente', default: true, width: 'half' }),
       },
     }),
 

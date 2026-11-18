@@ -18,8 +18,11 @@
 import { validateValues } from './content'
 import type { AnyField } from './format'
 
-/** Ce que `cms.config.ts` contient pour un module : son identifiant et ses options, sérialisables. */
-export type CmsModuleRef = { id: string; options?: Record<string, unknown> }
+/**
+ * Ce que `cms.config.ts` contient pour un module : son identifiant et ses options, sérialisables.
+ * `check` (facultatif) vérifie les options au regard des collections ; `defineCms` l'appelle puis le retire.
+ */
+export type CmsModuleRef = { id: string; options?: Record<string, unknown>; check?: (config: any) => string[] }
 
 const KEY = /^[a-z][a-zA-Z0-9]*$/
 const fail = (message: string): never => { throw new Error(`Configuration invalide :\n  - ${message}`) }
@@ -32,6 +35,10 @@ const fail = (message: string): never => { throw new Error(`Configuration invali
  * NUXT_BREVO_API_KEY et NUXT_EMAIL_FROM de l'hébergement).
  */
 export const brevo = () => ({ id: 'brevo' as const })
+
+// ───────────────────────── Paiement Stripe (voir shared/stripe.ts) ─────────────────────────
+
+export { stripe, type InferSellable } from './stripe'
 
 // ───────────────────────── Formulaires ─────────────────────────
 

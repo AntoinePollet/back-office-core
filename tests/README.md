@@ -31,7 +31,7 @@ En cas d'échec, regarder `tests/resultats/` (ignoré par git, vidé à chaque l
 | Variable | Défaut | Rôle |
 | --- | --- | --- |
 | `E2E_PORT` | `3121` | port du serveur de test |
-| `E2E_MOCK_PORT` | `E2E_PORT` + 10 | port du faux service (Brevo, webhooks) |
+| `E2E_MOCK_PORT` | `E2E_PORT` + 10 | port du faux service (Brevo, Stripe, webhooks) |
 | `E2E_CHROME` | Chrome ou Chromium trouvé aux emplacements habituels | chemin du navigateur |
 | `E2E_HEADLESS` | `1` | `0` : afficher le navigateur pendant les tests |
 | `E2E_CAPTURES` | `0` | `1` : garder aussi des captures des étapes réussies |
@@ -56,6 +56,7 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `12-import` | outil d'import (`backoffice-import`) : simulation, import, relance sans doublon, mise à jour, erreurs, droits, exemple du playground |
 | `13-modules` | modules : clé d'API saisie dans le back-office (chiffrée, jamais renvoyée), vérification Brevo, formulaire du site, messages reçus, workflow « formulaire envoyé », droits, limite d'envois |
 | `14-galeries-sections` | galeries (envoi et sélection de plusieurs images, ordre au clavier et par glisser-déposer, légendes, retrait, dépôt de fichiers, dans un répéteur, deux langues), site et API, « Utilisé dans », import d'une galerie ; sections du formulaire (repliées, erreur dans une section repliée, côte à côte, section masquée) |
+| `16-stripe` | paiement Stripe (joué par le faux service) : réglages et vérification de la clé, bouton du site, prix relu dans la version publiée, refus (brouillon, sans prix, hors vente, quantité), webhook signé, mal signé ou trop vieux, événement reçu deux fois, paiement différé, remboursement, workflow « paiement reçu », écran Paiements, droits, limite d'appels |
 
 ## Ajouter une suite
 

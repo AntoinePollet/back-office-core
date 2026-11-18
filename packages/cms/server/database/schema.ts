@@ -261,6 +261,39 @@ export const formSubmissions = sqliteTable('cms_form_submissions', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_form_submissions_form').on(t.form, t.createdAt)])
 
+/**
+ * Paiement reçu par Stripe Checkout (module `stripe`). Une ligne par session Checkout : la référence Stripe est unique,
+ * un même événement reçu deux fois ne crée donc jamais deux paiements. Le produit est recopié tel qu'il était à l'achat.
+ * Aucune suppression depuis le back-office : c'est une pièce comptable.
+ */
+export const payments = sqliteTable('cms_payments', {
+  id: text('id').primaryKey(),
+  /** Session Checkout (cs_…) : référence unique du paiement chez Stripe. */
+  sessionId: text('session_id').notNull().unique(),
+  /** Paiement Stripe (pi_…), connu une fois la session terminée ; sert au lien vers le tableau de bord et aux remboursements. */
+  paymentIntent: text('payment_intent'),
+  /** Collection et contenu achetés (le contenu a pu être supprimé depuis). */
+  collection: text('collection').notNull(),
+  entryId: text('entry_id').notNull(),
+  /** Nom du produit au moment de l'achat. */
+  title: text('title').notNull(),
+  quantity: integer('quantity').notNull(),
+  /** Montants en plus petite unité de la devise (centimes). `amount` : total payé, d'après Stripe. */
+  unitAmount: integer('unit_amount').notNull(),
+  amount: integer('amount').notNull(),
+  refundedAmount: integer('refunded_amount').notNull().default(0),
+  currency: text('currency').notNull(),
+  email: text('email'),
+  name: text('name'),
+  /** Adresse de livraison, si le module la demande. */
+  shipping: text('shipping', { mode: 'json' }).$type<import('../../shared/stripe').ShippingAddress | null>(),
+  status: text('status').$type<import('../../shared/stripe').PaymentStatus>().notNull(),
+  /** Paiement de test (clé sk_test_ / rk_test_) : aucun argent n'a circulé. */
+  livemode: integer('livemode', { mode: 'boolean' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_payments_created').on(t.createdAt), index('cms_payments_intent').on(t.paymentIntent)])
+
 export const verification = sqliteTable('verification', {
   id: text('id').primaryKey(),
   identifier: text('identifier').notNull(),

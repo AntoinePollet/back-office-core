@@ -384,4 +384,6 @@ export type CmsModuleState = {
     value?: string; saved?: boolean; hint?: string; unreadable?: boolean; fromEnv: boolean
   }[]
   configured: boolean; missing: string[]; canTest: boolean; adminPage: { to: string; label: string } | null
+  /** Informations à recopier ailleurs (adresse d'un webhook…). */
+  details: { label: string; value: string; help?: string }[]
 }

@@ -33,3 +33,11 @@ export async function typesCheck() {
 
   return { title, excerpt, audience, coverUrl, category, path, wrong, total, pageTitle, body, hero, question, featured }
 }
+
+// Paiement : seules les collections déclarées vendables dans cms.config.ts sont acceptées.
+export function checkoutTypesCheck() {
+  const { checkout } = useCmsCheckout()
+  checkout('products', 'id', { quantity: 2 })
+  // @ts-expect-error collection qui n'est pas vendable
+  checkout('services', 'id')
+}

@@ -60,6 +60,9 @@ export default defineNuxtModule({
   /** Les valeurs de chaque formulaire du site (module « forms »), pour \`useCmsForm\`. */
   export type CmsForms = [Forms] extends [never] ? Record<string, Record<string, any>> : Forms
   type Forms = import(${JSON.stringify(resolve(dirname(format), 'modules'))}).InferForms<Config>
+  /** Les collections vendables (module « stripe »), pour \`useCmsCheckout\`. */
+  export type CmsSellable = [Sellable] extends [never] ? string : Sellable
+  type Sellable = import(${JSON.stringify(resolve(dirname(format), 'stripe'))}).InferSellable<Config>
 }
 `,
     })

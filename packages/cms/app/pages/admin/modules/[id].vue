@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, KeyRound } from '@lucide/vue'
+import { ArrowLeft, Copy, KeyRound } from '@lucide/vue'
 import type { CmsModuleState } from '../../../composables/useCms'
 
 type Setting = CmsModuleState['settings'][number]
@@ -69,6 +69,16 @@ async function test() {
   }
 }
 
+async function copy(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success('Copié')
+  }
+  catch {
+    toast.error('Copie impossible : sélectionnez le texte à la main.')
+  }
+}
+
 onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas enregistrées. Quitter quand même ?'))
 </script>
 
@@ -124,6 +134,18 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas 
       <p class="text-xs text-base-content/50">Une clé enregistrée ne peut plus être relue, ni ici ni ailleurs : on peut seulement la remplacer ou la retirer.</p>
     </div>
     <div v-else class="card bg-base-100 border border-base-300 p-5 text-sm text-base-content/60">Ce module n'a pas de réglage : il fonctionne dès qu'il est activé.</div>
+
+    <div v-if="state.details?.length" class="card bg-base-100 border border-base-300 p-5 space-y-4 mt-4">
+      <h2 class="font-semibold">À recopier dans {{ state.label }}</h2>
+      <div v-for="d in state.details" :key="d.label">
+        <div class="text-sm text-base-content/60 mb-1">{{ d.label }}</div>
+        <div class="flex items-start gap-2">
+          <code class="grow min-w-0 break-all whitespace-pre-wrap text-sm bg-base-200 rounded-field px-3 py-2" :data-detail="d.label">{{ d.value }}</code>
+          <button class="btn btn-sm btn-square shrink-0" :title="`Copier : ${d.label}`" :aria-label="`Copier : ${d.label}`" @click="copy(d.value)"><Copy :size="16" /></button>
+        </div>
+        <p v-if="d.help" class="text-xs text-base-content/60 mt-1">{{ d.help }}</p>
+      </div>
+    </div>
 
     <NuxtLink v-if="state.adminPage" :to="state.adminPage.to" class="btn btn-sm mt-4">{{ state.adminPage.label }}</NuxtLink>
   </section>
