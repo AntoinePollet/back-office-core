@@ -36,6 +36,31 @@ const fail = (message: string): never => { throw new Error(`Configuration invali
  */
 export const brevo = () => ({ id: 'brevo' as const })
 
+// ───────────────────────── Mesure d'audience ─────────────────────────
+
+/** Fournisseurs de mesure d'audience connus. Un seul pour l'instant : Cloudflare Web Analytics (sans cookie). */
+export const ANALYTICS_PROVIDERS = ['cloudflare'] as const
+export type AnalyticsProviderId = typeof ANALYTICS_PROVIDERS[number]
+
+/**
+ * Mesure d'audience sans cookie : la balise du fournisseur est ajoutée aux pages du site et l'écran « Audience »
+ * du back-office montre visites, pages vues, pages les plus vues et sites d'où viennent les visiteurs.
+ * Les jetons se règlent dans le back-office (écran « Modules »).
+ */
+export function analytics(options: { provider?: AnalyticsProviderId } = {}) {
+  const provider = options.provider ?? 'cloudflare'
+  if (!(ANALYTICS_PROVIDERS as readonly string[]).includes(provider)) fail(`analytics() : fournisseur « ${provider} » inconnu (${ANALYTICS_PROVIDERS.join(', ')})`)
+  return { id: 'analytics' as const, options: { provider } }
+}
+
+// ───────────────────────── Anti-robots ─────────────────────────
+
+/**
+ * Protection des formulaires du site contre les robots par Cloudflare Turnstile, sans casse-tête pour les visiteurs.
+ * Les clés se règlent dans le back-office ; côté page, placer `<CmsTurnstile />` dans le formulaire.
+ */
+export const turnstile = () => ({ id: 'turnstile' as const })
+
 // ───────────────────────── Paiement Stripe (voir shared/stripe.ts) ─────────────────────────
 
 export { stripe, type InferSellable } from './stripe'

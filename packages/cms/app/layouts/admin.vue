@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, CreditCard, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, CreditCard, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { adminEntryPath } from '../../shared/admin-paths'
@@ -38,6 +38,8 @@ const groups = computed(() => {
   if (hasForms.value) out.get('Site')!.push({ key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value })
   // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
   if (schema.value.modules?.some(m => m.id === 'stripe') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' })
+  // Module « Mesure d'audience » : la fréquentation du site, pour l'administrateur et l'éditeur.
+  if (schema.value.modules?.some(m => m.id === 'analytics') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' })
   if (user.value?.role === 'admin') {
     out.get('Site')!.push({ key: 'appearance', label: 'Apparence', icon: Palette, to: '/admin/appearance' })
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })

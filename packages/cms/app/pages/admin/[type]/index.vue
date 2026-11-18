@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { Copy, GripVertical, Plus, Search } from '@lucide/vue'
-// Une page unique n'a pas de liste : son formulaire s'affiche directement à /admin/<type>.
-import EntryEditor from './[id].vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -98,7 +96,8 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
 </script>
 
 <template>
-  <EntryEditor v-if="singleton" />
+  <!-- Une page unique n'a pas de liste : son formulaire s'affiche directement à /admin/<type>. -->
+  <CmsEntryEditor v-if="singleton" />
   <section v-else-if="def" class="max-w-6xl mx-auto">
     <CmsSiteDelayNotice />
     <div class="flex flex-wrap items-end gap-3 mb-6">

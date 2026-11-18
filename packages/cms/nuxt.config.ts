@@ -22,6 +22,8 @@ export default defineNuxtConfig({
     public: {
       /** Version du core installée dans ce projet. */
       cmsVersion: version,
+      /** Script de Cloudflare Turnstile (module « turnstile »). Ne se change que pour les tests : NUXT_PUBLIC_TURNSTILE_SCRIPT_URL. */
+      turnstileScriptUrl: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
     },
     /** Secret des sessions. En production : variable NUXT_AUTH_SECRET. */
     authSecret: '',
@@ -33,6 +35,10 @@ export default defineNuxtConfig({
     stripeApiUrl: 'https://api.stripe.com',
     /** Expéditeur des e-mails, validé dans Brevo : « Cabinet Durand <contact@cabinet-durand.fr> ». Variable NUXT_EMAIL_FROM. */
     emailFrom: '',
+    /** Adresse de l'API Cloudflare (statistiques du module « analytics »). Ne se change que pour les tests : NUXT_CLOUDFLARE_API_URL. */
+    cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
+    /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */
+    turnstileApiUrl: 'https://challenges.cloudflare.com/turnstile/v0',
   },
 
   nitro: {

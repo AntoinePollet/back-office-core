@@ -1,9 +1,13 @@
-// Faux service HTTP : joue Brevo (/v3/smtp/email) et les adresses appelées par les workflows, et garde la trace des appels.
+// Faux service HTTP : joue Brevo (/v3/smtp/email), Cloudflare (statistiques, Turnstile) et les adresses appelées
+// par les workflows, et garde la trace des appels.
 import http from 'node:http'
+import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudflare.mjs'
 
 /**
  * - POST /v3/smtp/email → 201, comme Brevo
  * - GET /v3/account → le compte Brevo, ou 401 avec la clé « mauvaise-cle »
+ * - POST /client/v4/graphql → statistiques Cloudflare Web Analytics (voir mock-cloudflare.mjs)
+ * - POST /turnstile/v0/siteverify → vérification d'un jeton Turnstile ; GET /turnstile/v0/api.js → faux script Turnstile
  * - /echec → 500
  * - toute autre adresse → 200
  * - GET /_calls → les appels reçus (pour déboguer à la main)
@@ -21,8 +25,18 @@ export async function startMock(port) {
       let body = null
       try { body = JSON.parse(raw || 'null') }
       catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
-      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, version: req.headers['stripe-version'] ?? null, body })
+      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, body })
       if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
+      if (req.url === '/turnstile/v0/api.js') {
+        res.setHeader('content-type', 'text/javascript')
+        return res.end(TURNSTILE_SCRIPT)
+      }
+      if (req.url === '/turnstile/v0/siteverify') return res.end(JSON.stringify(siteverify(body)))
+      if (req.url === '/client/v4/graphql') {
+        const { status, json } = cloudflareGraphql(req.headers.authorization, body)
+        res.statusCode = status
+        return res.end(JSON.stringify(json))
+      }
       if (req.url === '/echec') { res.statusCode = 500; return res.end('{}') }
       // Compte Brevo : sert à vérifier une clé d'API. « mauvaise-cle » est refusée, comme une clé inconnue de Brevo.
       if (req.url === '/v3/account') {

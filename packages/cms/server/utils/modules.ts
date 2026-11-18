@@ -5,6 +5,8 @@ import { decryptSecret, encryptSecret, secretHint } from '../../shared/secrets'
 import { brevoModule } from '../cms-modules/brevo'
 import { formsModule } from '../cms-modules/forms'
 import { stripeModule } from '../cms-modules/stripe'
+import { analyticsModule } from '../cms-modules/analytics'
+import { turnstileModule } from '../cms-modules/turnstile'
 
 /**
  * Modules : ce qu'un module apporte au serveur, et le registre où ils sont inscrits.
@@ -75,18 +77,24 @@ export type CmsModuleDefinition = {
   adminPage?: { to: string; label: string }
   /** Informations à recopier ailleurs (l'adresse d'un webhook…), affichées sous les réglages avec un bouton « Copier ». */
   details?: (event: H3Event) => { label: string; value: string; help?: string }[]
+  /** Refuse des réglages mal saisis à l'enregistrement : un message par réglage refusé (clé du réglage → message). */
+  validate?: (values: ModuleSettings) => Record<string, string>
+  /** Les réglages changent les pages du site (balise, clé publique) : leur enregistrement vide le cache du site. */
+  affectsSite?: boolean
 }
 
-const registry = new Map<string, CmsModuleDefinition>([brevoModule, formsModule, stripeModule].map(m => [m.id, m]))
+/** Construit au premier usage : les modules intégrés utilisent eux-mêmes ce fichier, ils ne sont pas encore chargés à son import. */
+let builtin: Map<string, CmsModuleDefinition> | undefined
+const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, formsModule, analyticsModule, turnstileModule, stripeModule].map(m => [m.id, m])))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {
-  registry.set(definition.id, definition)
+  registry().set(definition.id, definition)
 }
 
 /** Modules actifs sur ce site : déclarés dans cms.config.ts et connus du serveur, dans l'ordre de la configuration. */
 export function activeModules(): CmsModuleDefinition[] {
-  return (cmsConfig.modules ?? []).map(m => registry.get(m.id)).filter((m): m is CmsModuleDefinition => !!m)
+  return (cmsConfig.modules ?? []).map(m => registry().get(m.id)).filter((m): m is CmsModuleDefinition => !!m)
 }
 
 export const activeModule = (id: string) => activeModules().find(m => m.id === id)
@@ -123,7 +131,7 @@ const envValue = (event: H3Event, field: ModuleSettingField) =>
  * Les clés d'API sont déchiffrées : ne jamais renvoyer ce résultat à l'interface.
  */
 export async function moduleSettings(event: H3Event, id: string): Promise<ModuleSettings> {
-  const definition = registry.get(id)
+  const definition = registry().get(id)
   const row = await loadRow(event, id)
   const out: ModuleSettings = {}
   for (const field of definition?.settings ?? []) {
@@ -205,6 +213,8 @@ export async function saveModuleSettings(event: H3Event, definition: CmsModuleDe
       secrets[field.key] = { value: await encryptSecret(siteSecret(event), plain), hint: secretHint(plain) }
     }
   }
+  const invalid = Object.values(definition.validate?.(values) ?? {})
+  if (invalid.length) throw createError({ statusCode: 400, message: invalid.join(' ') })
   const data = { values, secrets, updatedBy: userId, updatedAt: new Date() }
   await useDb(event).insert(schema.moduleSettings).values({ module: definition.id, ...data })
     .onConflictDoUpdate({ target: schema.moduleSettings.module, set: data })

@@ -1,5 +1,5 @@
 import { defineCms, collection, singleton, f } from 'backoffice-core/config'
-import { brevo } from 'backoffice-core/modules'
+import { analytics, brevo } from 'backoffice-core/modules'
 
 // Ce fichier décrit les contenus que le client peut modifier dans le back-office.
 // Chaque `singleton` est une page unique, chaque `collection` une liste de contenus du même type.
@@ -12,8 +12,11 @@ export default defineCms({
   // Pour un formulaire de contact : importer `forms` et ajouter
   //   forms({ contact: { label: 'Contact', fields: { email: f.text({ label: 'E-mail', required: true, format: 'email' }), … } } })
   // puis, dans une page : `const form = useCmsForm('contact')`. Voir le README.
+  // Anti-robots de ces formulaires : importer `turnstile`, ajouter `turnstile()` et placer <CmsTurnstile /> dans le formulaire.
   modules: [
     brevo(),
+    // Mesure d'audience sans cookie (Cloudflare Web Analytics) : écran « Audience » du back-office.
+    analytics(),
   ],
 
   singletons: {
