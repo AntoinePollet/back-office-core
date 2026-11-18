@@ -246,7 +246,11 @@ async function duplicate() {
   duplicating.value = false
 }
 
-onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas enregistrées. Quitter quand même ?'))
+const confirmLeave = () => !dirty.value || confirm('Des modifications ne sont pas enregistrées. Quitter quand même ?')
+onBeforeRouteLeave(confirmLeave)
+// Passer d'un formulaire à un autre (autre contenu, page unique, « Ajouter ») garde le même écran pour le routeur :
+// sans ce second garde-fou, les modifications seraient perdues sans question.
+onBeforeRouteUpdate(confirmLeave)
 function onKey(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!saving.value) save() }
 }
