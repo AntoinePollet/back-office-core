@@ -8,7 +8,8 @@
     "db:generate": "pnpm --filter backoffice-core db:generate",
     "db:migrate": "pnpm --filter playground db:migrate",
     "typecheck": "pnpm --filter playground typecheck",
+    "test:unit": "pnpm --filter backoffice-core test",
     "test:e2e": "node tests/run.mjs",
-    "test": "pnpm typecheck && pnpm test:e2e"
+    "test": "pnpm test:unit && pnpm typecheck && pnpm test:e2e"
   }
 }

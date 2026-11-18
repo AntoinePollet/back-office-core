@@ -54,8 +54,9 @@ export async function resolveRefs(event: H3Event, locale: string, jobs: { fields
   const target = (id: string) => {
     const row = localeById.get(id)
     const entry = entryById.get(id)
-    if (!row || !entry) return null
-    const def = getDef(row.type)
+    // Un contenu dont le type a été retiré de la configuration n'est plus une cible valable.
+    const def = row && findDef(row.type)
+    if (!row || !entry || !def) return null
     const merged = (preview ? { ...entry.sharedDraft, ...row.draft } : { ...entry.sharedPublished, ...row.published }) as Values
     const title = def.kind === 'collection' ? String(merged[def.titleField] ?? '') : def.label
     const href = publicPath(def, locale, row.slug)
