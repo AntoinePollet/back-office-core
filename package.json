@@ -6,6 +6,7 @@
     "dev": "pnpm --filter playground dev",
     "build": "pnpm --filter playground build",
     "db:generate": "pnpm --filter backoffice-core db:generate",
-    "db:migrate": "pnpm --filter playground db:migrate"
+    "db:migrate": "pnpm --filter playground db:migrate",
+    "create-site": "node packages/create-site/bin/create-site.mjs"
   }
 }

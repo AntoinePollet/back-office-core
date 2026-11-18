@@ -1,0 +1,19 @@
+{
+  "name": "create-site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Crée un nouveau site client qui étend backoffice-core, et ses ressources Cloudflare.",
+  "bin": {
+    "create-site": "./bin/create-site.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.9.0"
+  }
+}
