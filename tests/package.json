@@ -1,0 +1,11 @@
+{
+  "name": "backoffice-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "node run.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.18.0"
+  }
+}
