@@ -36,6 +36,7 @@ async function submit() {
         <input v-model="form.password" type="password" class="input w-full" autocomplete="current-password" required>
       </fieldset>
       <button class="btn btn-primary w-full" :disabled="loading">Se connecter</button>
+      <p class="text-center text-sm"><NuxtLink to="/admin/forgot-password" class="link link-hover">Mot de passe oublié ?</NuxtLink></p>
     </form>
   </div>
 </template>

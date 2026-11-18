@@ -39,6 +39,7 @@ async function submit() {
     <div v-if="invalid" class="card bg-base-100 border border-base-300 w-full max-w-sm p-6 space-y-3">
       <h1 class="text-xl font-bold">Lien non valable</h1>
       <p class="text-sm">{{ invalid }}</p>
+      <NuxtLink to="/admin/forgot-password" class="btn btn-primary">Demander un nouveau lien</NuxtLink>
       <NuxtLink to="/admin/login" class="btn">Aller à la connexion</NuxtLink>
     </div>
     <form v-else-if="invite" class="card bg-base-100 border border-base-300 w-full max-w-sm p-6 space-y-4" @submit.prevent="submit">

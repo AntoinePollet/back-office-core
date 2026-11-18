@@ -1,49 +1,42 @@
 import { inArray, lt, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 
-/** Fenêtre de comptage des échecs de connexion. */
-const WINDOW_MS = 15 * 60_000
-/** Échecs tolérés par fenêtre : par adresse e-mail (devinette ciblée) et par adresse IP (balayage de comptes). */
-const MAX_FAILURES = { email: 8, ip: 40 }
+// ───────────── Compteurs génériques (table cms_rate_limits, clé libre) ─────────────
 
-export type LoginKeys = { email: string | null; ip: string }
+/** Un compteur et le nombre d'occurrences qu'il tolère par fenêtre de temps. */
+export type RateLimit = { key: string; max: number }
 
-export function loginKeys(event: H3Event, email: string): LoginKeys {
-  // Sur Cloudflare, l'adresse du visiteur est dans cet en-tête, que le visiteur ne peut pas falsifier.
-  const ip = getRequestHeader(event, 'cf-connecting-ip') ?? getRequestIP(event) ?? 'inconnue'
-  return { email: email ? `login:email:${email}` : null, ip: `login:ip:${ip}` }
-}
+/** Adresse du visiteur. Sur Cloudflare, elle est dans cet en-tête, que le visiteur ne peut pas falsifier. */
+export const clientIp = (event: H3Event) => getRequestHeader(event, 'cf-connecting-ip') ?? getRequestIP(event) ?? 'inconnue'
 
-/** Refuse la tentative (429) si trop d'échecs récents ont été enregistrés pour ce compte ou cette adresse IP. */
-export async function assertLoginAllowed(event: H3Event, keys: LoginKeys) {
-  const wanted = [keys.email, keys.ip].filter((k): k is string => !!k)
-  const rows = await useDb(event).select().from(schema.rateLimits).where(inArray(schema.rateLimits.key, wanted))
+/** Répond 429 si l'un des compteurs a atteint son maximum dans sa fenêtre en cours. Ne compte rien. */
+export async function assertRateLimit(event: H3Event, limits: RateLimit[], message: (minutes: number) => string) {
+  if (!limits.length) return
+  const rows = await useDb(event).select().from(schema.rateLimits).where(inArray(schema.rateLimits.key, limits.map(l => l.key)))
   const now = Date.now()
   for (const row of rows) {
-    const max = row.key === keys.ip ? MAX_FAILURES.ip : MAX_FAILURES.email
+    const max = limits.find(l => l.key === row.key)!.max
     const wait = row.resetAt.getTime() - now
     if (wait > 0 && row.count >= max) {
-      const minutes = Math.ceil(wait / 60_000)
       setResponseHeader(event, 'retry-after', Math.ceil(wait / 1000))
-      throw createError({ statusCode: 429, message: `Trop de tentatives de connexion. Réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''}.` })
+      throw createError({ statusCode: 429, message: message(Math.ceil(wait / 60_000)) })
     }
   }
 }
 
-/** Enregistre un échec. Le compteur repart de 1 quand la fenêtre précédente est terminée. */
-export async function recordLoginFailure(event: H3Event, keys: LoginKeys) {
+/** Ajoute une occurrence à chaque compteur. Un compteur repart de 1 quand sa fenêtre précédente est terminée. */
+export async function hitRateLimit(event: H3Event, keys: string[], windowMs: number) {
   const db = useDb(event)
   const { rateLimits } = schema
   const now = Date.now()
   const expired = sql`${rateLimits.resetAt} <= ${now}`
-  for (const key of [keys.email, keys.ip]) {
-    if (!key) continue
-    // Une seule requête, pour que deux tentatives simultanées soient comptées toutes les deux.
-    await db.insert(rateLimits).values({ key, count: 1, resetAt: new Date(now + WINDOW_MS) }).onConflictDoUpdate({
+  for (const key of keys) {
+    // Une seule requête, pour que deux occurrences simultanées soient comptées toutes les deux.
+    await db.insert(rateLimits).values({ key, count: 1, resetAt: new Date(now + windowMs) }).onConflictDoUpdate({
       target: rateLimits.key,
       set: {
         count: sql`case when ${expired} then 1 else ${rateLimits.count} + 1 end`,
-        resetAt: sql`case when ${expired} then ${now + WINDOW_MS} else ${rateLimits.resetAt} end`,
+        resetAt: sql`case when ${expired} then ${now + windowMs} else ${rateLimits.resetAt} end`,
       },
     })
   }
@@ -51,7 +44,64 @@ export async function recordLoginFailure(event: H3Event, keys: LoginKeys) {
   await db.delete(rateLimits).where(lt(rateLimits.resetAt, new Date(now - 86_400_000)))
 }
 
+export async function clearRateLimit(event: H3Event, keys: string[]) {
+  if (keys.length) await useDb(event).delete(schema.rateLimits).where(inArray(schema.rateLimits.key, keys))
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`
+
+// ───────────── Connexion : on compte les échecs ─────────────
+
+/** Fenêtre de comptage des échecs de connexion. */
+const LOGIN_WINDOW_MS = 15 * 60_000
+/** Échecs tolérés par fenêtre : par adresse e-mail (devinette ciblée) et par adresse IP (balayage de comptes). */
+const MAX_FAILURES = { email: 8, ip: 40 }
+
+export type LoginKeys = { email: string | null; ip: string }
+
+export function loginKeys(event: H3Event, email: string): LoginKeys {
+  return { email: email ? `login:email:${email}` : null, ip: `login:ip:${clientIp(event)}` }
+}
+
+const loginList = (keys: LoginKeys) => [keys.email, keys.ip].filter((k): k is string => !!k)
+
+/** Refuse la tentative (429) si trop d'échecs récents ont été enregistrés pour ce compte ou cette adresse IP. */
+export async function assertLoginAllowed(event: H3Event, keys: LoginKeys) {
+  await assertRateLimit(
+    event,
+    loginList(keys).map(key => ({ key, max: key === keys.ip ? MAX_FAILURES.ip : MAX_FAILURES.email })),
+    minutes => `Trop de tentatives de connexion. Réessayez dans ${plural(minutes, 'minute')}.`,
+  )
+}
+
+/** Enregistre un échec de connexion. */
+export async function recordLoginFailure(event: H3Event, keys: LoginKeys) {
+  await hitRateLimit(event, loginList(keys), LOGIN_WINDOW_MS)
+}
+
 /** Une connexion réussie efface le compteur du compte. Celui de l'adresse IP reste : il protège les autres comptes. */
 export async function clearLoginFailures(event: H3Event, keys: LoginKeys) {
-  if (keys.email) await useDb(event).delete(schema.rateLimits).where(inArray(schema.rateLimits.key, [keys.email]))
+  if (keys.email) await clearRateLimit(event, [keys.email])
+}
+
+// ───────────── Mot de passe oublié : on compte toutes les demandes ─────────────
+
+const RESET_WINDOW_MS = 60 * 60_000
+/**
+ * Demandes acceptées par heure : par adresse e-mail (personne ne peut recevoir plus de 3 e-mails par heure)
+ * et par adresse IP (un même poste ne peut pas solliciter beaucoup d'adresses différentes).
+ */
+const MAX_RESET_REQUESTS = { email: 3, ip: 10 }
+
+/**
+ * Compte une demande de lien et répond 429 au-delà du maximum.
+ * Le compteur porte sur l'adresse saisie, qu'un compte existe ou non : la réponse ne renseigne donc pas sur les comptes.
+ */
+export async function consumePasswordResetRequest(event: H3Event, email: string) {
+  const limits = [
+    { key: `reset:ip:${clientIp(event)}`, max: MAX_RESET_REQUESTS.ip },
+    { key: `reset:email:${email}`, max: MAX_RESET_REQUESTS.email },
+  ]
+  await assertRateLimit(event, limits, minutes => `Trop de demandes. Réessayez dans ${plural(minutes, 'minute')}.`)
+  await hitRateLimit(event, limits.map(l => l.key), RESET_WINDOW_MS)
 }
