@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maquette back-office</title>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+  .editor:empty:before { content: attr(data-placeholder); opacity: .4; }
+  .editor h2 { font-size: 1.25rem; font-weight: 700; margin: .75rem 0 .25rem; }
+  .editor ul { list-style: disc; padding-left: 1.25rem; }
+  .editor p { margin: .25rem 0; }
+  .editor a { text-decoration: underline; }
+  .card.border { border-width: var(--border); }
+</style>
+</head>
+<body class="bg-base-200 min-h-screen">
+<div id="app"></div>
+
+<script type="text/x-template" id="tpl">
+<div class="drawer lg:drawer-open">
+  <input id="nav" type="checkbox" class="drawer-toggle">
+
+  <div class="drawer-content flex flex-col min-h-screen min-w-0">
+    <!-- Barre du haut -->
+    <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-20 gap-2 px-4 min-h-14">
+      <label for="nav" class="btn btn-ghost btn-square btn-sm lg:hidden"><icon n="list"/></label>
+      <button class="input input-sm w-44 sm:w-72 text-base-content/50 cursor-pointer" @click="openPalette">
+        <icon n="search" :s="16"/><span class="grow text-left">Rechercher…</span>
+        <kbd class="kbd kbd-sm hidden sm:inline-flex">⌘K</kbd>
+      </button>
+      <div class="ml-auto flex items-center gap-1">
+        <button class="btn btn-ghost btn-sm" @click="notify('Ouvre le site public dans un nouvel onglet')">
+          <icon n="external" :s="16"/><span class="hidden sm:inline">Voir le site</span>
+        </button>
+        <button class="btn btn-ghost btn-sm btn-square" @click="toggleDark" :title="theme.dark ? 'Mode clair' : 'Mode sombre'">
+          <icon :n="theme.dark ? 'sun' : 'moon'" :s="16"/>
+        </button>
+      </div>
+    </header>
+
+    <main class="p-4 lg:p-8 w-full mx-auto flex-1" :class="view==='edit' && split ? 'max-w-[104rem]' : 'max-w-6xl'">
+
+      <!-- ============ LISTE ============ -->
+      <section v-if="view==='list'">
+        <div class="flex flex-wrap items-end gap-3 mb-6">
+          <div>
+            <h1 class="text-2xl font-bold">Services</h1>
+            <p class="text-sm text-base-content/60">{{ services.length }} éléments · glissez les lignes pour changer l'ordre sur le site</p>
+          </div>
+          <button class="btn btn-primary ml-auto" @click="newDoc"><icon n="plus" :s="16"/>Nouveau service</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <div role="tablist" class="tabs tabs-border tabs-sm">
+            <a v-for="f in filters" :key="f.id" role="tab" class="tab" :class="{'tab-active': filter===f.id}" @click="filter=f.id">
+              {{ f.label }} <span class="ml-1.5 opacity-60">{{ count(f.id) }}</span>
+            </a>
+          </div>
+          <label class="input input-sm ml-auto w-full sm:w-64">
+            <icon n="search" :s="16"/><input type="search" class="grow" placeholder="Filtrer par titre" v-model="search">
+          </label>
+        </div>
+
+        <div class="card bg-base-100 border border-base-300 overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr><th class="w-8"></th><th>Titre</th><th>Catégorie</th><th>Langues</th><th>Statut</th><th class="text-right">Modifié</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(s,i) in filtered" :key="s.id" class="hover:bg-base-200 cursor-pointer"
+                  :class="{'opacity-40': dragId===s.id}"
+                  :draggable="canDrag" @dragstart="dragId=s.id" @dragend="dragId=null" @dragover.prevent="dragOver(s)"
+                  @click="openEdit(s)">
+                <td class="text-base-content/30" :class="canDrag ? 'cursor-grab' : 'opacity-30'"><icon n="grip" :s="16"/></td>
+                <td>
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-9 rounded-field bg-base-300 overflow-hidden shrink-0">
+                      <img v-if="s.img" :src="pic(s.img,120,90)" class="w-full h-full object-cover" alt="">
+                    </div>
+                    <div class="min-w-0">
+                      <div class="font-medium truncate">{{ s.t.fr.title || 'Sans titre' }}</div>
+                      <div class="text-xs text-base-content/50 truncate">/services/{{ s.t.fr.slug }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="text-sm">{{ s.category || '—' }}</td>
+                <td>
+                  <div class="flex gap-1">
+                    <span v-for="l in locales" :key="l" class="badge badge-xs uppercase"
+                          :class="s.t[l].title ? 'badge-neutral' : 'badge-outline opacity-40'"
+                          :title="s.t[l].title ? 'Traduit' : 'Pas encore traduit'">{{ l }}</span>
+                  </div>
+                </td>
+                <td><span class="badge badge-sm badge-soft" :class="statusMeta[s.status].cls">{{ statusMeta[s.status].label }}</span></td>
+                <td class="text-right text-sm text-base-content/60 whitespace-nowrap">{{ s.updated }}</td>
+              </tr>
+              <tr v-if="!filtered.length">
+                <td colspan="6" class="text-center py-12 text-base-content/50">Aucun service ne correspond à ce filtre.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ FORMULAIRE ============ -->
+      <section v-if="view==='edit' && doc">
+        <div class="sticky top-14 z-10 -mx-4 lg:-mx-8 px-4 lg:px-8 py-3 bg-base-200/90 backdrop-blur flex flex-wrap items-center gap-3 mb-4">
+          <button class="btn btn-ghost btn-sm btn-square" @click="back" title="Retour à la liste"><icon n="chevron" :s="18"/></button>
+          <div class="min-w-0">
+            <div class="text-xs text-base-content/50">Services</div>
+            <h1 class="text-lg font-bold truncate">{{ doc.t.fr.title || 'Nouveau service' }}</h1>
+          </div>
+          <span class="badge badge-sm badge-soft" :class="statusMeta[doc.status].cls">{{ statusMeta[doc.status].label }}</span>
+          <div class="ml-auto flex items-center gap-2">
+            <span class="text-xs text-base-content/60 flex items-center gap-1.5">
+              <span class="status" :class="dirty ? 'status-warning' : 'status-success'"></span>
+              {{ dirty ? 'Modifications non enregistrées' : 'Enregistré' }}
+            </span>
+            <button class="btn btn-sm" :disabled="!dirty" @click="save(false)">Enregistrer le brouillon</button>
+            <button class="btn btn-sm btn-primary" @click="save(true)">Publier</button>
+          </div>
+        </div>
+
+        <div class="grid gap-6 items-start" :class="split ? '' : 'lg:grid-cols-[1fr_18rem]'">
+          <div class="card bg-base-100 border border-base-300 min-w-0">
+            <div class="flex flex-wrap items-center gap-3 px-5 pt-4">
+              <div role="tablist" class="tabs tabs-border">
+                <a role="tab" class="tab" :class="{'tab-active': tab==='content'}" @click="tab='content'">Contenu</a>
+                <a role="tab" class="tab" :class="{'tab-active': tab==='seo'}" @click="tab='seo'">Référencement</a>
+              </div>
+              <div class="ml-auto flex items-center gap-4">
+                <div v-if="!split" role="tablist" class="tabs tabs-box tabs-xs">
+                  <a v-for="l in locales" :key="l" role="tab" class="tab uppercase" :class="{'tab-active': locale===l}" @click="pickLocale(l)">
+                    {{ l }}<span v-if="!doc.t[l].title" class="status status-warning ml-1.5"></span>
+                  </a>
+                </div>
+                <label class="flex items-center gap-2 text-xs cursor-pointer" title="Afficher deux langues en même temps">
+                  <input type="checkbox" class="toggle toggle-xs" :checked="split" @change="toggleSplit">Côte à côte
+                </label>
+              </div>
+            </div>
+
+            <div class="grid" :class="split ? 'lg:grid-cols-2' : ''">
+              <loc-pane :key="doc.id+'-a'" :doc="doc" :loc="locale" :other="locB" :tab="tab" :split="split" :locales="locales" :names="localeNames"
+                        @loc="locale=$event" @notify="notify"/>
+              <loc-pane v-if="split" :key="doc.id+'-b'" class="border-t lg:border-t-0 lg:border-l border-base-300"
+                        :doc="doc" :loc="locB" :other="locale" :tab="tab" :split="split" :locales="locales" :names="localeNames"
+                        @loc="locB=$event" @notify="notify"/>
+            </div>
+
+            <div class="border-t border-base-300 p-5 space-y-4">
+              <div>
+                <div class="text-sm font-semibold">Commun à toutes les langues</div>
+                <div class="text-xs text-base-content/60">Ces réglages s'appliquent à la page dans chaque langue.</div>
+              </div>
+              <div v-show="tab==='content'" class="grid sm:grid-cols-2 gap-5 max-w-3xl">
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Image</legend>
+                  <div v-if="doc.img" class="relative group rounded-box overflow-hidden border border-base-300">
+                    <img :src="pic(doc.img,600,340)" class="w-full h-40 object-cover" alt="">
+                    <div class="absolute inset-0 bg-neutral/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-2">
+                      <button class="btn btn-sm" @click="picker=true">Remplacer</button>
+                      <button class="btn btn-sm btn-error" @click="doc.img=null">Retirer</button>
+                    </div>
+                  </div>
+                  <button v-else class="h-40 rounded-box border-2 border-dashed border-base-300 hover:border-primary hover:text-primary flex flex-col items-center justify-center gap-2 text-base-content/50 cursor-pointer" @click="picker=true">
+                    <icon n="image" :s="24"/><span class="text-sm">Choisir une image</span>
+                  </button>
+                </fieldset>
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">Catégorie</legend>
+                  <select class="select w-full" v-model="doc.category">
+                    <option value="">Aucune</option>
+                    <option v-for="c in categories" :key="c">{{ c }}</option>
+                  </select>
+                </fieldset>
+              </div>
+              <label v-show="tab==='seo'" class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" class="toggle toggle-sm" v-model="doc.noindex">
+                <span class="text-sm">Masquer cette page des moteurs de recherche</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Colonne latérale -->
+          <aside :class="split ? 'grid sm:grid-cols-2 gap-4' : 'space-y-4 lg:sticky lg:top-32'">
+            <div class="card bg-base-100 border border-base-300 p-4 text-sm space-y-3">
+              <div class="font-semibold">Publication</div>
+              <div class="flex justify-between"><span class="text-base-content/60">Statut</span><span>{{ statusMeta[doc.status].label }}</span></div>
+              <div class="flex justify-between"><span class="text-base-content/60">Modifié</span><span>{{ doc.updated || '—' }}</span></div>
+              <div class="flex justify-between"><span class="text-base-content/60">Par</span><span>Claire Durand</span></div>
+              <button class="btn btn-sm btn-block" @click="notify('Ouvre la page en mode aperçu, avec le brouillon')"><icon n="external" :s="14"/>Aperçu du brouillon</button>
+              <button v-if="doc.status!=='draft'" class="btn btn-sm btn-ghost btn-block" @click="unpublish">Dépublier</button>
+            </div>
+            <div class="card bg-base-100 border border-base-300 p-4 text-sm space-y-2">
+              <div class="font-semibold">Traductions</div>
+              <div v-for="l in locales" :key="l" class="flex items-center justify-between">
+                <span>{{ localeNames[l] }}</span>
+                <span class="badge badge-xs badge-soft" :class="doc.t[l].title ? 'badge-success' : 'badge-warning'">{{ doc.t[l].title ? 'Traduit' : 'À traduire' }}</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ MÉDIATHÈQUE ============ -->
+      <section v-if="view==='media'">
+        <div class="flex flex-wrap items-end gap-3 mb-6">
+          <div>
+            <h1 class="text-2xl font-bold">Médiathèque</h1>
+            <p class="text-sm text-base-content/60">{{ media.length }} fichiers · 48 Mo utilisés</p>
+          </div>
+          <button class="btn btn-primary ml-auto" @click="fakeUpload"><icon n="upload" :s="16"/>Importer</button>
+        </div>
+
+        <div class="grid lg:grid-cols-[1fr_20rem] gap-6 items-start">
+          <div>
+            <div class="rounded-box border-2 border-dashed p-6 mb-4 text-center text-sm transition"
+                 :class="dropping ? 'border-primary bg-primary/5 text-primary' : 'border-base-300 text-base-content/50'"
+                 @dragover.prevent="dropping=true" @dragleave="dropping=false" @drop.prevent="dropping=false; fakeUpload()">
+              Déposez vos images ici. Elles sont redimensionnées et optimisées automatiquement.
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              <button v-for="m in media" :key="m.id" class="group relative aspect-[4/3] rounded-box overflow-hidden bg-base-300 cursor-pointer ring-offset-2 ring-offset-base-200"
+                      :class="{'ring-2 ring-primary': selMedia && selMedia.id===m.id}" @click="selMedia=m">
+                <img :src="pic(m.seed,400,300)" class="w-full h-full object-cover" :alt="m.alt.fr">
+                <span v-if="!m.alt.fr" class="absolute top-1.5 left-1.5 badge badge-xs badge-warning" title="Texte alternatif manquant">alt</span>
+                <span class="absolute inset-x-0 bottom-0 p-1.5 text-xs text-left text-white bg-gradient-to-t from-black/70 to-transparent truncate opacity-0 group-hover:opacity-100 transition">{{ m.name }}</span>
+              </button>
+            </div>
+          </div>
+
+          <aside class="card bg-base-100 border border-base-300 p-4 text-sm lg:sticky lg:top-20">
+            <div v-if="!selMedia" class="text-base-content/50 py-10 text-center">Sélectionnez une image pour voir ses détails.</div>
+            <div v-else class="space-y-3">
+              <img :src="pic(selMedia.seed,600,450)" class="rounded-field w-full" alt="">
+              <div class="font-semibold break-all">{{ selMedia.name }}</div>
+              <div class="text-base-content/60">{{ selMedia.w }} × {{ selMedia.h }} px · {{ selMedia.size }}</div>
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">Texte alternatif ({{ locale.toUpperCase() }})</legend>
+                <textarea class="textarea textarea-sm w-full" v-model="selMedia.alt[locale]" placeholder="Décrivez l'image pour les lecteurs d'écran et Google"></textarea>
+              </fieldset>
+              <div>
+                <div class="text-base-content/60 mb-1">Utilisée dans</div>
+                <div v-if="selMedia.used.length" class="flex flex-wrap gap-1"><span v-for="u in selMedia.used" :key="u" class="badge badge-sm badge-ghost">{{ u }}</span></div>
+                <div v-else class="text-base-content/50">Aucune page. Peut être supprimée sans risque.</div>
+              </div>
+              <div class="flex gap-2 pt-1">
+                <button class="btn btn-sm grow" @click="notify('Adresse du fichier copiée')">Copier l'adresse</button>
+                <button class="btn btn-sm btn-error btn-soft" @click="removeMedia"><icon n="trash" :s="14"/></button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ APPARENCE ============ -->
+      <section v-if="view==='theme'">
+        <div class="mb-6">
+          <h1 class="text-2xl font-bold">Apparence</h1>
+          <p class="text-sm text-base-content/60">Les réglages s'appliquent en direct. Ici ils modifient aussi le back-office, pour montrer le mécanisme.</p>
+        </div>
+        <div class="grid lg:grid-cols-[20rem_1fr] gap-6 items-start">
+          <div class="card bg-base-100 border border-base-300 p-5 space-y-5">
+            <fieldset class="fieldset" v-for="c in colorFields" :key="c.key">
+              <legend class="fieldset-legend">{{ c.label }}</legend>
+              <div class="flex items-center gap-2">
+                <input type="color" class="w-10 h-10 rounded-field cursor-pointer border border-base-300" v-model="theme[c.key]" @input="applyTheme">
+                <input class="input input-sm w-28 font-mono" v-model="theme[c.key]" @change="applyTheme">
+                <div class="flex gap-1 ml-auto">
+                  <button v-for="p in c.presets" :key="p" class="w-5 h-5 rounded-full border border-base-300 cursor-pointer" :style="{background:p}" @click="theme[c.key]=p; applyTheme()" :title="p"></button>
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Arrondi des angles</legend>
+              <input type="range" class="range range-sm range-primary" min="0" max="1.5" step="0.125" v-model.number="theme.radius" @input="applyTheme">
+              <p class="label flex justify-between"><span>Carré</span><span>Très arrondi</span></p>
+            </fieldset>
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Épaisseur des bordures</legend>
+              <input type="range" class="range range-sm range-primary" min="0.5" max="2" step="0.5" v-model.number="theme.border" @input="applyTheme">
+              <p class="label flex justify-between"><span>Fine</span><span>{{ theme.border }} px</span><span>Épaisse</span></p>
+            </fieldset>
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-sm">Relief sur les boutons et les champs</span>
+              <input type="checkbox" class="toggle toggle-sm" v-model="theme.depth" @change="applyTheme">
+            </label>
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-sm">Texture légère (grain)</span>
+              <input type="checkbox" class="toggle toggle-sm" v-model="theme.noise" @change="applyTheme">
+            </label>
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-sm">Mode sombre</span>
+              <input type="checkbox" class="toggle toggle-sm" :checked="theme.dark" @change="toggleDark">
+            </label>
+            <div class="flex gap-2">
+              <button class="btn btn-primary btn-sm grow" @click="notify('Thème publié sur le site')">Publier le thème</button>
+              <button class="btn btn-sm" @click="resetTheme">Réinitialiser</button>
+            </div>
+          </div>
+
+          <div class="card bg-base-100 border border-base-300 overflow-hidden">
+            <div class="px-4 py-2 text-xs text-base-content/50 border-b border-base-300">Aperçu du site</div>
+            <div class="p-8 space-y-6">
+              <div class="flex items-center gap-4 text-sm">
+                <span class="font-bold text-lg">Cabinet Durand</span>
+                <span class="ml-auto">Services</span><span>Équipe</span>
+                <button class="btn btn-primary btn-sm">Prendre rendez-vous</button>
+              </div>
+              <div class="py-6">
+                <span class="badge badge-accent badge-soft mb-3">Avocats à Lyon</span>
+                <h2 class="text-3xl font-bold mb-2">Un conseil clair, des décisions sereines</h2>
+                <p class="text-base-content/70 mb-4 max-w-md">Nous accompagnons les entreprises et les particuliers depuis 1998.</p>
+                <div class="flex flex-wrap gap-2"><button class="btn btn-primary">Nous contacter</button><button class="btn btn-outline">Nos services</button><input class="input w-56" placeholder="Votre adresse e-mail"><button class="btn">Recevoir la lettre</button></div>
+              </div>
+              <div class="grid sm:grid-cols-3 gap-3">
+                <div v-for="s in services.slice(0,3)" :key="s.id" class="card bg-base-200 p-4">
+                  <div class="font-semibold">{{ s.t.fr.title }}</div>
+                  <a class="link link-primary text-sm mt-1">En savoir plus</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============ MENU LATÉRAL ============ -->
+  <div class="drawer-side z-30">
+    <label for="nav" class="drawer-overlay"></label>
+    <aside class="w-64 min-h-full bg-base-100 border-r border-base-300 flex flex-col">
+      <div class="h-14 px-4 flex items-center gap-3 border-b border-base-300">
+        <div class="w-8 h-8 rounded-field bg-primary text-primary-content grid place-items-center font-bold">D</div>
+        <div class="min-w-0"><div class="font-semibold text-sm truncate">Cabinet Durand</div><div class="text-xs text-base-content/50 truncate">cabinet-durand.fr</div></div>
+      </div>
+      <ul class="menu w-full grow gap-0.5">
+        <li class="menu-title">Pages</li>
+        <li><a @click="soon('Accueil')"><icon n="home" :s="16"/>Accueil</a></li>
+        <li><a @click="soon('Contact')"><icon n="file" :s="16"/>Contact</a></li>
+        <li class="menu-title mt-2">Collections</li>
+        <li><a :class="{'menu-active': view==='list'||view==='edit'}" @click="go('list')"><icon n="list" :s="16"/>Services<span class="badge badge-xs badge-ghost">{{ services.length }}</span></a></li>
+        <li><a @click="soon('Articles')"><icon n="file" :s="16"/>Articles<span class="badge badge-xs badge-ghost">12</span></a></li>
+        <li><a @click="soon('Équipe')"><icon n="users" :s="16"/>Équipe<span class="badge badge-xs badge-ghost">5</span></a></li>
+        <li class="menu-title mt-2">Site</li>
+        <li><a :class="{'menu-active': view==='media'}" @click="go('media')"><icon n="image" :s="16"/>Médiathèque</a></li>
+        <li><a :class="{'menu-active': view==='theme'}" @click="go('theme')"><icon n="drop" :s="16"/>Apparence</a></li>
+        <li><a @click="soon('Réglages')"><icon n="sliders" :s="16"/>Réglages</a></li>
+      </ul>
+      <div class="p-3 border-t border-base-300 flex items-center gap-3">
+        <div class="avatar avatar-placeholder"><div class="bg-neutral text-neutral-content w-8 rounded-full"><span class="text-xs">CD</span></div></div>
+        <div class="text-sm min-w-0"><div class="font-medium truncate">Claire Durand</div><div class="text-xs text-base-content/50">Éditrice</div></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ CHOIX D'IMAGE ============ -->
+  <div class="modal" :class="{'modal-open': picker}">
+    <div class="modal-box max-w-3xl">
+      <h3 class="font-bold text-lg mb-4">Choisir une image</h3>
+      <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 max-h-96 overflow-y-auto p-1">
+        <button v-for="m in media" :key="m.id" class="aspect-[4/3] rounded-box overflow-hidden bg-base-300 cursor-pointer hover:ring-2 ring-primary" @click="doc.img=m.seed; picker=false">
+          <img :src="pic(m.seed,300,225)" class="w-full h-full object-cover" :alt="m.alt.fr">
+        </button>
+      </div>
+      <div class="modal-action"><button class="btn" @click="picker=false">Annuler</button></div>
+    </div>
+    <div class="modal-backdrop" @click="picker=false"></div>
+  </div>
+
+  <!-- ============ PALETTE DE COMMANDES ============ -->
+  <div class="modal modal-top sm:modal-middle" :class="{'modal-open': palette}">
+    <div class="modal-box p-0 max-w-xl">
+      <label class="input input-ghost w-full h-14 border-0 border-b border-base-300 rounded-none focus-within:outline-none">
+        <icon n="search"/><input ref="paletteInput" class="grow" placeholder="Aller à une page, un contenu, une action…" v-model="q" @keydown.enter="runFirst" @keydown.esc="palette=false">
+      </label>
+      <ul class="menu w-full max-h-80 overflow-y-auto flex-nowrap">
+        <li v-for="(a,i) in paletteItems" :key="a.label">
+          <a :class="{'menu-active': i===0}" @click="run(a)"><icon :n="a.icon" :s="16"/>{{ a.label }}<span class="text-xs opacity-50 ml-auto">{{ a.hint }}</span></a>
+        </li>
+        <li v-if="!paletteItems.length" class="p-4 text-center text-base-content/50">Aucun résultat</li>
+      </ul>
+    </div>
+    <div class="modal-backdrop" @click="palette=false"></div>
+  </div>
+
+  <!-- ============ NOTIFICATIONS ============ -->
+  <div class="toast toast-end z-50">
+    <div v-for="t in toasts" :key="t.id" class="alert shadow-lg text-sm py-2"><icon n="check" :s="16"/>{{ t.msg }}</div>
+  </div>
+</div>
+</script>
+
+<script type="text/x-template" id="pane">
+<div class="p-5 space-y-5 min-w-0">
+  <div v-if="split" class="flex items-center gap-2">
+    <select class="select select-sm w-40" :value="loc" @change="$emit('loc', $event.target.value)">
+      <option v-for="l in locales.filter(x => x !== other)" :key="l" :value="l">{{ names[l] }}</option>
+    </select>
+    <span class="badge badge-xs badge-soft" :class="F.title ? 'badge-success' : 'badge-warning'">{{ F.title ? 'Traduit' : 'À traduire' }}</span>
+  </div>
+
+  <div v-if="loc!=='fr' && !F.title && !F.body" class="alert alert-soft alert-warning">
+    <icon n="globe"/>
+    <span>Pas encore traduite en {{ names[loc].toLowerCase() }} : la page n'apparaît pas sur le site dans cette langue.</span>
+    <button class="btn btn-sm" @click="copyFromDefault">Copier depuis le français</button>
+  </div>
+
+  <div v-show="tab==='content'" class="space-y-5">
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Titre</legend>
+      <input class="input input-lg w-full font-semibold" v-model="F.title" @input="onTitle" placeholder="Nom du service">
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Adresse de la page</legend>
+      <div class="flex gap-2">
+        <label class="input w-full">
+          <span class="text-base-content/40">{{ loc==='fr' ? '' : '/'+loc }}/services/</span>
+          <input class="grow" v-model="F.slug" :readonly="slugAuto" :class="{'text-base-content/60': slugAuto}">
+        </label>
+        <button class="btn" @click="slugAuto=!slugAuto">{{ slugAuto ? 'Modifier' : 'Automatique' }}</button>
+      </div>
+      <p class="label" v-if="slugAuto">Générée à partir du titre.</p>
+      <p class="label" v-else>Changer l'adresse d'une page publiée crée une redirection automatique.</p>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Résumé</legend>
+      <textarea class="textarea w-full h-20" v-model="F.excerpt" placeholder="Une ou deux phrases affichées dans les listes"></textarea>
+      <p class="label flex justify-between gap-2"><span>Affiché dans la liste des services.</span>
+        <span :class="{'text-error': F.excerpt.length>160}">{{ F.excerpt.length }} / 160</span></p>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Contenu</legend>
+      <div class="border border-base-300 rounded-field overflow-hidden focus-within:border-primary">
+        <div class="flex flex-wrap gap-0.5 p-1 border-b border-base-300 bg-base-200">
+          <button class="btn btn-ghost btn-xs font-bold" @mousedown.prevent="cmd('bold')">G</button>
+          <button class="btn btn-ghost btn-xs italic" @mousedown.prevent="cmd('italic')">I</button>
+          <button class="btn btn-ghost btn-xs" @mousedown.prevent="cmd('formatBlock','h2')">Titre</button>
+          <button class="btn btn-ghost btn-xs" @mousedown.prevent="cmd('formatBlock','p')">Texte</button>
+          <button class="btn btn-ghost btn-xs" @mousedown.prevent="cmd('insertUnorderedList')">Liste</button>
+          <button class="btn btn-ghost btn-xs" @mousedown.prevent="addLink">Lien</button>
+        </div>
+        <div ref="editor" class="editor p-4 min-h-40 outline-none text-sm leading-relaxed" contenteditable
+             data-placeholder="Décrivez le service…" @input="F.body=$event.target.innerHTML"></div>
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Questions fréquentes</legend>
+      <div class="space-y-2">
+        <div v-for="(q,i) in F.faq" :key="i" class="border border-base-300 rounded-field">
+          <div class="flex items-center gap-2 px-3 py-2 cursor-pointer" @click="openFaq = openFaq===i ? -1 : i">
+            <span class="text-xs text-base-content/40 w-4">{{ i+1 }}</span>
+            <span class="grow text-sm font-medium truncate">{{ q.question || 'Nouvelle question' }}</span>
+            <button class="btn btn-ghost btn-xs" :disabled="i===0" @click.stop="moveFaq(i,-1)" title="Monter">↑</button>
+            <button class="btn btn-ghost btn-xs" :disabled="i===F.faq.length-1" @click.stop="moveFaq(i,1)" title="Descendre">↓</button>
+            <button class="btn btn-ghost btn-xs text-error" @click.stop="F.faq.splice(i,1)" title="Supprimer"><icon n="trash" :s="14"/></button>
+          </div>
+          <div v-if="openFaq===i" class="p-3 pt-0 space-y-2">
+            <input class="input input-sm w-full" v-model="q.question" placeholder="Question">
+            <textarea class="textarea textarea-sm w-full" v-model="q.answer" placeholder="Réponse"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" @click="F.faq.push({question:'',answer:''}); openFaq=F.faq.length-1"><icon n="plus" :s="14"/>Ajouter une question</button>
+      </div>
+    </fieldset>
+  </div>
+
+  <div v-show="tab==='seo'" class="space-y-5">
+    <div class="rounded-box border border-base-300 p-4 bg-base-200/50">
+      <div class="text-xs text-base-content/50 mb-2">Aperçu dans Google</div>
+      <div class="text-xs text-base-content/70 truncate">cabinet-durand.fr › {{ loc==='fr' ? '' : loc+' › ' }}services › {{ F.slug || '…' }}</div>
+      <div class="text-lg text-info leading-snug truncate">{{ seoTitle }}</div>
+      <div class="text-sm text-base-content/70 line-clamp-2">{{ F.metaDesc || F.excerpt || 'Ajoutez une description pour contrôler ce texte.' }}</div>
+    </div>
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Titre pour les moteurs de recherche</legend>
+      <input class="input w-full" v-model="F.metaTitle" :placeholder="F.title + ' — Cabinet Durand'">
+      <p class="label flex justify-between gap-2"><span>Laissé vide, le titre de la page est utilisé.</span>
+        <span :class="{'text-error': seoTitle.length>60}">{{ seoTitle.length }} / 60</span></p>
+    </fieldset>
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Description</legend>
+      <textarea class="textarea w-full h-24" v-model="F.metaDesc" :placeholder="F.excerpt"></textarea>
+      <p class="label flex justify-between gap-2"><span>Laissée vide, le résumé est utilisé.</span>
+        <span :class="{'text-error': F.metaDesc.length>160}">{{ F.metaDesc.length }} / 160</span></p>
+    </fieldset>
+  </div>
+</div>
+</script>
+
+<script>
+const { createApp, ref, reactive, computed, watch, nextTick, onMounted, h } = Vue;
+
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  file: '<path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  sliders: '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="15" cy="6" r="2" fill="currentColor"/><circle cx="9" cy="12" r="2" fill="currentColor"/><circle cx="17" cy="18" r="2" fill="currentColor"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  grip: '<circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/>',
+  chevron: '<path d="m15 18-6-6 6-6"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  users: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+};
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const slugify = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const blank = () => ({ title: '', slug: '', excerpt: '', body: '', metaTitle: '', metaDesc: '', faq: [] });
+const tr = (title, excerpt, body, faq = []) => ({ ...blank(), title, slug: slugify(title), excerpt, body, faq });
+
+const app = createApp({
+  template: '#tpl',
+  setup() {
+    const locales = ['fr', 'en', 'es'];
+    const localeNames = { fr: 'Français', en: 'Anglais', es: 'Espagnol' };
+    const categories = ['Entreprises', 'Particuliers', 'Contentieux'];
+    const statusMeta = {
+      published: { label: 'Publié', cls: 'badge-success' },
+      changed: { label: 'Modifications en attente', cls: 'badge-warning' },
+      draft: { label: 'Brouillon', cls: 'badge-neutral' },
+    };
+
+    const services = ref([
+      { id: 1, img: 'office', category: 'Entreprises', status: 'published', updated: 'il y a 2 h', noindex: false, t: {
+        fr: tr('Droit des affaires', 'Création, cession et accompagnement quotidien de votre société.', '<p>Nous accompagnons les dirigeants à chaque étape de la vie de leur entreprise.</p><h2>Notre approche</h2><ul><li>Un interlocuteur unique</li><li>Des honoraires annoncés à l\'avance</li></ul>', [{ question: 'Combien coûte une création de société ?', answer: 'À partir de 1 200 € HT, formalités comprises.' }, { question: 'Quels sont les délais ?', answer: 'Deux à trois semaines en moyenne.' }]),
+        en: tr('Business law', 'Company formation, transfers and day-to-day support.', '<p>We support business owners at every stage.</p>') } },
+      { id: 2, img: 'desk', category: 'Particuliers', status: 'changed', updated: 'hier', noindex: false, t: {
+        fr: tr('Droit de la famille', 'Divorce, succession, protection des proches.', '<p>Des situations délicates, traitées avec discrétion.</p>'), en: blank() } },
+      { id: 3, img: 'city', category: 'Entreprises', status: 'published', updated: 'il y a 3 jours', noindex: false, t: {
+        fr: tr('Droit du travail', 'Contrats, ruptures et relations avec les représentants du personnel.', '<p>Pour les employeurs comme pour les salariés.</p>'),
+        en: tr('Employment law', 'Contracts, terminations and staff representation.', '<p>For employers and employees alike.</p>') } },
+      { id: 4, img: 'keys', category: 'Particuliers', status: 'draft', updated: 'il y a 1 semaine', noindex: false, t: {
+        fr: tr('Droit immobilier', 'Achat, bail et copropriété.', ''), en: blank() } },
+      { id: 5, img: 'court', category: 'Contentieux', status: 'published', updated: '12 oct.', noindex: false, t: {
+        fr: tr('Contentieux commercial', 'Défense de vos intérêts devant les tribunaux.', '<p>Négociation d\'abord, procédure si nécessaire.</p>'), en: blank() } },
+    ]);
+
+    services.value.forEach(s => { s.t.es = blank(); });
+
+    const media = ref([
+      ['office', 'bureau-accueil.jpg', 'Accueil du cabinet', ['Droit des affaires', 'Accueil']],
+      ['desk', 'rendez-vous.jpg', 'Rendez-vous avec une cliente', ['Droit de la famille']],
+      ['city', 'lyon-part-dieu.jpg', 'Quartier de la Part-Dieu à Lyon', ['Droit du travail']],
+      ['keys', 'cles-appartement.jpg', '', ['Droit immobilier']],
+      ['court', 'palais-de-justice.jpg', 'Palais de justice de Lyon', ['Contentieux commercial']],
+      ['team', 'equipe-2026.jpg', 'L\'équipe du cabinet', ['Équipe']],
+      ['books', 'bibliotheque.jpg', '', []],
+      ['handshake', 'signature.jpg', 'Signature d\'un contrat', ['Accueil']],
+      ['plant', 'salle-attente.jpg', '', []],
+      ['window', 'facade.jpg', 'Façade du cabinet', ['Contact']],
+    ].map(([seed, name, alt, used], i) => ({ id: i + 1, seed, name, alt: { fr: alt, en: '', es: '' }, used, w: 2400, h: 1800, size: (1.2 + i * 0.3).toFixed(1) + ' Mo' })));
+
+    const pic = (seed, w, hh) => `https://picsum.photos/seed/${seed}/${w}/${hh}`;
+
+    // Navigation
+    const view = ref('list');
+    const locale = ref('fr');
+    const toasts = ref([]);
+    const notify = (msg) => { const id = Date.now() + Math.random(); toasts.value.push({ id, msg }); setTimeout(() => toasts.value = toasts.value.filter(t => t.id !== id), 2600); };
+    const soon = (name) => notify(`« ${name} » n'est pas inclus dans la maquette`);
+    const closeNav = () => { const n = document.getElementById('nav'); if (n) n.checked = false; };
+    const leaveOk = () => view.value !== 'edit' || !dirty.value || confirm('Des modifications ne sont pas enregistrées. Quitter quand même ?');
+    const go = (v) => { if (!leaveOk()) return; view.value = v; closeNav(); };
+
+    // Liste
+    const filter = ref('all');
+    const search = ref('');
+    const filters = [{ id: 'all', label: 'Tous' }, { id: 'published', label: 'Publiés' }, { id: 'draft', label: 'Brouillons' }];
+    const match = (s, f) => f === 'all' || (f === 'published' ? s.status !== 'draft' : s.status === 'draft');
+    const count = (f) => services.value.filter(s => match(s, f)).length;
+    const filtered = computed(() => services.value.filter(s => match(s, filter.value) && s.t.fr.title.toLowerCase().includes(search.value.toLowerCase())));
+    const canDrag = computed(() => filter.value === 'all' && !search.value);
+    const dragId = ref(null);
+    const dragOver = (target) => {
+      if (dragId.value == null || dragId.value === target.id) return;
+      const arr = services.value, from = arr.findIndex(s => s.id === dragId.value), to = arr.findIndex(s => s.id === target.id);
+      arr.splice(to, 0, arr.splice(from, 1)[0]);
+    };
+
+    // Formulaire
+    const doc = ref(null);
+    const dirty = ref(false);
+    const tab = ref('content');
+    const picker = ref(false);
+    const split = ref(false);
+    const locB = ref('en');
+    const otherThan = (l) => locales.find(x => x !== l);
+    const toggleSplit = () => { split.value = !split.value; if (locB.value === locale.value) locB.value = otherThan(locale.value); };
+    const pickLocale = (l) => { locale.value = l; if (locB.value === l) locB.value = otherThan(l); };
+    const openEdit = (s) => { doc.value = clone(s); view.value = 'edit'; tab.value = 'content'; nextTick(() => nextTick(() => dirty.value = false)); };
+    const newDoc = () => openEdit({ id: Date.now(), img: null, category: '', status: 'draft', updated: '', noindex: false, isNew: true, t: Object.fromEntries(locales.map(l => [l, blank()])) });
+    watch(doc, () => { dirty.value = true; }, { deep: true });
+    const save = (publish) => {
+      if (!doc.value.t.fr.title) { notify('Ajoutez un titre en français avant d\'enregistrer'); return; }
+      doc.value.status = publish ? 'published' : (doc.value.status === 'draft' ? 'draft' : 'changed');
+      doc.value.updated = 'à l\'instant';
+      delete doc.value.isNew;
+      const d = clone(doc.value), i = services.value.findIndex(s => s.id === d.id);
+      if (i >= 0) services.value[i] = d; else services.value.unshift(d);
+      nextTick(() => dirty.value = false);
+      notify(publish ? 'Publié. Le site est à jour.' : 'Brouillon enregistré');
+    };
+    const unpublish = () => { doc.value.status = 'draft'; const i = services.value.findIndex(s => s.id === doc.value.id); if (i >= 0) services.value[i].status = 'draft'; nextTick(() => dirty.value = false); notify('Page retirée du site'); };
+    const back = () => go('list');
+
+    // Médiathèque
+    const selMedia = ref(null);
+    const dropping = ref(false);
+    const fakeUpload = () => { const id = Date.now(); media.value.unshift({ id, seed: 'new' + id, name: 'nouvelle-image.jpg', alt: { fr: '', en: '', es: '' }, used: [], w: 3000, h: 2000, size: '2.4 Mo' }); selMedia.value = media.value[0]; notify('Image importée. Pensez au texte alternatif.'); };
+    const removeMedia = () => {
+      if (selMedia.value.used.length && !confirm(`Cette image est utilisée dans ${selMedia.value.used.length} page(s). Supprimer quand même ?`)) return;
+      media.value = media.value.filter(m => m.id !== selMedia.value.id); selMedia.value = null; notify('Image supprimée');
+    };
+
+    // Thème
+    const defaults = { primary: '#4f46e5', accent: '#0d9488', radius: 0.5, border: 1, depth: true, noise: false };
+    const theme = reactive({ ...defaults, dark: false });
+    const colorFields = [
+      { key: 'primary', label: 'Couleur principale', presets: ['#4f46e5', '#0f766e', '#b91c1c', '#c2410c', '#1e293b'] },
+      { key: 'accent', label: 'Couleur d\'accent', presets: ['#0d9488', '#d97706', '#db2777', '#7c3aed', '#0284c7'] },
+    ];
+    const contrast = (hex) => { const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255; return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#111827' : '#ffffff'; };
+    const applyTheme = () => {
+      const st = document.documentElement.style;
+      for (const k of ['primary', 'accent']) {
+        if (!/^#[0-9a-f]{6}$/i.test(theme[k])) continue;
+        st.setProperty(`--color-${k}`, theme[k]); st.setProperty(`--color-${k}-content`, contrast(theme[k]));
+      }
+      st.setProperty('--radius-field', theme.radius + 'rem');
+      st.setProperty('--radius-selector', theme.radius + 'rem');
+      st.setProperty('--radius-box', theme.radius * 1.5 + 'rem');
+      st.setProperty('--border', theme.border + 'px');
+      st.setProperty('--depth', theme.depth ? 1 : 0);
+      st.setProperty('--noise', theme.noise ? 1 : 0);
+    };
+    const resetTheme = () => { Object.assign(theme, defaults); applyTheme(); };
+    const toggleDark = () => { theme.dark = !theme.dark; document.documentElement.dataset.theme = theme.dark ? 'dark' : 'light'; };
+
+    // Palette de commandes
+    const palette = ref(false);
+    const q = ref('');
+    const paletteInput = ref(null);
+    const openPalette = () => { palette.value = true; q.value = ''; nextTick(() => paletteInput.value && paletteInput.value.focus()); };
+    const paletteItems = computed(() => {
+      const items = [
+        { label: 'Services', hint: 'Collection', icon: 'list', run: () => go('list') },
+        { label: 'Médiathèque', hint: 'Site', icon: 'image', run: () => go('media') },
+        { label: 'Apparence', hint: 'Site', icon: 'drop', run: () => go('theme') },
+        { label: 'Nouveau service', hint: 'Action', icon: 'plus', run: () => { if (leaveOk()) newDoc(); } },
+        { label: theme.dark ? 'Passer en mode clair' : 'Passer en mode sombre', hint: 'Action', icon: theme.dark ? 'sun' : 'moon', run: toggleDark },
+        ...services.value.map(s => ({ label: s.t.fr.title, hint: 'Service', icon: 'file', run: () => { if (leaveOk()) openEdit(s); } })),
+      ];
+      const k = q.value.toLowerCase();
+      return items.filter(a => a.label.toLowerCase().includes(k)).slice(0, 8);
+    });
+    const run = (a) => { palette.value = false; a.run(); };
+    const runFirst = () => { if (paletteItems.value[0]) run(paletteItems.value[0]); };
+
+    onMounted(() => {
+      applyTheme();
+      const start = location.hash.slice(1);
+      if (start === 'edit' || start === 'split') { openEdit(services.value[0]); split.value = start === 'split'; }
+      else if (start === 'media' || start === 'theme') view.value = start;
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.value ? palette.value = false : openPalette(); }
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's' && view.value === 'edit') { e.preventDefault(); save(false); }
+        if (e.key === 'Escape') { palette.value = false; picker.value = false; }
+      });
+      window.addEventListener('beforeunload', (e) => { if (view.value === 'edit' && dirty.value) e.preventDefault(); });
+    });
+
+    return { locales, localeNames, categories, statusMeta, services, media, pic, view, locale, toasts, notify, soon, go,
+      filter, search, filters, count, filtered, canDrag, dragId, dragOver,
+      doc, dirty, tab, picker, openEdit, newDoc, split, locB, toggleSplit, pickLocale, save, unpublish, back,
+      selMedia, dropping, fakeUpload, removeMedia,
+      theme, colorFields, applyTheme, resetTheme, toggleDark,
+      palette, q, paletteInput, openPalette, paletteItems, run, runFirst };
+  },
+});
+
+app.component('icon', {
+  props: { n: String, s: { type: Number, default: 18 } },
+  setup(p) {
+    return () => h('svg', { width: p.s, height: p.s, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', class: 'shrink-0', innerHTML: ICONS[p.n] || '' });
+  },
+});
+
+app.component('loc-pane', {
+  template: '#pane',
+  props: { doc: Object, loc: String, other: String, tab: String, split: Boolean, locales: Array, names: Object },
+  emits: ['loc', 'notify'],
+  setup(p, { emit }) {
+    const F = computed(() => p.doc.t[p.loc]);
+    const slugAuto = ref(!F.value.slug);
+    const openFaq = ref(-1);
+    const editor = ref(null);
+    const load = () => { if (editor.value) editor.value.innerHTML = F.value.body; };
+    onMounted(load);
+    watch(() => p.loc, () => { slugAuto.value = !F.value.slug; openFaq.value = -1; nextTick(load); });
+    const seoTitle = computed(() => F.value.metaTitle || (F.value.title ? F.value.title + ' — Cabinet Durand' : 'Cabinet Durand'));
+    const onTitle = () => { if (slugAuto.value) F.value.slug = slugify(F.value.title); };
+    const copyFromDefault = () => { const src = clone(p.doc.t.fr); Object.assign(F.value, src, { slug: slugify(src.title) }); nextTick(load); emit('notify', 'Contenu français copié, à traduire'); };
+    const cmd = (c, v) => { editor.value.focus(); document.execCommand(c, false, v); F.value.body = editor.value.innerHTML; };
+    const addLink = () => { const url = prompt('Adresse du lien'); if (url) cmd('createLink', url); };
+    const moveFaq = (i, d) => { const a = F.value.faq; a.splice(i + d, 0, a.splice(i, 1)[0]); openFaq.value = -1; };
+    return { F, slugAuto, openFaq, editor, seoTitle, onTitle, copyFromDefault, cmd, addLink, moveFaq };
+  },
+});
+
+app.config.errorHandler = (err) => { console.error(err); document.title = 'ERREUR: ' + err.message; };
+app.mount('#app');
+</script>
+</body>
+</html>

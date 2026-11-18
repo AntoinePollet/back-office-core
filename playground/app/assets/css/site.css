@@ -1,0 +1,3 @@
+/* Styles du site public. daisyUI fournit les composants ; le thème vient de l'écran Apparence du back-office. */
+@import "tailwindcss";
+@plugin "daisyui";

@@ -1,0 +1,11 @@
+{
+  "name": "back-office",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --filter playground dev",
+    "build": "pnpm --filter playground build",
+    "db:generate": "pnpm --filter backoffice-core db:generate",
+    "db:migrate": "pnpm --filter playground db:migrate"
+  }
+}

@@ -1,0 +1,117 @@
+import { type AnyField, isVisible } from './format'
+
+type Fields = Record<string, AnyField>
+type Values = Record<string, unknown>
+
+export const slugify = (text: string) =>
+  text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+/** Vide : null, texte vide, liste vide, ou objet dont toutes les valeurs sont vides (ex. un bloc SEO non rempli). */
+export const isEmpty = (v: unknown): boolean =>
+  v == null || v === '' || (Array.isArray(v) ? v.length === 0 : typeof v === 'object' && Object.values(v as object).every(isEmpty))
+
+/**
+ * Valeur enregistrée d'un champ lien. `label` vide : le site affiche le titre de la page ou l'adresse.
+ * Une page est désignée par son type et son identifiant (pour un singleton, les deux sont égaux).
+ */
+export type LinkValue = { label?: string; newTab?: boolean } & (
+  | { kind: 'page'; type: string; id: string }
+  | { kind: 'url'; url: string }
+)
+
+/** Sépare les champs traduits des champs communs aux langues. */
+export function partition(fields: Fields) {
+  const localized: Fields = {}
+  const shared: Fields = {}
+  for (const [key, field] of Object.entries(fields)) (field.localized ? localized : shared)[key] = field
+  return { localized, shared }
+}
+
+/** Ne garde que les clés connues du format. `extra` : clés système autorisées (ex. 'seo'). */
+export function pick(fields: Fields, values: Values | undefined, extra: string[] = []): Values {
+  const out: Values = {}
+  for (const key of [...Object.keys(fields), ...extra]) if (values?.[key] !== undefined) out[key] = values[key]
+  return out
+}
+
+/** Donne leur valeur par défaut aux interrupteurs jamais touchés, y compris dans les répéteurs. Modifie `values`. */
+export function applyDefaults(fields: Fields, values: Values): Values {
+  for (const [key, field] of Object.entries(fields)) {
+    if (field.type === 'boolean') values[key] ??= field.default ?? false
+    else if (field.type === 'repeater' && Array.isArray(values[key]))
+      for (const item of values[key] as Values[]) applyDefaults(field.fields as Fields, item)
+  }
+  return values
+}
+
+/**
+ * Valide les valeurs d'un formulaire. Renvoie { nomDuChamp: message }.
+ * Un champ masqué par `showIf` n'est jamais validé.
+ */
+export function validateValues(fields: Fields, values: Values, prefix = ''): Record<string, string> {
+  const errors: Record<string, string> = {}
+  for (const [key, field] of Object.entries(fields)) {
+    if (!isVisible(field, values)) continue
+    const at = prefix + key
+    const v = values[key]
+
+    if (isEmpty(v)) {
+      if (field.required) errors[at] = 'Ce champ est obligatoire.'
+      continue
+    }
+    const min = field.min as number | undefined
+    const max = field.max as number | undefined
+
+    if (field.type === 'text' || field.type === 'textarea') {
+      if (typeof v !== 'string') errors[at] = 'Texte attendu.'
+      else if (max != null && v.length > max) errors[at] = `${max} caractères au maximum.`
+      else if (min != null && v.length < min) errors[at] = `${min} caractères au minimum.`
+      else if (field.format === 'email' && !/^\S+@\S+\.\S+$/.test(v)) errors[at] = 'Adresse e-mail invalide.'
+      else if (field.format === 'url' && !/^https?:\/\/\S+$/.test(v)) errors[at] = 'L\'adresse doit commencer par http:// ou https://.'
+    }
+    else if (field.type === 'number') {
+      if (typeof v !== 'number' || Number.isNaN(v)) errors[at] = 'Nombre attendu.'
+      else if (field.integer && !Number.isInteger(v)) errors[at] = 'Nombre entier attendu.'
+      else if (max != null && v > max) errors[at] = `${max} au maximum.`
+      else if (min != null && v < min) errors[at] = `${min} au minimum.`
+    }
+    else if (field.type === 'select') {
+      const allowed = (field.options as { value: string }[]).map(o => o.value)
+      const chosen = Array.isArray(v) ? v : [v]
+      if (!chosen.every(c => allowed.includes(c as string))) errors[at] = 'Choix inconnu.'
+    }
+    else if (field.type === 'image' || field.type === 'file') {
+      if (typeof v !== 'string') errors[at] = 'Fichier invalide.'
+    }
+    else if (field.type === 'relation') {
+      const ids = field.multiple ? v : [v]
+      if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string')) errors[at] = 'Sélection invalide.'
+    }
+    else if (field.type === 'link') {
+      const link = v as Partial<LinkValue> & Record<string, unknown>
+      if (link.kind === 'url' ? !/^(https?:\/\/|mailto:|tel:|\/)\S+$/.test(String(link.url ?? '')) : !(link.kind === 'page' && link.type && link.id))
+        errors[at] = link.kind === 'url' ? 'L\'adresse doit commencer par https://, mailto:, tel: ou /.' : 'Choisissez une page.'
+    }
+    else if (field.type === 'repeater') {
+      if (!Array.isArray(v)) { errors[at] = 'Liste attendue.'; continue }
+      if (max != null && v.length > max) errors[at] = `${max} éléments au maximum.`
+      else if (min != null && v.length < min) errors[at] = `${min} éléments au minimum.`
+      v.forEach((item, i) => Object.assign(errors, validateValues(field.fields as Fields, item as Values, `${at}.${i}.`)))
+    }
+  }
+  return errors
+}
+
+/** Prépare les valeurs pour le site : champs masqués vidés, interrupteurs et listes jamais null. */
+export function toPublicValues(fields: Fields, values: Values): Values {
+  const out: Values = {}
+  for (const [key, field] of Object.entries(fields)) {
+    let v = isVisible(field, values) ? values[key] ?? null : null
+    if (field.type === 'boolean') v = v ?? field.default ?? false
+    else if (field.type === 'repeater') v = Array.isArray(v) ? v.map(item => toPublicValues(field.fields as Fields, item as Values)) : []
+    else if (field.type === 'select' && field.multiple) v = v ?? []
+    else if (field.type === 'relation' && field.multiple) v = v ?? []
+    out[key] = v
+  }
+  return out
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "playground",
+  "main": ".output/server/index.mjs",
+  "assets": { "directory": ".output/public", "binding": "ASSETS" },
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Cache du site sur le réseau Cloudflare. Le core décide de ce qui est mis en cache et le purge à la publication.
+  "cache": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "playground",
+      "database_id": "1bbb60eb-1a21-4d4b-befa-d9ee17a44d7b",
+      "migrations_dir": "node_modules/backoffice-core/server/database/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "playground-media" }],
+  // Redimensionnement des images de la médiathèque. Sans cette liaison, les images sont servies dans leur taille d'origine.
+  "images": { "binding": "IMAGES" }
+}

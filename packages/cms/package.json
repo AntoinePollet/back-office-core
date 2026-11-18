@@ -1,0 +1,36 @@
+{
+  "name": "backoffice-core",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./nuxt.config.ts",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./config": "./shared/format.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.75.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@tiptap/pm": "^3.34.0",
+    "@tiptap/starter-kit": "^3.34.0",
+    "@tiptap/vue-3": "^3.34.0",
+    "better-auth": "^1.7.25",
+    "daisyui": "^5.8.1",
+    "drizzle-orm": "^0.45.4",
+    "jiti": "^2.7.0",
+    "nitro-cloudflare-dev": "^0.2.2",
+    "tailwindcss": "^4.3.5",
+    "xss": "^1.0.17"
+  },
+  "devDependencies": {
+    "@nuxt/kit": "^4.6.4",
+    "@types/node": "^26.6.6",
+    "drizzle-kit": "^0.31.11",
+    "nuxt": "^4.6.4",
+    "vue": "^3.5.45",
+    "vue-router": "^5.5.1",
+    "wrangler": "^4.164.0"
+  }
+}

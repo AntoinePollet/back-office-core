@@ -1,0 +1,27 @@
+import type { H3Event } from 'h3'
+
+type MediaRow = typeof schema.media.$inferSelect
+
+export const MEDIA_MAX_SIZE = 20 * 1024 * 1024
+/** Types de fichiers acceptés par la médiathèque. */
+export const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/svg+xml', 'application/pdf']
+
+export const mediaUrl = (key: string) => `/media/${key}`
+/** Adresse d'une vignette. Pour un fichier qui ne se redimensionne pas (SVG, PDF), le paramètre est ignoré. */
+export const thumbUrl = (key: string, width = 160) => `/media/${key}?w=${width}`
+
+export function useBucket(event: H3Event) {
+  const bucket = event.context.cloudflare?.env?.MEDIA
+  if (!bucket) throw createError({ statusCode: 500, message: 'Bucket R2 introuvable : la liaison « MEDIA » manque dans wrangler.jsonc.' })
+  return bucket
+}
+
+/** Un fichier tel que le back-office le reçoit. */
+export function toAdminMedia(row: MediaRow) {
+  return { id: row.id, url: mediaUrl(row.key), name: row.name, mime: row.mime, size: row.size, width: row.width, height: row.height, alt: row.alt, createdAt: row.createdAt }
+}
+
+/** Un fichier tel que le site le reçoit : le texte alternatif est celui de la langue demandée. */
+export function toPublicMedia(row: MediaRow, locale: string) {
+  return { id: row.id, url: mediaUrl(row.key), name: row.name, alt: row.alt[locale] || row.alt[cmsConfig.site.defaultLocale] || '', mime: row.mime, width: row.width, height: row.height }
+}

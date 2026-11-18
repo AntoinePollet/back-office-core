@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794927959121,
+      "tag": "0000_brief_psylocke",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794955924247,
+      "tag": "0001_big_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794956273565,
+      "tag": "0002_bitter_eternity",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794957237399,
+      "tag": "0003_left_william_stryker",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794993003843,
+      "tag": "0004_sad_nekra",
+      "breakpoints": true
+    }
+  ]
+}
