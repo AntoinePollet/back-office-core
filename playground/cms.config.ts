@@ -103,6 +103,27 @@ const config = defineCms({
         visible: f.boolean({ label: 'Afficher sur l\'accueil', default: true }),
       },
     }),
+
+    documents: collection({
+      label: 'Documents',
+      icon: 'file-text',
+      labelSingular: 'document',
+      titleField: 'title',
+      // Réservé aux administrateurs. Avec les contenus ci-dessus, le playground couvre tous les types de champs
+      // (ici : date, fichier, choix multiples) ; l'exemple d'import `import/contenus.json` les remplit tous.
+      adminOnly: true,
+      defaultSort: { field: 'date', dir: 'desc' },
+      fields: {
+        title: f.text({ label: 'Titre', required: true }),
+        date: f.date({ label: 'Date', width: 'half' }),
+        file: f.file({ label: 'Fichier', accept: ['application/pdf'] }),
+        topics: f.select({
+          label: 'Thèmes',
+          multiple: true,
+          options: [{ value: 'tarifs', label: 'Tarifs' }, { value: 'cabinet', label: 'Le cabinet' }, { value: 'presse', label: 'Presse' }],
+        }),
+      },
+    }),
   },
 })
 

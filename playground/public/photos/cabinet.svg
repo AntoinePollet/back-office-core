@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
+  <rect width="640" height="400" fill="#1f3a5f"/>
+  <rect x="80" y="120" width="480" height="220" fill="#f2efe8"/>
+  <rect x="290" y="230" width="60" height="110" fill="#1f3a5f"/>
+  <text x="320" y="90" font-family="Georgia, serif" font-size="36" fill="#f2efe8" text-anchor="middle">Cabinet Durand</text>
+</svg>

@@ -10,6 +10,7 @@
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "typecheck": "nuxt typecheck",
+    "cms:import": "backoffice-import",
     "deploy": "nuxt build && wrangler d1 migrations apply DB --remote && wrangler deploy"
   },
   "dependencies": {

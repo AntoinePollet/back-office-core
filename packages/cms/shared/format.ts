@@ -357,13 +357,48 @@ type Raw<F> =
   : F extends { type: 'repeater'; fields: infer S } ? Values<S>[]
   : never
 
+/**
+ * ## Ce que le site reçoit quand un champ est vide
+ *
+ * Un champ vide a toujours la même forme, quelle que soit l'histoire du contenu (jamais rempli, vidé dans le
+ * formulaire, importé, champ ajouté à la configuration après coup, champ masqué par `showIf`). Jamais `''`,
+ * jamais `undefined`, jamais de clé absente : tous les champs de la configuration sont présents dans l'objet.
+ *
+ * | Champ                              | Vide           | Rempli                                   |
+ * | ---------------------------------- | -------------- | ---------------------------------------- |
+ * | `text`, `textarea`                 | `null`         | `string` non vide                        |
+ * | `richText`                         | `null`         | HTML ; `<p></p>` (aucun texte) est vide  |
+ * | `number`                           | `null`         | `number` (0 est une valeur)              |
+ * | `date`                             | `null`         | `'2026-11-17'` ou `'2026-11-17T09:30'`   |
+ * | `boolean`                          | jamais vide    | `true` / `false` (`default`, sinon false)|
+ * | `select`                           | `null`         | une des `value`                          |
+ * | `select` avec `multiple`           | `[]`           | tableau de `value`                       |
+ * | `image`, `file`                    | `null`         | `Media`                                  |
+ * | `link`                             | `null`         | `Link`                                   |
+ * | `relation`                         | `null`         | `EntryRef`                               |
+ * | `relation` avec `multiple`         | `[]`           | tableau d'`EntryRef`                     |
+ * | `repeater`                         | `[]`           | tableau d'objets, mêmes règles dedans    |
+ *
+ * Dans une page : `v-if="product.note"` suffit pour un texte ; `product.stock !== null` pour un nombre (0 compte).
+ *
+ * Les types ci-dessous disent la même chose. Deux précisions :
+ * - une référence (`image`, `file`, `link`, `relation` simple) peut être `null` même si le champ est obligatoire :
+ *   le fichier a pu être supprimé de la médiathèque, le contenu lié supprimé ou retiré du site dans cette langue ;
+ * - un champ obligatoire d'un autre type n'est jamais `null` dans un contenu publié, puisqu'il est vérifié à la
+ *   publication. Il peut l'être dans l'aperçu d'un brouillon incomplet, ou si le champ est devenu obligatoire
+ *   après la publication : une page ouverte à l'aperçu ne doit pas supposer le contraire.
+ */
+
 /** Ces champs ont toujours une valeur : false ou tableau vide quand ils sont vides ou masqués. */
 type NeverNull = { type: 'boolean' } | { type: 'repeater' } | { multiple: true }
+/** Ces champs désignent autre chose (fichier, page, contenu) qui peut disparaître : `null` reste possible même s'ils sont obligatoires. */
+type Reference = { type: 'image' | 'file' | 'link' | 'relation' }
 
-/** Un champ obligatoire n'est jamais null, sauf s'il a une condition d'affichage : masqué, il est vide. */
+/** Un champ obligatoire n'est jamais null, sauf une référence, ou s'il a une condition d'affichage : masqué, il est vide. */
 export type Values<S> = {
   -readonly [K in keyof S]:
     S[K] extends NeverNull ? Raw<S[K]>
+    : S[K] extends Reference ? Raw<S[K]> | null
     : S[K] extends { showIf: object } ? Raw<S[K]> | null
     : S[K] extends { required: true } ? Raw<S[K]>
     : Raw<S[K]> | null

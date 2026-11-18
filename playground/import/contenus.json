@@ -1,0 +1,98 @@
+{
+  "singletons": {
+    "home": {
+      "heroTitle": "Des avocats à vos côtés",
+      "heroText": "Le Cabinet Durand conseille les entreprises et les particuliers depuis 1998.",
+      "heroImage": { "file": "/photos/cabinet.svg", "alt": { "fr": "La façade du cabinet", "en": "The front of the firm" } },
+      "cta": { "page": "services", "id": "droit-des-affaires", "label": "Découvrir nos services" },
+      "featured": ["droit-des-affaires", "droit-de-la-famille"],
+      "faq": [
+        { "question": "Le premier rendez-vous est-il payant ?", "answer": "Non, le premier échange de trente minutes est offert." },
+        {
+          "question": "Travaillez-vous à distance ?",
+          "answer": "Oui, par visioconférence, partout en France.",
+          "hasLink": true,
+          "more": { "url": "https://www.service-public.fr/", "label": "En savoir plus", "newTab": true }
+        }
+      ],
+      "seo": { "title": "Cabinet Durand, avocats à Lyon", "description": "Droit des affaires et droit de la famille.", "image": "/photos/cabinet.svg" },
+      "en": {
+        "heroTitle": "Lawyers by your side",
+        "heroText": "Cabinet Durand has advised companies and individuals since 1998.",
+        "cta": { "page": "services", "id": "droit-des-affaires", "label": "See our services" },
+        "faq": [
+          { "question": "Is the first meeting free?", "answer": "Yes, the first thirty-minute call is free of charge." }
+        ],
+        "seo": { "title": "Cabinet Durand, lawyers in Lyon" }
+      }
+    },
+    "settings": {
+      "phone": "04 72 00 00 00",
+      "email": "contact@cabinet-durand.fr",
+      "address": "12 rue de la République\n69002 Lyon",
+      "footerText": "Cabinet Durand, avocats au barreau de Lyon",
+      "en": { "address": "12 rue de la République\n69002 Lyon, France", "footerText": "Cabinet Durand, members of the Lyon Bar" }
+    }
+  },
+
+  "collections": {
+    "categories": [
+      { "id": "entreprises", "name": "Entreprises", "en": { "name": "Companies" } },
+      { "id": "particuliers", "name": "Particuliers", "en": { "name": "Individuals" } }
+    ],
+
+    "services": [
+      {
+        "id": "droit-des-affaires",
+        "title": "Droit des affaires",
+        "excerpt": "Création de société, contrats, cessions.",
+        "cover": { "file": "fichiers/affaires.svg", "alt": "Un graphique en hausse" },
+        "category": "entreprises",
+        "audience": "companies",
+        "companySize": "small",
+        "onQuote": false,
+        "fromPrice": 180,
+        "body": "<h2>Notre accompagnement</h2><p>De la <strong>création</strong> à la cession de votre société.</p><ul><li>Statuts</li><li>Contrats commerciaux</li></ul>",
+        "seo": { "description": "Avocats en droit des affaires à Lyon." },
+        "en": {
+          "title": "Business law",
+          "slug": "business-law",
+          "excerpt": "Company formation, contracts, transfers.",
+          "body": "<h2>How we help</h2><p>From <strong>formation</strong> to the sale of your company.</p>"
+        }
+      },
+      {
+        "id": "droit-de-la-famille",
+        "title": "Droit de la famille",
+        "excerpt": "Divorce, successions, adoption.",
+        "category": "particuliers",
+        "audience": "individuals",
+        "onQuote": true,
+        "body": "<p>Un accompagnement humain dans les moments difficiles.</p>",
+        "en": { "title": "Family law", "excerpt": "Divorce, inheritance, adoption." }
+      },
+      {
+        "id": "mediation",
+        "title": "Médiation",
+        "status": "draft",
+        "onQuote": true
+      }
+    ],
+
+    "testimonials": [
+      {
+        "id": "claire-martin",
+        "author": "Claire Martin",
+        "quote": "Un cabinet réactif, qui explique clairement chaque étape.",
+        "photo": { "file": "fichiers/claire.svg", "alt": "Portrait de Claire Martin" },
+        "en": { "quote": "A responsive firm that explains every step clearly." }
+      },
+      { "id": "sarl-lumiere", "author": "SARL Lumière", "quote": "Notre cession s'est déroulée sans accroc.", "visible": false }
+    ],
+
+    "documents": [
+      { "id": "honoraires-2026", "title": "Grille d'honoraires 2026", "date": "2026-01-05", "file": "fichiers/honoraires-2026.pdf", "topics": ["tarifs", "cabinet"] },
+      { "id": "communique", "title": "Communiqué de rentrée", "date": "2026-09-01", "topics": [] }
+    ]
+  }
+}

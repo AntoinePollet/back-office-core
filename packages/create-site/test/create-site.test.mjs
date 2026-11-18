@@ -80,7 +80,7 @@ test('projet généré : plus aucun marqueur, fichiers valides', () => {
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
   assert.equal(pkg.name, 'atelier-emilie')
   assert.equal(pkg.dependencies['backoffice-core'], 'github:AntoinePollet/back-office-core#main&path:/packages/cms')
-  for (const script of ['dev', 'build', 'db:migrate', 'typecheck', 'deploy']) assert.ok(pkg.scripts[script], script)
+  for (const script of ['dev', 'build', 'db:migrate', 'typecheck', 'deploy', 'cms:import']) assert.ok(pkg.scripts[script], script)
   const wrangler = readFileSync(join(dir, 'wrangler.jsonc'), 'utf8')
   for (const part of ['"name": "atelier-emilie"', '"nodejs_compat"', '"cache": { "enabled": true }', '"binding": "DB"', '"binding": "MEDIA"', '"bucket_name": "atelier-emilie-media"', '"images"', 'node_modules/backoffice-core/server/database/migrations'])
     assert.ok(wrangler.includes(part), part)

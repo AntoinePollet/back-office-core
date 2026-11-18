@@ -4,6 +4,7 @@ import type { H3Event } from 'h3'
 import { applyDefaults, copyValues, MAX_REVISIONS, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
 import type { AnyField, CmsConfig, CmsDefinition } from '../../shared/format'
 import { unknownValues } from '../../shared/migrate'
+import { mergeValues, splitFlat, strayKeys, strayMessage } from '../../shared/flat'
 import { type CustomRights, canEditRestricted } from '../../shared/access'
 import type { CmsEventInput } from './events'
 
@@ -78,11 +79,38 @@ export async function entryTitles(event: H3Event, ids: string[]) {
 
 // ───────────── Enregistrement ─────────────
 
+/**
+ * Corps d'un enregistrement. Deux écritures possibles, à ne pas mélanger dans une même demande :
+ *
+ * - **par parties** (celle du formulaire) : `shared` et `locales.<langue>.values`. Chaque partie envoyée remplace
+ *   la partie entière ; l'appelant doit savoir quels champs sont traduits. Une valeur rangée dans la mauvaise partie
+ *   ou un nom de champ inconnu est refusé (422), il n'est jamais ignoré.
+ * - **à plat** : `values`, les valeurs par nom de champ pour une langue (`locale`, par défaut celle du site) ; le serveur
+ *   les range lui-même. Seuls les champs cités changent, les autres gardent leur valeur ; `null` vide un champ.
+ *   `seo` s'écrit `{ title, description, image, noindex }`. Les autres langues se donnent dans `translations`,
+ *   avec les seuls champs traduits. Exemple :
+ *   `{ "values": { "title": "Droit social", "fromPrice": 150 }, "translations": { "en": { "values": { "title": "Employment law" } } }, "publish": ["fr", "en"] }`
+ */
 type SaveBody = {
   /** Champs communs aux langues. Absents : ils ne sont pas modifiés. */
   shared?: Values
   /** Langues modifiées. Une langue absente n'est pas touchée. */
   locales?: Record<string, { slug?: string | null; values?: Values }>
+  /** Écriture à plat : valeurs par nom de champ, communes ou traduites, pour la langue `locale`. */
+  values?: Values
+  /** Écriture à plat : langue de `values` et de `slug`. Défaut : la langue par défaut du site. */
+  locale?: string
+  /** Écriture à plat : adresse de la page dans la langue `locale`. */
+  slug?: string | null
+  /** Écriture à plat : les autres langues, avec leurs champs traduits. */
+  translations?: Record<string, { slug?: string | null; values?: Values }>
+  /**
+   * À la création dans une collection : identifiant choisi par l'appelant (format UUID). Sert à l'outil d'import,
+   * qui retrouve ainsi ses contenus d'un lancement à l'autre. Refusé (409) s'il est déjà pris.
+   */
+  id?: string
+  /** Simulation : tout est vérifié (droits, valeurs, conflits) mais rien n'est écrit. Réponse : { dryRun, id, created, changed, published }. */
+  dryRun?: boolean
   /** Langues à publier avec cet enregistrement. */
   publish?: string[]
   /** Langues à retirer du site. */
@@ -122,14 +150,37 @@ async function conflictError(event: H3Event, entry: EntryRow, parts: string[], b
   })
 }
 
-export async function saveDoc(event: H3Event, type: string, id: string | null) {
-  const user = await requireUser(event)
-  return writeDoc(event, type, id, await readBody<SaveBody>(event) ?? {}, user)
+const BODY_KEYS = ['shared', 'locales', 'values', 'locale', 'slug', 'translations', 'publish', 'unpublish', 'baseVersion', 'force', 'after', 'id', 'dryRun']
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+type FieldErrors = Record<string, Record<string, string>>
+
+/** Refus d'une demande dont des valeurs sont inconnues ou mal rangées : rien n'est enregistré. */
+function refuse(problems: FieldErrors) {
+  const messages = Object.values(problems).flatMap(p => Object.values(p))
+  return createError({ statusCode: 422, message: messages.length === 1 ? messages[0]! : `Rien n'a été enregistré : ${messages.join(' ')}`, data: { errors: problems } })
 }
 
-async function writeDoc(event: H3Event, type: string, id: string | null, body: SaveBody, user: Author, origin?: Origin) {
+export async function saveDoc(event: H3Event, type: string, id: string | null) {
+  const user = await requireUser(event)
+  const body = await readBody<SaveBody>(event) ?? {}
+  if (typeof body !== 'object' || Array.isArray(body)) throw createError({ statusCode: 400, message: 'Un objet JSON est attendu.' })
+  return writeDoc(event, type, id, body, user, { strict: true })
+}
+
+/**
+ * `strict` : la demande vient de l'API. Tout ce qu'elle contient d'inconnu ou de mal rangé est refusé.
+ * Les appels internes (restauration d'une version, copie) rejouent des valeurs lues en base, parfois plus anciennes
+ * que la configuration : ce qui n'a plus de champ y est simplement laissé de côté.
+ */
+async function writeDoc(event: H3Event, type: string, id: string | null, request: SaveBody, user: Author, options: { origin?: Origin; strict?: boolean } = {}) {
+  const { origin, strict = false } = options
+  let body = request
   const def = getDef(type)
   assertAccess(user, type, 'edit')
+  if (strict) {
+    const stray = Object.keys(body).filter(key => !BODY_KEYS.includes(key))
+    if (stray.length) throw createError({ statusCode: 400, message: `Clé inconnue dans la demande : ${stray.map(k => `« ${k} »`).join(', ')}. Les valeurs des champs se donnent dans values (à plat), ou dans shared et locales.` })
+  }
   const db = useDb(event)
   const { entries, entryLocales, revisions } = schema
   const fields = def.fields as Fields
@@ -141,18 +192,84 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
   let rows: LocaleRow[] = []
   if (id) {
     ;[existing] = await db.select().from(entries).where(and(eq(entries.id, id), eq(entries.type, type)))
-    if (!existing) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
-    assertEntryAccess(user, type, existing, 'edit')
-    rows = await db.select().from(entryLocales).where(eq(entryLocales.entryId, id))
+    // Une page unique existe dès qu'elle est déclarée : son premier enregistrement la crée.
+    if (!existing && !(def.kind === 'singleton' && id === type)) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
+    if (existing) {
+      assertEntryAccess(user, type, existing, 'edit')
+      rows = await db.select().from(entryLocales).where(eq(entryLocales.entryId, id))
+    }
   }
-  const entryId = id ?? crypto.randomUUID()
+  else if (strict && body.id !== undefined) {
+    if (typeof body.id !== 'string' || !UUID.test(body.id)) throw createError({ statusCode: 400, message: 'id : un identifiant au format UUID est attendu (ou aucun : le back-office en choisit un).' })
+    const [taken] = await db.select({ id: entries.id }).from(entries).where(eq(entries.id, body.id))
+    if (taken) throw createError({ statusCode: 409, message: 'Un contenu porte déjà cet identifiant.' })
+  }
+  const entryId = id ?? (strict && body.id ? body.id : crypto.randomUUID())
   const byLocale = new Map(rows.map(r => [r.locale, r]))
+  // Champs réservés : pour qui n'a pas le droit de les modifier, la valeur en base est conservée quoi qu'envoie le formulaire.
+  const locked = canEditRestricted(user) ? [] : Object.entries(fields).filter(([, f]) => f.restricted).map(([key]) => key)
+
+  if (strict) {
+    const problems: FieldErrors = {}
+    const note = (part: string, key: string, message: string) => { (problems[part] ??= {})[key] = message }
+    const flat = body.values !== undefined || body.translations !== undefined
+    if (flat) {
+      if (body.shared !== undefined || body.locales !== undefined) throw createError({ statusCode: 400, message: 'values et translations (écriture à plat) ne se combinent pas avec shared et locales : choisissez l\'une des deux écritures.' })
+      const main = body.locale ?? config.site.defaultLocale
+      if (!config.site.locales.includes(main)) throw createError({ statusCode: 400, message: `locale : langue inconnue « ${main} ». Langues du site : ${config.site.locales.join(', ')}.` })
+      const isRecord = (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v)
+      if (body.values !== undefined && !isRecord(body.values)) throw createError({ statusCode: 400, message: 'values : un objet { nomDuChamp: valeur } est attendu.' })
+      if (body.translations !== undefined && !isRecord(body.translations)) throw createError({ statusCode: 400, message: 'translations : un objet { langue: { values } } est attendu.' })
+
+      const given = splitFlat(fields, body.values ?? {}, !!def.seo)
+      for (const key of given.unknown) note(main, key, strayMessage({ key, reason: 'unknown' }, def.label))
+      const byLang: Record<string, { slug?: string | null; values: Values }> = { [main]: { slug: body.slug, values: given.localized } }
+      for (const [locale, translation] of Object.entries(body.translations ?? {})) {
+        if (!config.site.locales.includes(locale)) { note(locale, '_', `Langue inconnue « ${locale} ». Langues du site : ${config.site.locales.join(', ')}.`); continue }
+        if (locale === main) { note(locale, '_', `La langue « ${locale} » est celle de values : ses valeurs se donnent là, pas dans translations.`); continue }
+        if (!isRecord(translation) || (translation.values !== undefined && !isRecord(translation.values))) { note(locale, '_', `translations.${locale} : un objet { values, slug } est attendu.`); continue }
+        const translated = splitFlat(fields, translation.values ?? {}, !!def.seo)
+        for (const key of translated.unknown) note(locale, key, strayMessage({ key, reason: 'unknown' }, def.label))
+        for (const key of Object.keys(translated.shared))
+          note(locale, key, key === 'seo' ? 'Dans seo, image et noindex sont communs à toutes les langues : ils se donnent dans values, pas dans une traduction.' : `« ${key} » est commun à toutes les langues : sa valeur se donne dans values, pas dans translations.${locale}.`)
+        byLang[locale] = { slug: translation.slug, values: translated.localized }
+      }
+      // Un champ réservé envoyé avec une autre valeur que celle en base : refusé, plutôt qu'ignoré sans le dire.
+      for (const key of locked) {
+        const reserved = `« ${key} » est un champ réservé : votre rôle ne peut pas le modifier.`
+        if (key in given.shared && !same(given.shared[key], existing?.sharedDraft[key])) note(main, key, reserved)
+        for (const [locale, part] of Object.entries(byLang)) if (key in part.values && !same(part.values[key], byLocale.get(locale)?.draft[key])) note(locale, key, reserved)
+      }
+      if (Object.keys(problems).length) throw refuse(problems)
+
+      // Fusion avec ce qui est en base : seuls les champs cités changent.
+      const touchesShared = Object.keys(given.shared).length > 0
+      const locales: NonNullable<SaveBody['locales']> = {}
+      const wanted = new Set(Object.entries(byLang).filter(([, part]) => Object.keys(part.values).length || part.slug != null).map(([locale]) => locale))
+      // Publier une langue, c'est l'envoyer : une langue à publier est reprise telle qu'elle est en base.
+      for (const locale of body.publish ?? []) if (byLocale.has(locale)) wanted.add(locale)
+      // Sans brouillons, les champs communs ne sont mis en ligne qu'avec une langue : celle de la demande les accompagne.
+      if (!def.drafts && touchesShared && byLocale.has(main)) wanted.add(main)
+      for (const locale of wanted) {
+        const part = byLang[locale]
+        locales[locale] = { slug: part?.slug ?? undefined, values: mergeValues(pick(parts.localized, byLocale.get(locale)?.draft, system), part?.values ?? {}) }
+      }
+      const { values: _v, locale: _l, slug: _s, translations: _t, ...rest } = body
+      body = { ...rest, locales, ...(touchesShared ? { shared: mergeValues(pick(parts.shared, existing?.sharedDraft, system), given.shared) } : {}) }
+    }
+    else {
+      for (const stray of strayKeys('shared', fields, body.shared, existing?.sharedDraft, system)) note('shared', stray.key, strayMessage(stray, def.label))
+      for (const [locale, part] of Object.entries(body.locales ?? {})) {
+        if (!config.site.locales.includes(locale)) { note(locale, '_', `Langue inconnue « ${locale} ». Langues du site : ${config.site.locales.join(', ')}.`); continue }
+        for (const stray of strayKeys('localized', fields, part?.values, byLocale.get(locale)?.draft, system)) note(locale, stray.key, strayMessage(stray, def.label, locale))
+      }
+      if (Object.keys(problems).length) throw refuse(problems)
+    }
+  }
 
   const shared = sanitizeRichText(parts.shared, applyDefaults(parts.shared, pick(parts.shared, body.shared ?? existing?.sharedDraft ?? {}, system)))
   // Ce que le formulaire ne connaît pas (champ retiré de la configuration, valeur mise de côté par une migration) reste en base.
   Object.assign(shared, unknownValues(parts.shared, existing?.sharedDraft, system))
-  // Champs réservés : pour qui n'a pas le droit de les modifier, la valeur en base est conservée quoi qu'envoie le formulaire.
-  const locked = canEditRestricted(user) ? [] : Object.entries(fields).filter(([, f]) => f.restricted).map(([key]) => key)
   const keepLocked = (target: Values, part: Fields, stored: Values | undefined) => {
     for (const key of locked) {
       if (!(key in part)) continue
@@ -254,6 +371,11 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
   // Une langue envoyée à l'identique n'est pas réécrite, sauf si on la (re)publie.
   const writes = upserts.filter(u => changedLocales.includes(u.locale) || publish.includes(u.locale))
     .map(u => ({ ...u, version: changedLocales.includes(u.locale) ? version : byLocale.get(u.locale)?.version ?? 0 }))
+
+  if (body.dryRun) {
+    // Simulation : tout a été vérifié comme pour un vrai enregistrement, mais rien n'est écrit.
+    return { dryRun: true as const, id: entryId, created: !existing, changed, published: publish, unpublished: unpublish.filter(l => byLocale.get(l)?.published) }
+  }
 
   const statements: any[] = []
 
@@ -373,7 +495,7 @@ export async function restoreRevision(event: H3Event, type: string, id: string, 
   const [revision] = await useDb(event).select().from(revisions).where(and(eq(revisions.id, revisionId), eq(revisions.entryId, id), eq(revisions.type, type)))
   if (!revision) throw createError({ statusCode: 404, message: 'Version introuvable.' })
   const locales = Object.fromEntries(Object.entries(revision.snapshot.locales).map(([locale, l]) => [locale, { values: l.values }]))
-  return writeDoc(event, type, id, { shared: revision.snapshot.shared, locales, force: true }, user, 'restore')
+  return writeDoc(event, type, id, { shared: revision.snapshot.shared, locales, force: true }, user, { origin: 'restore' })
 }
 
 /**
@@ -414,7 +536,7 @@ export async function duplicateDoc(event: H3Event, type: string, id: string) {
     }
     locales[locale] = { slug: slug || undefined, values }
   }
-  return writeDoc(event, type, null, { shared: copy.shared, locales, after: id }, user, 'duplicate')
+  return writeDoc(event, type, null, { shared: copy.shared, locales, after: id }, user, { origin: 'duplicate' })
 }
 
 // ───────────── Lecture pour le site public ─────────────
