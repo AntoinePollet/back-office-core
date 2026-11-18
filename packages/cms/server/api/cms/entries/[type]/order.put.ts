@@ -5,7 +5,7 @@ export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
   const def = getDef(type)
-  assertCanEdit(def, user)
+  assertAccess(user, type, 'publish') // l'ordre s'applique au site tout de suite
   if (def.kind !== 'collection' || !def.orderable) throw createError({ statusCode: 400, message: 'Cette collection n\'a pas d\'ordre manuel.' })
 
   const { ids } = await readBody<{ ids?: unknown }>(event)

@@ -1,7 +1,8 @@
 /** Un contenu complet (brouillon, toutes langues), pour le formulaire. Un singleton est créé vide à la première lecture. */
 export default defineEventHandler(async (event) => {
-  await requireUser(event)
+  const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
+  assertAccess(user, type, 'edit')
   const id = getRouterParam(event, 'id')!
   const def = getDef(type)
 

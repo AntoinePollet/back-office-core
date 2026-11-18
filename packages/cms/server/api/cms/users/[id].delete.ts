@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     db.delete(session).where(eq(session.userId, id)),
     db.delete(account).where(eq(account.userId, id)),
     db.delete(invites).where(eq(invites.userId, id)),
+    db.delete(schema.userAccess).where(eq(schema.userAccess.userId, id)),
     db.delete(user).where(eq(user.id, id)),
   ])
   return { ok: true }

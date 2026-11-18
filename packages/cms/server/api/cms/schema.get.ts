@@ -2,8 +2,8 @@
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   if (user.role === 'admin') return cmsConfig
-  // Un éditeur ne voit pas les contenus réservés aux administrateurs.
-  const visible = <T extends { adminOnly?: boolean }>(defs?: Record<string, T>) =>
-    Object.fromEntries(Object.entries(defs ?? {}).filter(([, def]) => !def.adminOnly))
+  // Chacun ne reçoit que les contenus auxquels il a accès : les autres n'existent pas dans son interface.
+  const visible = <T>(defs?: Record<string, T>) =>
+    Object.fromEntries(Object.entries(defs ?? {}).filter(([type]) => can(user, type, 'edit')))
   return { ...cmsConfig, singletons: visible(cmsConfig.singletons), collections: visible(cmsConfig.collections) }
 })

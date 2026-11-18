@@ -141,7 +141,23 @@ export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: { /** Ajou
 
 // ───────────── Pour le back-office ─────────────
 
-export const useCmsUser = () => useState<{ id: string; name: string; email: string; role?: string } | null>('cms-user', () => null)
+type CmsRights = { edit: boolean; publish: boolean; delete: boolean }
+export const useCmsUser = () => useState<{
+  id: string; name: string; email: string; role?: string
+  /** Contenus auxquels le compte est limité (null : aucune limite). */
+  types?: string[] | null
+  /** Droits sur chaque type de contenu, calculés par le serveur. */
+  access?: Record<string, CmsRights>
+} | null>('cms-user', () => null)
+
+/**
+ * Droits de la personne connectée sur un type de contenu, pour masquer les actions interdites.
+ * Le serveur refuse de toute façon ce qui n'est pas permis : ceci n'est que de l'affichage.
+ */
+export function useCmsAccess(type: string): CmsRights {
+  const user = useCmsUser().value
+  return user?.access?.[type] ?? { edit: true, publish: user?.role !== 'writer', delete: user?.role !== 'writer' }
+}
 
 export async function useCmsSchema() {
   const schema = useState<CmsConfig | null>('cms-schema', () => null)

@@ -43,7 +43,9 @@ function display(key: string, value: unknown) {
 }
 // Ordre manuel : possible seulement quand toute la liste est affichée.
 const toast = useCmsToast()
-const canDrag = computed(() => !!def?.orderable && filter.value === 'all' && !search.value)
+const access = useCmsAccess(type)
+// L'ordre s'applique au site tout de suite : il demande le droit de publier.
+const canDrag = computed(() => !!def?.orderable && access.publish && filter.value === 'all' && !search.value)
 const dragId = ref<string | null>(null)
 let orderBefore = ''
 function dragStart(item: Item, e: DragEvent) {

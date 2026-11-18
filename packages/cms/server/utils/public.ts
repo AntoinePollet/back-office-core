@@ -78,10 +78,11 @@ async function inChunks<T>(ids: string[], query: (chunk: string[]) => Promise<T[
 }
 
 /** Aperçu des brouillons : demandé par ?preview=1 et accordé seulement à une personne connectée au back-office. */
-export async function isPreview(event: H3Event) {
+export async function isPreview(event: H3Event, type: string) {
   if (!getQuery(event).preview) return false
-  const session = await useAuth(event).api.getSession({ headers: event.headers }).catch(() => null)
-  return !!session
+  const user = await requireUser(event).catch(() => null)
+  // Un brouillon ne se montre qu'à quelqu'un qui pourrait l'ouvrir dans le back-office.
+  return !!user && can(user, type, 'edit')
 }
 
 /**
@@ -92,7 +93,7 @@ export async function readPublic(event: H3Event, type: string, slug?: string) {
   const def = getDef(type)
   const locale = String(getQuery(event).locale ?? cmsConfig.site.defaultLocale)
   if (!cmsConfig.site.locales.includes(locale)) throw createError({ statusCode: 404, message: 'Langue inconnue.' })
-  const preview = await isPreview(event)
+  const preview = await isPreview(event, type)
   // Hors aperçu, la réponse est publique. Une demande d'aperçu n'est jamais mise en cache, même refusée :
   // sinon la version publiée serait gardée sous cette adresse et servie ensuite à la place du brouillon.
   allowSiteCache(event)

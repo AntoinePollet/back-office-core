@@ -23,7 +23,7 @@ export default defineEventHandler(async (event): Promise<{ items: CmsSearchItem[
   const user = await requireUser(event)
   const words = searchWords(String(getQuery(event).q ?? '').slice(0, 100))
   // Un éditeur ne trouve pas les contenus réservés aux administrateurs.
-  const collections = Object.entries(cmsConfig.collections ?? {}).filter(([, def]) => user.role === 'admin' || !def.adminOnly)
+  const collections = Object.entries(cmsConfig.collections ?? {}).filter(([type]) => can(user, type, 'edit'))
   if (words.join('').length < 2 || !collections.length) return { items: [], more: false }
 
   const db = useDb(event)

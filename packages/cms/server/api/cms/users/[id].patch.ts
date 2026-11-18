@@ -1,10 +1,13 @@
 import { eq } from 'drizzle-orm'
 
-/** Modifie le nom ou le rôle d'un compte. */
+/**
+ * Modifie le nom, le rôle ou les contenus attribués d'un compte.
+ * `types` : liste d'identifiants de contenus auxquels limiter le compte, ou null pour lever la limite.
+ */
 export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const id = getRouterParam(event, 'id')!
-  const body = await readBody<{ name?: string; role?: string }>(event)
+  const body = await readBody<{ name?: string; role?: string; types?: unknown }>(event)
   const db = useDb(event)
   const [target] = await db.select().from(schema.user).where(eq(schema.user.id, id))
   if (!target) throw createError({ statusCode: 404, message: 'Compte introuvable.' })
@@ -18,5 +21,16 @@ export default defineEventHandler(async (event) => {
     set.role = body.role as CmsRole
   }
   await db.update(schema.user).set(set).where(eq(schema.user.id, id))
+
+  if (body.types !== undefined) {
+    const { userAccess } = schema
+    if (body.types === null) await db.delete(userAccess).where(eq(userAccess.userId, id))
+    else {
+      const known = [...Object.keys(cmsConfig.collections ?? {}), ...Object.keys(cmsConfig.singletons ?? {})]
+      if (!Array.isArray(body.types) || !body.types.every(t => known.includes(t as string))) throw createError({ statusCode: 400, message: 'Liste de contenus invalide.' })
+      const types = [...new Set(body.types as string[])]
+      await db.insert(userAccess).values({ userId: id, types }).onConflictDoUpdate({ target: userAccess.userId, set: { types } })
+    }
+  }
   return { ok: true }
 })

@@ -2,6 +2,7 @@
 import type { Component } from 'vue'
 import { ArrowLeftRight, ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow } from '@lucide/vue'
 import configIcons from '#cms-icons'
+import { roleLabel } from '../../shared/access'
 import '../assets/css/admin.css'
 
 const schema = await useCmsSchema()
@@ -83,7 +84,7 @@ async function logout() {
           </div>
           <NuxtLink to="/admin/account" class="text-sm min-w-0 grow hover:underline" title="Mon compte">
             <div class="font-medium truncate">{{ user?.name }}</div>
-            <div class="text-xs text-base-content/50">{{ user?.role === 'admin' ? 'Administrateur' : 'Éditeur' }}</div>
+            <div class="text-xs text-base-content/50">{{ roleLabel(user?.role) }}</div>
           </NuxtLink>
           <button class="btn btn-ghost btn-sm btn-square" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><LogOut :size="16" /></button>
         </div>

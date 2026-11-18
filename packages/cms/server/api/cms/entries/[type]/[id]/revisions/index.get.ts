@@ -4,7 +4,7 @@ import { and, desc, eq } from 'drizzle-orm'
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
-  assertCanEdit(getDef(type), user)
+  assertAccess(user, type, 'edit')
   const { revisions } = schema
   return useDb(event).select({
     id: revisions.id, version: revisions.version, createdAt: revisions.createdAt, author: revisions.authorName,

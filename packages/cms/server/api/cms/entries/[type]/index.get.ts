@@ -2,10 +2,13 @@ import { eq, inArray } from 'drizzle-orm'
 
 /** Liste des contenus d'une collection, pour le back-office. */
 export default defineEventHandler(async (event) => {
-  await requireUser(event)
+  const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
   const def = getDef(type)
   if (def.kind !== 'collection') throw createError({ statusCode: 400, message: 'Un singleton n\'a pas de liste.' })
+  // Sans accès à la collection, on ne reçoit que les titres, et seulement s'ils servent à remplir un champ relation ou lien.
+  const full = can(user, type, 'edit')
+  if (!full && !canListTitles(user, type)) assertAccess(user, type, 'edit')
 
   const db = useDb(event)
   const [docs, rows] = await Promise.all([
@@ -37,6 +40,8 @@ export default defineEventHandler(async (event) => {
   const thumbIds = [...new Set(items.flatMap(i => i.thumbnail ?? []))].slice(0, 80)
   const thumbs = thumbIds.length ? await db.select().from(schema.media).where(inArray(schema.media.id, thumbIds)) : []
   const urlById = new Map(thumbs.map(m => [m.id, thumbUrl(m.key)]))
+
+  if (!full) return sortEntries(def, items, (item, key) => (key in item ? (item as Record<string, unknown>)[key] : item.sortValue)).map(({ id, title }) => ({ id, title }))
 
   // Colonnes de type relation : l'identifiant est remplacé par le titre du contenu lié.
   const relationColumns = columns.filter(c => def.fields[c]?.type === 'relation')

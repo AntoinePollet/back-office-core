@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { roleLabel } from '../../../shared/access'
+
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
 const user = useCmsUser()
@@ -30,7 +32,7 @@ async function changePassword() {
     <div class="card bg-base-100 border border-base-300 p-5 text-sm space-y-2 mb-4">
       <div class="flex justify-between"><span class="text-base-content/60">Nom</span><span>{{ user?.name }}</span></div>
       <div class="flex justify-between"><span class="text-base-content/60">E-mail</span><span>{{ user?.email }}</span></div>
-      <div class="flex justify-between"><span class="text-base-content/60">Rôle</span><span>{{ user?.role === 'admin' ? 'Administrateur' : 'Éditeur' }}</span></div>
+      <div class="flex justify-between"><span class="text-base-content/60">Rôle</span><span>{{ roleLabel(user?.role) }}</span></div>
     </div>
 
     <form class="card bg-base-100 border border-base-300 p-5 space-y-3" @submit.prevent="changePassword">

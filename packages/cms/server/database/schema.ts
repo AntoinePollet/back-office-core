@@ -152,7 +152,7 @@ export const user = sqliteTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
   image: text('image'),
-  role: text('role').$type<'admin' | 'editor'>().notNull().default('editor'),
+  role: text('role').$type<'admin' | 'editor' | 'writer'>().notNull().default('editor'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
@@ -189,6 +189,13 @@ export const invites = sqliteTable('cms_invites', {
   tokenHash: text('token_hash').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+})
+
+/** Limite un compte à certains types de contenu. Pas de ligne : le compte a tous les accès de son rôle. */
+export const userAccess = sqliteTable('cms_user_access', {
+  userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
+  /** Identifiants de collections et de pages uniques (ceux de cms.config.ts). */
+  types: text('types', { mode: 'json' }).$type<string[]>().notNull(),
 })
 
 export const verification = sqliteTable('verification', {

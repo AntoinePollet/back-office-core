@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
   const id = getRouterParam(event, 'id')!
-  assertCanEdit(getDef(type), user)
+  assertAccess(user, type, 'delete')
   if (getDef(type).kind !== 'collection') throw createError({ statusCode: 400, message: 'Un singleton ne se supprime pas.' })
 
   const db = useDb(event)

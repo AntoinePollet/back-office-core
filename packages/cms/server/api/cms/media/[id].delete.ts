@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm'
 
 /** Supprime un fichier. Refusé s'il est utilisé, sauf avec ?force=1. */
 export default defineEventHandler(async (event) => {
-  await requireUser(event)
+  const user = await requireUser(event)
+  if (user.role === 'writer') throw createError({ statusCode: 403, message: 'Vous ne pouvez pas supprimer de fichier. Demandez à un éditeur.' })
   const id = getRouterParam(event, 'id')!
   const db = useDb(event)
   const [row] = await db.select().from(schema.media).where(eq(schema.media.id, id))

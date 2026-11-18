@@ -1,4 +1,5 @@
+/** La personne connectée, avec ses droits sur chaque type de contenu. */
 export default defineEventHandler(async (event) => {
-  const { id, name, email, role } = await requireUser(event) as { id: string; name: string; email: string; role?: string }
-  return { id, name, email, role }
+  const user = await requireUser(event)
+  return { id: user.id, name: user.name, email: user.email, role: user.role, types: user.types, access: accessMap(user) }
 })

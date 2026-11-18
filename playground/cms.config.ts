@@ -88,6 +88,8 @@ const config = defineCms({
     testimonials: collection({
       label: 'Témoignages',
       icon: 'message-square-quote',
+      // Exemple de droits par collection : ici les rédacteurs publient eux-mêmes, mais seuls les éditeurs suppriment.
+      access: { publish: ['editor', 'writer'] },
       labelSingular: 'témoignage',
       titleField: 'author',
       orderable: true,

@@ -6,6 +6,8 @@
  * Le résultat de `defineCms()` est sérialisable tel quel : c'est le JSON du back-office.
  */
 
+import { type AccessRules, CMS_ACTIONS, DEFAULT_ACCESS } from './access'
+
 export const FORMAT_VERSION = 1
 
 // ───────────────────────── Champs ─────────────────────────
@@ -118,8 +120,17 @@ type SingletonOpts<F> = {
   seo?: boolean
   /** Brouillon et publication séparés. Défaut : true. */
   drafts?: boolean
-  /** Seuls les administrateurs peuvent modifier ce contenu ; il n'apparaît pas dans le menu des éditeurs. */
+  /** Réservé aux administrateurs : les autres rôles ne voient ni ne modifient ce contenu. Équivaut à retirer tous les droits. */
   adminOnly?: boolean
+  /**
+   * Qui peut faire quoi sur ce contenu, par rôle ('editor', 'writer'). L'administrateur a toujours tous les droits.
+   * - `edit` : voir et modifier le brouillon. Défaut : ['editor', 'writer'].
+   * - `publish` : mettre en ligne, retirer du site, changer l'ordre ou l'adresse d'une page publiée. Défaut : ['editor'].
+   * - `delete` : supprimer. Défaut : ['editor'].
+   * Exemple, des actualités que les rédacteurs publient eux-mêmes : `access: { publish: ['editor', 'writer'] }`.
+   * Sans brouillons (`drafts: false`), enregistrer c'est publier : il faut alors le droit `publish` pour modifier.
+   */
+  access?: AccessRules
   fields: F
   /**
    * Ancien identifiant, à indiquer quand on renomme la collection ou le singleton : ses contenus, leurs redirections
@@ -271,6 +282,14 @@ export function validate(config: Config): string[] {
     seen.add(key)
     if (def.path && !def.path.startsWith('/')) errors.push(`${key}.path doit commencer par /`)
     if (def.seo && !def.path) errors.push(`${key} : seo exige path`)
+    for (const [action, roles] of Object.entries(def.access ?? {})) {
+      if (!(CMS_ACTIONS as string[]).includes(action)) errors.push(`${key}.access : droit inconnu « ${action} » (edit, publish ou delete)`)
+      else if (!Array.isArray(roles) || !roles.every(r => r === 'editor' || r === 'writer')) errors.push(`${key}.access.${action} : liste de rôles attendue ('editor', 'writer')`)
+    }
+    if (def.adminOnly && def.access) errors.push(`${key} : adminOnly et access sont incompatibles`)
+    const edit = def.access?.edit ?? DEFAULT_ACCESS.edit
+    for (const action of ['publish', 'delete'] as const)
+      for (const role of def.access?.[action] ?? []) if (!edit.includes(role)) errors.push(`${key}.access.${action} : le rôle « ${role} » doit aussi avoir le droit edit`)
     if (def.renamedFrom && !KEY.test(def.renamedFrom)) errors.push(`${key} : renamedFrom invalide`)
     checkRename(key, key, def.renamedFrom, { ...singletons, ...collections })
     checkFields(key, def.fields, false)

@@ -4,7 +4,7 @@ import type { H3Event } from 'h3'
 import { applyDefaults, copyValues, MAX_REVISIONS, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
 import type { AnyField, CmsConfig, CmsDefinition } from '../../shared/format'
 import { unknownValues } from '../../shared/migrate'
-import type { CmsRole } from './auth'
+import type { CmsRole } from '../../shared/access'
 import type { CmsEventInput } from './events'
 
 type Values = Record<string, unknown>
@@ -92,7 +92,7 @@ type SaveBody = {
   /** À la création dans une collection à ordre manuel : identifiant du contenu après lequel placer le nouveau. */
   after?: string
 }
-type Author = { id: string; name: string; email: string; role: CmsRole }
+type Author = { id: string; name: string; email: string; role: CmsRole; types?: string[] | null }
 type Origin = 'restore' | 'duplicate'
 
 /**
@@ -123,7 +123,7 @@ export async function saveDoc(event: H3Event, type: string, id: string | null) {
 
 async function writeDoc(event: H3Event, type: string, id: string | null, body: SaveBody, user: Author, origin?: Origin) {
   const def = getDef(type)
-  assertCanEdit(def, user)
+  assertAccess(user, type, 'edit')
   const db = useDb(event)
   const { entries, entryLocales, revisions } = schema
   const fields = def.fields as Fields
@@ -213,6 +213,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
   }
 
   for (const locale of requested) if (!publish.includes(locale)) (errors[locale] ??= {})._ = 'Rien à publier dans cette langue.'
+  // Tout ce qui change le site tout de suite (mise en ligne, retrait, nouvelle adresse d'une page publiée) demande le droit de publier.
+  if (publish.length || unpublish.length || moved.length) assertAccess(user, type, 'publish')
   if (Object.keys(errors).length) throw createError({ statusCode: 422, message: 'Certains champs sont à corriger.', data: { errors } })
 
   const sharedPublished = publish.length ? shared : existing?.sharedPublished ?? null
@@ -342,7 +344,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
 export async function restoreRevision(event: H3Event, type: string, id: string, revisionId: string) {
   const user = await requireUser(event)
   const def = getDef(type)
-  assertCanEdit(def, user)
+  assertAccess(user, type, 'edit')
   // Sans brouillons, enregistrer c'est publier : le formulaire reprend alors la version sans l'enregistrer.
   if (!def.drafts) throw createError({ statusCode: 400, message: 'Ce contenu n\'a pas de brouillon : reprenez la version dans le formulaire, puis enregistrez.' })
   const { revisions } = schema
@@ -360,7 +362,7 @@ export async function duplicateDoc(event: H3Event, type: string, id: string) {
   const user = await requireUser(event)
   const def = getDef(type)
   if (def.kind !== 'collection') throw createError({ statusCode: 400, message: 'Seul un contenu de collection peut être dupliqué.' })
-  assertCanEdit(def, user)
+  assertAccess(user, type, 'edit')
   // Sans brouillons, la copie serait publiée d'office : le formulaire la prépare et rien n'existe avant l'enregistrement.
   if (!def.drafts) throw createError({ statusCode: 400, message: 'Cette collection n\'a pas de brouillon : la copie se prépare dans le formulaire.' })
   const source = await loadDoc(event, type, id)

@@ -20,6 +20,7 @@ const locales = schema.value.site.locales as readonly string[]
 const defaultLocale = schema.value.site.defaultLocale
 const multi = locales.length > 1
 const isCollection = def.kind === 'collection'
+const access = useCmsAccess(type)
 const hasSlug = isCollection && !!def.path?.includes('[slug]')
 const hasShared = multi && Object.keys(partition(def.fields).shared).length > 0
 
@@ -274,7 +275,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </span>
         <template v-if="def.drafts">
           <button class="btn btn-sm" :disabled="!dirty || saving" @click="save">Enregistrer le brouillon</button>
-          <button class="btn btn-sm btn-primary" :disabled="saving" @click="publish">Publier</button>
+          <button v-if="access.publish" class="btn btn-sm btn-primary" :disabled="saving" @click="publish">Publier</button>
         </template>
         <button v-else class="btn btn-sm btn-primary" :disabled="!dirty || saving" @click="save">Enregistrer</button>
       </div>
@@ -356,7 +357,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <div class="font-semibold">Publication</div>
           <div v-if="def.drafts" class="flex justify-between"><span class="text-base-content/60">Statut</span><span>{{ statusMeta[status]?.label }}</span></div>
           <button v-if="def.path" class="btn btn-sm btn-block" :disabled="saving" @click="preview"><Eye :size="16" />Aperçu du brouillon</button>
-          <button v-if="def.drafts && isOnline" class="btn btn-sm btn-block" :disabled="saving" @click="unpublish"><EyeOff :size="16" />Retirer du site</button>
+          <p v-if="def.drafts && !access.publish" class="text-xs text-base-content/60">Vous préparez le brouillon. La mise en ligne est faite par un éditeur.</p>
+          <button v-if="def.drafts && isOnline && access.publish" class="btn btn-sm btn-block" :disabled="saving" @click="unpublish"><EyeOff :size="16" />Retirer du site</button>
           <button v-if="doc.id" class="btn btn-sm btn-ghost btn-block" @click="showHistory = true"><History :size="16" />Historique</button>
           <button
             v-if="isCollection && doc.id" class="btn btn-sm btn-ghost btn-block" :disabled="dirty || duplicating"
@@ -364,14 +366,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           >
             <Copy :size="16" />Dupliquer
           </button>
-          <button v-if="isCollection && doc.id" class="btn btn-sm btn-ghost btn-block text-error" @click="remove"><Trash2 :size="16" />Supprimer</button>
+          <button v-if="isCollection && doc.id && access.delete" class="btn btn-sm btn-ghost btn-block text-error" @click="remove"><Trash2 :size="16" />Supprimer</button>
         </div>
         <div v-if="multi" class="card bg-base-100 border border-base-300 p-4 text-sm space-y-2">
           <div class="font-semibold">Traductions</div>
           <div v-for="l in locales" :key="l" class="flex items-center gap-2">
             <span class="capitalize grow">{{ localeName(l) }}</span>
             <button
-              v-if="def.drafts && doc.locales[l]?.status && doc.locales[l]!.status !== 'published'" class="btn btn-xs" :disabled="saving"
+              v-if="access.publish && def.drafts && doc.locales[l]?.status && doc.locales[l]!.status !== 'published'" class="btn btn-xs" :disabled="saving"
               :title="`Publier seulement la version ${localeName(l)}`" @click="publishLocale(l)"
             >
               Publier
