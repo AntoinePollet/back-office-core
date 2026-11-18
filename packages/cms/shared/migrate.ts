@@ -270,7 +270,9 @@ const oneLine = (text: string) => text.replace(/\s*[\r\n]+\s*/g, ' ').trim()
 /**
  * Convertit une valeur d'un type de champ vers un autre. Les conversions acceptées :
  * texte court ↔ texte long ↔ texte mis en forme, nombre/date/choix → texte, texte → nombre/date/choix quand
- * la valeur s'y prête, image → fichier, choix unique ↔ choix multiple. Tout le reste : pas de conversion.
+ * la valeur s'y prête, image → fichier, choix unique ↔ choix multiple, image seule → galerie (la galerie contient
+ * l'image), galerie → image seule (la première image ; s'il y en avait d'autres, ou une légende, la liste complète
+ * est mise de côté). Tout le reste : pas de conversion.
  */
 export function convertValue(from: Kind, to: Kind, value: unknown): Conversion {
   if (isEmpty(value)) return { result: 'ok', value }
@@ -278,6 +280,19 @@ export function convertValue(from: Kind, to: Kind, value: unknown): Conversion {
   const lossy = (v: unknown): Conversion => ({ result: 'lossy', value: v })
   const fail: Conversion = { result: 'fail' }
 
+  const isMedia = (k: Kind) => k.type === 'image' || k.type === 'file'
+  if (isMedia(from) && isMedia(to)) {
+    // Un fichier n'est pas forcément une image : fichier → image ne se convertit pas.
+    if (from.type === 'file' && to.type === 'image') return fail
+    // Liste d'images (galerie) : éléments { media, caption }.
+    const items = (from.multiple ? (Array.isArray(value) ? value : [value]) : [value]).map(item =>
+      (typeof item === 'string' ? { media: item } : item)) as { media?: unknown; caption?: unknown }[]
+    if (!items.every(item => item && typeof item === 'object' && typeof item.media === 'string')) return fail
+    if (to.multiple) return ok(from.multiple ? value : items)
+    // Galerie → image seule : la première image ; les suivantes et les légendes sont perdues (l'original est mis de côté).
+    const first = items[0]!.media as string
+    return items.length === 1 && !(typeof items[0]!.caption === 'string' && items[0]!.caption) ? ok(first) : lossy(first)
+  }
   if (from.type === to.type) {
     if (from.type !== 'select' && from.type !== 'relation') return fail // un répéteur ne change pas de forme
     const list = Array.isArray(value) ? value : [value]
@@ -318,7 +333,6 @@ export function convertValue(from: Kind, to: Kind, value: unknown): Conversion {
     case 'select>textarea': return text === null ? fail : ok(text)
     case 'text>date': return text !== null && /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?)?$/.test(text.trim()) ? ok(text.trim()) : fail
     case 'text>select': return text === null ? fail : choice(text.trim())
-    case 'image>file': return text === null ? fail : ok(text)
     default: return fail
   }
 }
@@ -615,7 +629,8 @@ const TYPE_NAMES: Record<FieldType, string> = {
   date: 'date', select: 'liste de choix', image: 'image', file: 'fichier', link: 'lien', relation: 'lien vers un contenu', repeater: 'liste d\'éléments',
 }
 const typeName = (shape: FieldShape) =>
-  TYPE_NAMES[shape.type] + (shape.type === 'select' || shape.type === 'relation' ? (shape.multiple ? ' (plusieurs choix)' : ' (un seul choix)') : '')
+  TYPE_NAMES[shape.type] + (shape.type === 'select' || shape.type === 'relation' ? (shape.multiple ? ' (plusieurs choix)' : ' (un seul choix)')
+    : shape.type === 'image' || shape.type === 'file' ? (shape.multiple ? ` (plusieurs ${shape.type === 'image' ? 'images' : 'fichiers'})` : '') : '')
 
 const n = (count: number, one = 'contenu', many = 'contenus') => `${count} ${count > 1 ? many : one}`
 
@@ -655,7 +670,7 @@ function describe(op: Op, s: Stats, level: OpLevel, site: Site): Pick<PlannedOp,
     case 'convert': {
       const text = `${subject} change de nature : ${typeName(op.before as FieldShape)} → ${typeName(op.after as FieldShape)}.`
       const warnings = [
-        s.lossy ? `Dans ${n(s.lossy)}, la conversion perd une partie de la valeur (mise en forme, retours à la ligne ou choix supplémentaires). L'original est mis de côté en base.` : '',
+        s.lossy ? `Dans ${n(s.lossy)}, la conversion perd une partie de la valeur (mise en forme, retours à la ligne, choix ou images supplémentaires, légendes). L'original est mis de côté en base.` : '',
         s.failed ? `Dans ${n(s.failed)}, la valeur actuelle ne peut pas être convertie.` : '',
       ].filter(Boolean).join(' ')
       return out(

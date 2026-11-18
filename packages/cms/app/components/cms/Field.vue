@@ -46,7 +46,7 @@ function moveItem(i: number, delta: number) {
     <span v-if="field.help" class="text-xs text-base-content/50">{{ field.help }}</span>
   </label>
 
-  <fieldset v-else class="fieldset">
+  <fieldset v-else class="fieldset min-w-0 grid-cols-1">
     <legend class="fieldset-legend">
       {{ field.label }}<span v-if="field.required" class="text-error" title="Obligatoire">*</span>
     </legend>
@@ -91,6 +91,7 @@ function moveItem(i: number, delta: number) {
       <button type="button" class="btn btn-sm btn-ghost" :disabled="field.max != null && items.length >= field.max" @click="addItem"><Plus :size="14" />Ajouter</button>
     </div>
 
+    <CmsGalleryField v-else-if="(field.type === 'image' || field.type === 'file') && field.multiple" v-model="value" :field="field" :invalid="!!error" />
     <CmsMediaField v-else-if="field.type === 'image' || field.type === 'file'" v-model="value" :field="field" :invalid="!!error" />
     <CmsRelationField v-else-if="field.type === 'relation'" v-model="value" :field="field" :invalid="!!error" />
     <CmsLinkField v-else-if="field.type === 'link'" v-model="value" :invalid="!!error" />

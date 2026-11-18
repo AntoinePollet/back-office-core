@@ -48,6 +48,11 @@ type Common = {
   /** Largeur dans le formulaire. Défaut : 'full'. */
   width?: 'full' | 'half'
   /**
+   * Section du formulaire où le champ est rangé. S'écrit plutôt avec `section()` (voir plus bas), qui la pose sur un groupe de champs.
+   * Pure présentation : ni les données, ni ce que reçoit le site, ni l'import ne changent. Interdit dans un répéteur.
+   */
+  section?: Section
+  /**
    * Ancien nom du champ, à indiquer quand on le renomme : au premier accès après le déploiement, ses valeurs
    * (brouillons et versions publiées, toutes langues) sont déplacées sous le nouveau nom. Sans cette option,
    * l'ancien champ est considéré comme retiré (ses valeurs restent en base, sans être affichées) et le nouveau est vide.
@@ -85,10 +90,14 @@ interface OptsOf {
   date: Common & { time?: boolean }
   /** Liste de choix fixe. Valeur : une des `value`, ou un tableau si `multiple`. */
   select: Common & { options: readonly { value: string; label: string }[]; multiple?: boolean }
-  /** Image de la médiathèque. Valeur : Media. */
-  image: Common
-  /** Fichier de la médiathèque (PDF…). Valeur : Media. */
-  file: Common & { accept?: readonly string[] }
+  /**
+   * Image de la médiathèque. Valeur : Media.
+   * Avec `multiple: true`, une galerie : une liste ordonnée d'images (valeur : Media[], `[]` si vide), utilisable
+   * aussi dans un répéteur. Voir `MediaOpts`.
+   */
+  image: Common & MediaOpts
+  /** Fichier de la médiathèque (PDF…). Valeur : Media. Avec `multiple: true` : une liste de fichiers, comme une galerie. */
+  file: Common & MediaOpts & { accept?: readonly string[] }
   /** Lien vers une page du site ou une adresse externe. Valeur : Link. */
   link: Common
   /** Référence vers une autre collection. Valeur : EntryRef, ou un tableau si `multiple`. */
@@ -97,7 +106,76 @@ interface OptsOf {
   repeater: Common & { fields: Record<string, AnyField>; itemLabel?: string; min?: number; max?: number }
 }
 
+/**
+ * Options d'un champ image ou fichier.
+ *
+ * ```ts
+ * cover: f.image({ label: 'Photo principale' }),                                  // une image
+ * photos: f.image({ label: 'Photos', multiple: true, captions: true, max: 12 }),  // une galerie légendée
+ * ```
+ *
+ * Dans une page, une galerie se parcourt directement ; avec `captions`, chaque image porte sa légende :
+ *
+ * ```vue
+ * <figure v-for="photo in item.photos" :key="photo.id">
+ *   <CmsImage :media="photo" sizes="(min-width: 768px) 33vw, 100vw" />
+ *   <figcaption v-if="photo.caption">{{ photo.caption }}</figcaption>
+ * </figure>
+ * ```
+ *
+ * La légende est propre à cet usage de l'image (« Marseille (13) ») ; le texte alternatif (`alt`), lui, appartient
+ * au fichier et se règle une fois dans la médiathèque. Comme toute valeur d'un champ, les légendes sont traduites si
+ * le champ l'est : une galerie est commune aux langues par défaut (`localized: true` pour des légendes par langue) ;
+ * dans un répéteur traduit, elle suit le répéteur.
+ *
+ * Valeur enregistrée (API d'écriture, historique) : `[{ media: '<id du fichier>', caption?: 'Marseille (13)' }]`.
+ * L'API accepte aussi une liste d'identifiants (`['<id>', '<id>']`), enregistrée sous la forme ci-dessus.
+ */
+type MediaOpts = {
+  /** Plusieurs fichiers, dans un ordre choisi (glisser-déposer). Défaut : un seul. */
+  multiple?: boolean
+  /** Avec `multiple` : une légende facultative par image, saisie dans le formulaire. */
+  captions?: boolean
+  /** Avec `multiple` : nombre minimal d'éléments (s'il y en a au moins un ; `required` exige d'en avoir un). */
+  min?: number
+  /** Avec `multiple` : nombre maximal d'éléments. */
+  max?: number
+}
+
 export type AnyField = Common & { type: FieldType; [option: string]: unknown }
+
+/**
+ * Titre d'une section du formulaire.
+ * - `label` : titre de la section ; il l'identifie (deux sections d'un même contenu ont deux titres différents) ;
+ * - `help` : texte d'aide sous le titre ;
+ * - `collapsed` : repliée à l'ouverture du formulaire. Défaut : dépliée. Une section se replie et se déplie toujours d'un clic.
+ */
+export type Section = { label: string; help?: string; collapsed?: boolean }
+
+/**
+ * Range des champs dans une section du formulaire du back-office. Ne change rien d'autre : les noms des champs,
+ * les données en base, ce que reçoit le site et le fichier d'import restent les mêmes. On peut donc ajouter,
+ * renommer ou retirer des sections sur un site existant sans migration.
+ *
+ * ```ts
+ * fields: {
+ *   title: f.text({ label: 'Titre', required: true }),                 // hors section
+ *   ...section({ label: 'Bandeau', help: 'En haut de la page.' }, {
+ *     heroTitle: f.text({ label: 'Titre' }),
+ *     heroImage: f.image({ label: 'Image' }),
+ *   }),
+ *   ...section({ label: 'Bas de page', collapsed: true }, cta()),     // fonction qui fabrique des champs
+ * }
+ * ```
+ *
+ * Les champs d'une section se suivent. Dans un formulaire multilingue, la section apparaît dans la zone des champs
+ * traduits et dans celle des champs communs, avec chaque fois les champs qui s'y trouvent. Une section dont aucun
+ * champ n'est affiché (`showIf`) disparaît ; une section repliée qui contient une erreur s'ouvre. Pas de section dans
+ * un répéteur (les éléments d'un répéteur sont déjà repliables).
+ */
+export function section<const F extends Record<string, AnyField>>(meta: Section, fields: F): { [K in keyof F]: F[K] & { section: Section } } {
+  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, { ...field, section: meta }])) as never
+}
 
 const make = <T extends FieldType>(type: T) =>
   <const O extends OptsOf[T]>(options: O) => ({ ...options, type }) as O & { type: T }
@@ -246,6 +324,13 @@ export function validate(config: Config): string[] {
       checkRename(at, key, field.renamedFrom, fields)
       if (nested && field.localized !== undefined) errors.push(`${at} : localized se règle sur le répéteur, pas sur ses sous-champs`)
       if (nested && field.restricted) errors.push(`${at} : restricted se règle sur le répéteur, pas sur ses sous-champs`)
+      if (nested && field.section) errors.push(`${at} : pas de section dans un répéteur (ses éléments se replient déjà) ; rangez le répéteur entier dans une section`)
+      if (field.type === 'image' || field.type === 'file') {
+        const count = (k: 'min' | 'max') => field[k] === undefined || (Number.isInteger(field[k]) && (field[k] as number) >= 0)
+        if (!field.multiple && (field.captions || field.min !== undefined || field.max !== undefined)) errors.push(`${at} : captions, min et max demandent multiple: true`)
+        else if (!count('min') || !count('max')) errors.push(`${at} : min et max sont des nombres entiers positifs`)
+        else if (field.min !== undefined && field.max !== undefined && (field.min as number) > (field.max as number)) errors.push(`${at} : min est plus grand que max`)
+      }
       if (field.type === 'select') {
         const values = (field.options as { value: string }[]).map(o => o.value)
         if (!values.length || new Set(values).size !== values.length) errors.push(`${at} : options vides ou en double`)
@@ -279,6 +364,7 @@ export function validate(config: Config): string[] {
         if (field.itemLabel && !sub[field.itemLabel as string]) errors.push(`${at} : itemLabel ne correspond à aucun sous-champ`)
       }
     }
+    if (!nested) checkSections(where, fields)
     for (const key of Object.keys(fields)) {
       const visited = new Set([key])
       let next = fields[key]?.showIf?.field
@@ -287,6 +373,28 @@ export function validate(config: Config): string[] {
         visited.add(next)
         next = fields[next]?.showIf?.field
       }
+    }
+  }
+
+  /** Sections : un titre, des réglages identiques sur tous leurs champs, et des champs qui se suivent. */
+  function checkSections(where: string, fields: Fields) {
+    const metas = new Map<string, Section>()
+    const closed = new Set<string>()
+    let current: string | null = null
+    for (const [key, field] of Object.entries(fields)) {
+      const meta = field.section as Section | undefined
+      const label = meta === undefined ? null : meta && typeof meta === 'object' && typeof meta.label === 'string' && meta.label.trim() ? meta.label : ''
+      if (label === '') { errors.push(`${where}.${key}.section : un titre est attendu (utilisez section({ label: '…' }, { … }))`); continue }
+      if (label !== current) {
+        if (current !== null) closed.add(current)
+        if (label !== null && closed.has(label)) errors.push(`${where} : les champs de la section « ${label} » doivent se suivre (« ${key} » est séparé des autres)`)
+        current = label
+      }
+      if (label === null) continue
+      const known = metas.get(label)
+      if (!known) metas.set(label, meta!)
+      else if ((known.help ?? '') !== (meta!.help ?? '') || !!known.collapsed !== !!meta!.collapsed)
+        errors.push(`${where}.${key}.section : la section « ${label} » est déclarée avec d'autres réglages (help, collapsed) plus haut`)
     }
   }
 
@@ -326,7 +434,7 @@ export function validate(config: Config): string[] {
     if (sort && !def.fields[sort] && !['createdAt', 'updatedAt', 'publishedAt'].includes(sort)) errors.push(`${key}.defaultSort : champ inconnu`)
     for (const c of def.list?.columns ?? []) if (!def.fields[c]) errors.push(`${key}.list.columns : champ « ${c} » inconnu`)
     const thumb = def.list?.thumbnail
-    if (thumb && def.fields[thumb]?.type !== 'image') errors.push(`${key}.list.thumbnail doit désigner un champ image`)
+    if (thumb && def.fields[thumb]?.type !== 'image') errors.push(`${key}.list.thumbnail doit désigner un champ image (pour une galerie : sa première image)`)
   }
   return errors
 }
@@ -348,6 +456,8 @@ export function isVisible(field: { showIf?: Condition }, values: Record<string, 
 // ───────────────────────── Types des contenus lus par le site ─────────────────────────
 
 export type Media = { id: string; url: string; name: string; alt: string; mime: string; width: number | null; height: number | null }
+/** Image (ou fichier) d'une liste avec `captions` : le fichier, plus la légende propre à cet usage. */
+export type CaptionedMedia = Media & { caption: string | null }
 export type Link = { label: string; href: string; newTab: boolean }
 export type EntryRef = { id: string; collection: string; title: string; slug: string | null }
 /** `title` vaut le titre du contenu quand le champ de référencement est laissé vide. */
@@ -358,7 +468,7 @@ type Raw<F> =
   : F extends { type: 'number' } ? number
   : F extends { type: 'boolean' } ? boolean
   : F extends { type: 'select'; options: readonly { value: infer V }[] } ? (F extends { multiple: true } ? V[] : V)
-  : F extends { type: 'image' | 'file' } ? Media
+  : F extends { type: 'image' | 'file' } ? (F extends { multiple: true } ? (F extends { captions: true } ? CaptionedMedia[] : Media[]) : Media)
   : F extends { type: 'link' } ? Link
   : F extends { type: 'relation' } ? (F extends { multiple: true } ? EntryRef[] : EntryRef)
   : F extends { type: 'repeater'; fields: infer S } ? Values<S>[]
@@ -381,12 +491,16 @@ type Raw<F> =
  * | `select`                           | `null`         | une des `value`                          |
  * | `select` avec `multiple`           | `[]`           | tableau de `value`                       |
  * | `image`, `file`                    | `null`         | `Media`                                  |
+ * | `image`, `file` avec `multiple`    | `[]`           | tableau de `Media`, dans l'ordre choisi  |
+ * | … et `captions`                    | `[]`           | tableau de `Media & { caption }`         |
  * | `link`                             | `null`         | `Link`                                   |
  * | `relation`                         | `null`         | `EntryRef`                               |
  * | `relation` avec `multiple`         | `[]`           | tableau d'`EntryRef`                     |
  * | `repeater`                         | `[]`           | tableau d'objets, mêmes règles dedans    |
  *
- * Dans une page : `v-if="product.note"` suffit pour un texte ; `product.stock !== null` pour un nombre (0 compte).
+ * Dans une page : `v-if="product.note"` suffit pour un texte ; `product.stock !== null` pour un nombre (0 compte) ;
+ * `v-if="item.photos.length"` pour une galerie. Une légende vide vaut `null`. Un fichier supprimé de la médiathèque
+ * disparaît de la liste (il ne laisse pas de trou).
  *
  * Les types ci-dessous disent la même chose. Deux précisions :
  * - une référence (`image`, `file`, `link`, `relation` simple) peut être `null` même si le champ est obligatoire :

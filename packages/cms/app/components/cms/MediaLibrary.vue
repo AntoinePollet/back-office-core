@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Search, Upload } from '@lucide/vue'
+import { Check, Search, Upload } from '@lucide/vue'
 import type { CmsMedia } from '../../composables/useCms'
 
 /** Grille de la médiathèque avec import et recherche. Sert à la page Médiathèque et au choix d'un fichier dans un formulaire. */
@@ -9,8 +9,15 @@ const props = defineProps<{
   imagesOnly?: boolean
   /** Types de fichiers acceptés (ex. ['application/pdf']). */
   accept?: readonly string[]
+  /** Sélection de plusieurs fichiers (galerie) : un clic coche ou décoche, `picked` garde l'ordre des clics. */
+  multiple?: boolean
+  picked?: string[]
+  /** Fichiers déjà dans la galerie : affichés, mais pas sélectionnables une seconde fois. */
+  taken?: string[]
+  /** Nombre maximal de fichiers sélectionnables (place restante dans la galerie). */
+  limit?: number
 }>()
-const emit = defineEmits<{ select: [media: CmsMedia] }>()
+const emit = defineEmits<{ select: [media: CmsMedia]; 'update:picked': [ids: string[]] }>()
 
 const { items, load, upload } = useCmsMedia()
 const toast = useCmsToast()
@@ -25,14 +32,35 @@ const input = ref<HTMLInputElement>()
 const allowed = (mime: string) => (props.imagesOnly ? mime.startsWith('image/') : !props.accept?.length || props.accept.includes(mime))
 const shown = computed(() => (items.value ?? []).filter(m => allowed(m.mime) && m.name.toLowerCase().includes(search.value.toLowerCase())))
 const isImage = (m: CmsMedia) => m.mime.startsWith('image/')
+const isTaken = (m: CmsMedia) => !!props.taken?.includes(m.id)
+const rank = (m: CmsMedia) => (props.picked ?? []).indexOf(m.id) + 1
+const full = () => props.limit != null && (props.picked?.length ?? 0) >= props.limit
+
+/** Clic sur un fichier : choisi tout de suite, ou coché/décoché en sélection multiple. */
+function choose(m: CmsMedia) {
+  if (!props.multiple) return emit('select', m)
+  if (isTaken(m)) return
+  const picked = props.picked ?? []
+  if (picked.includes(m.id)) emit('update:picked', picked.filter(id => id !== m.id))
+  else if (full()) toast.error(`${props.limit} fichier${props.limit! > 1 ? 's' : ''} au plus peuvent encore être ajoutés.`)
+  else emit('update:picked', [...picked, m.id])
+}
 const extension = (m: CmsMedia) => m.name.split('.').pop()?.toUpperCase() ?? 'FICHIER'
 
 async function importFiles(files: FileList | File[] | null | undefined) {
   let last: CmsMedia | undefined
+  const added: string[] = []
+  // Sélection au départ : `props.picked` est mis à jour entre deux envois, on ne doit pas l'ajouter deux fois.
+  const before = props.picked ?? []
   for (const file of Array.from(files ?? [])) {
     uploading.value++
     try {
       last = await upload(file)
+      // En sélection multiple, chaque fichier importé est coché, dans l'ordre d'import, tant qu'il reste de la place.
+      if (props.multiple && allowed(last.mime) && (props.limit == null || before.length + added.length < props.limit)) {
+        added.push(last.id)
+        emit('update:picked', [...before, ...added])
+      }
     }
     catch (e) {
       toast.error(`${file.name} : ${cmsErrorMessage(e, 'import impossible.')}`)
@@ -40,8 +68,8 @@ async function importFiles(files: FileList | File[] | null | undefined) {
     uploading.value--
   }
   if (last) {
-    toast.success('Fichier importé. Pensez au texte alternatif.')
-    if (allowed(last.mime)) emit('select', last)
+    toast.success(props.multiple && added.length > 1 ? `${added.length} fichiers importés et sélectionnés. Pensez au texte alternatif.` : 'Fichier importé. Pensez au texte alternatif.')
+    if (!props.multiple && allowed(last.mime)) emit('select', last)
   }
   if (input.value) input.value.value = ''
 }
@@ -69,11 +97,14 @@ async function importFiles(files: FileList | File[] | null | undefined) {
       <button
         v-for="m in shown" :key="m.id" type="button"
         class="group relative aspect-[4/3] rounded-box overflow-hidden bg-base-300 cursor-pointer ring-offset-2 ring-offset-base-100 hover:ring-2 ring-primary"
-        :class="{ 'ring-2': selectedId === m.id }" :title="m.name" @click="emit('select', m)"
+        :class="{ 'ring-2': selectedId === m.id || rank(m), 'opacity-50 cursor-not-allowed hover:ring-0': multiple && isTaken(m) }"
+        :title="m.name" :aria-pressed="multiple ? !!rank(m) : undefined" :aria-disabled="multiple && isTaken(m) ? true : undefined" @click="choose(m)"
       >
         <img v-if="isImage(m)" :src="cmsImageUrl(m, 320)" class="w-full h-full object-cover" :alt="m.alt.fr ?? ''" loading="lazy">
         <span v-else class="w-full h-full grid place-items-center text-sm font-semibold text-base-content/60">{{ extension(m) }}</span>
         <span v-if="isImage(m) && !Object.values(m.alt).some(Boolean)" class="absolute top-1.5 left-1.5 badge badge-xs badge-warning" title="Texte alternatif manquant">alt</span>
+        <span v-if="rank(m)" class="absolute top-1.5 right-1.5 badge badge-sm badge-primary font-semibold" :aria-label="`Sélectionné en position ${rank(m)}`">{{ rank(m) }}</span>
+        <span v-else-if="multiple && isTaken(m)" class="absolute top-1.5 right-1.5 badge badge-sm bg-base-100/90 border-0 gap-1"><Check :size="12" />Déjà ajouté</span>
         <span class="absolute inset-x-0 bottom-0 p-1.5 text-xs text-left text-white bg-gradient-to-t from-black/70 to-transparent truncate opacity-0 group-hover:opacity-100 transition">{{ m.name }}</span>
       </button>
     </div>

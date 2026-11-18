@@ -22,6 +22,47 @@ export type LinkValue = { label?: string; newTab?: boolean } & (
   | { kind: 'url'; url: string }
 )
 
+/**
+ * Élément enregistré d'une liste d'images ou de fichiers (`multiple: true`) : l'identifiant du fichier dans la
+ * médiathèque, et sa légende pour cet usage.
+ */
+export type MediaItem = { media: string; caption?: string }
+
+/** Clés possibles d'un élément de liste d'images ou de fichiers. */
+export const MEDIA_ITEM_KEYS = ['media', 'caption']
+
+/** Vrai pour un champ image ou fichier qui contient une liste (galerie). */
+export const isMediaList = (field: { type: string; multiple?: unknown }) => (field.type === 'image' || field.type === 'file') && !!field.multiple
+
+/**
+ * Met une liste d'images ou de fichiers sous sa forme enregistrée : `'id'` devient `{ media: 'id' }`, une légende vide
+ * disparaît. Une valeur seule (champ qui vient de devenir multiple) devient une liste d'un élément.
+ * Ce qui n'a pas la forme attendue est laissé tel quel : la validation le signale.
+ */
+export function toMediaItems(v: unknown): unknown {
+  if (v == null || v === '') return []
+  const list = Array.isArray(v) ? v : [v]
+  return list.map((item) => {
+    if (typeof item === 'string') return { media: item }
+    if (item && typeof item === 'object' && !Array.isArray(item) && 'caption' in item && (item.caption == null || (typeof item.caption === 'string' && !item.caption.trim()))) {
+      const { caption: _c, ...rest } = item as Record<string, unknown>
+      return rest
+    }
+    return item
+  })
+}
+
+/** Met les listes d'images ou de fichiers sous leur forme enregistrée, y compris dans les répéteurs. Modifie `values`. */
+export function normalizeValues(fields: Fields, values: Values): Values {
+  for (const [key, field] of Object.entries(fields)) {
+    const v = values[key]
+    if (isMediaList(field) && v !== undefined) values[key] = toMediaItems(v)
+    else if (field.type === 'repeater' && Array.isArray(v))
+      for (const item of v) if (item && typeof item === 'object') normalizeValues(field.fields as Fields, item as Values)
+  }
+  return values
+}
+
 /** Sépare les champs traduits des champs communs aux langues. */
 export function partition(fields: Fields) {
   const localized: Fields = {}
@@ -100,6 +141,17 @@ export function validateValues(fields: Fields, values: Values, prefix = ''): Rec
       const chosen = Array.isArray(v) ? v : [v]
       if (!chosen.every(c => allowed.includes(c as string))) errors[at] = 'Choix inconnu.'
     }
+    else if (isMediaList(field)) {
+      const items = Array.isArray(v) ? v : null
+      const valid = (item: unknown) => !!item && typeof item === 'object' && !Array.isArray(item)
+        && typeof (item as MediaItem).media === 'string' && (item as MediaItem).media !== ''
+        && ((item as MediaItem).caption == null || typeof (item as MediaItem).caption === 'string')
+        && Object.keys(item).every(k => MEDIA_ITEM_KEYS.includes(k))
+      const noun = field.type === 'image' ? 'images' : 'fichiers'
+      if (!items || !items.every(valid)) errors[at] = 'Liste de fichiers invalide.'
+      else if (max != null && items.length > max) errors[at] = `${max} ${noun} au maximum.`
+      else if (min != null && items.length < min) errors[at] = `${min} ${noun} au minimum.`
+    }
     else if (field.type === 'image' || field.type === 'file') {
       if (typeof v !== 'string') errors[at] = 'Fichier invalide.'
     }
@@ -146,6 +198,14 @@ function toPublicValue(field: AnyField, v: unknown): unknown {
       if (field.multiple) return (Array.isArray(v) ? v : v == null ? [] : [v]).filter(c => typeof c === 'string' && c !== '')
       return typeof v === 'string' && v !== '' ? v : null
     case 'image': case 'file':
+      if (field.multiple) {
+        // Forme enregistrée, sans élément invalide ; la légende n'est transmise que si le champ en a.
+        return (toMediaItems(v) as unknown[]).flatMap((item) => {
+          const { media, caption } = (item ?? {}) as Partial<MediaItem>
+          if (typeof media !== 'string' || !media) return []
+          return [field.captions ? { media, caption: typeof caption === 'string' && caption.trim() ? caption : null } : { media }]
+        })
+      }
       return typeof v === 'string' && v !== '' ? v : null
     case 'relation':
       if (field.multiple) return (Array.isArray(v) ? v : v == null ? [] : [v]).filter(id => typeof id === 'string' && id !== '')
