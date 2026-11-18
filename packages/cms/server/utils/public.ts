@@ -79,11 +79,11 @@ async function inChunks<T>(ids: string[], query: (chunk: string[]) => Promise<T[
 
 /** Aperçu des brouillons : demandé par ?preview=1 et accordé seulement à une personne connectée au back-office. */
 export async function isPreview(event: H3Event, type: string) {
-  if (!getQuery(event).preview) return false
-  const user = await requireUser(event).catch(() => null)
+  // La personne connectée (?preview=1), ou le créateur du lien d'aperçu partagé (?preview=<jeton>).
+  const who = await previewWho(event)
   // Un brouillon ne se montre qu'à quelqu'un qui pourrait l'ouvrir dans le back-office.
   // Avec le droit « seulement ses contenus », on ne sait pas trier ici : pas d'aperçu des listes ni des pages.
-  return !!user && can(user, type, 'edit') && !rightsFor(user, type).own
+  return !!who && can(who, type, 'edit') && !rightsFor(who, type).own
 }
 
 /**

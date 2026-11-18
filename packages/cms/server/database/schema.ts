@@ -203,6 +203,21 @@ export const roles = sqliteTable('cms_roles', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
+/**
+ * Lien d'aperçu à partager : montre les brouillons du site à quelqu'un qui n'a pas de compte, jusqu'à une date.
+ * Seule l'empreinte du jeton est stockée. Le lien montre ce que son créateur a le droit d'ouvrir, rien de plus.
+ */
+export const previewLinks = sqliteTable('cms_preview_links', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull().unique(),
+  /** Pour qui ou pour quoi ce lien a été créé : aide à s'y retrouver dans la liste. */
+  label: text('label').notNull(),
+  createdBy: text('created_by').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  createdByName: text('created_by_name').notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+})
+
 /** Demande de publication : quelqu'un qui ne peut pas publier signale qu'un brouillon est prêt. Une au plus par contenu. */
 export const reviewRequests = sqliteTable('cms_review_requests', {
   entryId: text('entry_id').primaryKey().references(() => entries.id, { onDelete: 'cascade' }),

@@ -9,16 +9,25 @@ type ReadOptions = { locale?: string }
 
 // ───────────── Pour le site public ─────────────
 
-/** Vrai quand la page est ouverte en aperçu depuis le back-office (?preview=1) : les brouillons sont affichés. */
+/** Valeur du paramètre d'aperçu de l'adresse (« 1 » ou le jeton d'un lien partagé), ou null hors aperçu. */
+export function previewParam(query: Record<string, unknown>): string | null {
+  if (!('preview' in query)) return null
+  const value = Array.isArray(query.preview) ? query.preview[0] : query.preview
+  return typeof value === 'string' && value ? value : '1'
+}
+
+/** Vrai quand la page est ouverte en aperçu (?preview=1, ou lien d'aperçu partagé) : les brouillons sont affichés. */
 export function useCmsPreview() {
   const route = useRoute()
   return computed(() => 'preview' in route.query)
 }
 
 function readOptions(options: ReadOptions) {
-  if (!('preview' in useRoute().query)) return { query: options }
+  const preview = previewParam(useRoute().query)
+  if (preview === null) return { query: options }
   // En aperçu, la session du back-office accompagne la requête, y compris pendant le rendu sur le serveur.
-  return { query: { ...options, preview: 1 }, $fetch: useRequestFetch() as typeof $fetch }
+  // La valeur est transmise telle quelle : « 1 » pour une personne connectée, ou le jeton d'un lien partagé.
+  return { query: { ...options, preview }, $fetch: useRequestFetch() as typeof $fetch }
 }
 
 type Collections = import('#cms-types').CmsCollections
@@ -77,10 +86,10 @@ export function useCollectionPage<K extends Key<Collections>>(
 export async function useEntry<K extends Key<Collections>>(type: K, slug: MaybeRefOrGetter<string>, options: ReadOptions = {}) {
   // Après une attente, Nuxt ne sait plus dans quelle page on se trouve : tout ce qui en dépend est lu avant.
   const nuxtApp = useNuxtApp()
-  const preview = 'preview' in useRoute().query
+  const preview = previewParam(useRoute().query)
   const result = await useFetch<Collections[K]>(() => `/api/content/${type}/${encodeURIComponent(toValue(slug))}`, readOptions(options))
   const moved = (result.data.value as { _redirect?: string } | null)?._redirect
-  if (moved) await nuxtApp.runWithContext(() => navigateTo(moved + (preview ? '?preview=1' : ''), { redirectCode: 301 }))
+  if (moved) await nuxtApp.runWithContext(() => navigateTo(moved + (preview ? `?preview=${encodeURIComponent(preview)}` : ''), { redirectCode: 301 }))
   return result
 }
 
@@ -149,6 +158,8 @@ export const useCmsUser = () => useState<{
   /** Peut modifier les champs réservés ; peut supprimer des fichiers. */
   restrictedFields?: boolean
   deleteMedia?: boolean
+  /** Peut créer un lien d'aperçu à partager. */
+  sharePreview?: boolean
   /** Contenus auxquels le compte est limité (null : aucune limite). */
   types?: string[] | null
   /** Droits sur chaque type de contenu, calculés par le serveur. */

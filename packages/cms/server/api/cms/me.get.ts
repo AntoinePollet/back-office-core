@@ -11,5 +11,7 @@ export default defineEventHandler(async (event) => {
     access: accessMap(user),
     restrictedFields: canEditRestricted(user),
     deleteMedia: canDeleteMedia(user),
+    /** Peut créer un lien d'aperçu à partager. */
+    sharePreview: canSharePreview(user),
   }
 })

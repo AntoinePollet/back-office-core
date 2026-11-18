@@ -3,6 +3,11 @@ export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('render:response', (response, { event }) => {
     const path = getRequestURL(event).pathname
     if (response.statusCode !== 200 || path === '/admin' || path.startsWith('/admin/')) return
+    if ('preview' in getQuery(event)) {
+      // Un aperçu ne doit jamais être indexé, et son adresse (qui peut contenir un jeton) ne doit pas fuiter vers d'autres sites.
+      setResponseHeaders(event, { 'x-robots-tag': 'noindex, nofollow', 'referrer-policy': 'same-origin' })
+      return
+    }
     // Une page qui a posé sa propre consigne (par exemple une page personnalisée) la garde.
     if (getResponseHeader(event, 'cache-control') !== NO_CACHE) return
     allowSiteCache(event)

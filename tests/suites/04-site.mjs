@@ -91,7 +91,7 @@ export default async function (t) {
     const opened = new Promise(resolve => browser.once('targetcreated', resolve))
     await clickText(page, 'button', 'Aperçu du brouillon')
     const tab = t.track(await (await opened).page())
-    await tab.waitForFunction(() => location.search === '?preview=1' && document.body.innerText.includes('Aperçu du brouillon'))
+    await tab.waitForFunction(() => location.search === '?preview=1' && document.body.innerText.includes('Mode aperçu : vous voyez les brouillons'))
     check((await tab.evaluate(() => document.querySelector('h1').textContent)).includes('(brouillon)'), 'le nouvel onglet ne montre pas le brouillon')
     await t.shot(tab, 'apercu'); await tab.close()
   })

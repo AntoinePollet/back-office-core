@@ -58,6 +58,7 @@ async function logout() {
         <!-- Recherche et navigation rapide (⌘K) : le bouton et sa fenêtre. -->
         <CmsCommandPalette :schema="schema" :groups="groups" @logout="logout" />
         <div class="ml-auto">
+          <CmsPreviewShare />
           <a href="/" target="_blank" class="btn btn-ghost btn-sm"><ExternalLink :size="16" />Voir le site</a>
         </div>
       </header>
