@@ -9,7 +9,16 @@ import type { H3Event } from 'h3'
  *     nitro.hooks.hook('cms:event', (e) => { if (e.name === 'entry.published') … })
  *   })
  */
-export type CmsEvent = { user: { id: string; email: string }; at: string } & (
+export type CmsEvent = { at: string } & (CoreEvent | ModuleEvent)
+
+/**
+ * Événement émis par un module (un formulaire envoyé, par exemple). Il apporte lui-même sa phrase de résumé et
+ * les variables que les workflows peuvent utiliser ; `target` permet de restreindre un workflow (à un formulaire…).
+ * Il n'a pas forcément d'auteur : un visiteur du site n'a pas de compte.
+ */
+export type ModuleEvent = { name: string; module: string; summary: string; context: Record<string, Record<string, string>>; target?: string; user?: { id: string; email: string } }
+
+export type CoreEvent = { user: { id: string; email: string }; module?: undefined } & (
   | { name: 'entry.created' | 'entry.updated' | 'entry.published' | 'entry.unpublished' | 'entry.deleted'; type: string; id: string; title: string; locale?: string; /** Adresse publique, si le contenu a une page. */ url?: string }
   /** Quelqu'un qui ne peut pas publier signale qu'un brouillon est prêt. */
   | { name: 'entry.review_requested'; type: string; id: string; title: string; locale?: string; url?: string; note: string; requester: string }
@@ -17,8 +26,7 @@ export type CmsEvent = { user: { id: string; email: string }; at: string } & (
   | { name: 'user.invited'; email: string; recipient: string; link: string; reason: 'invite' | 'reset' }
 )
 
-type DistributiveOmit<T, K extends keyof any> = T extends unknown ? Omit<T, K> : never
-export type CmsEventInput = DistributiveOmit<CmsEvent, 'at'>
+export type CmsEventInput = CoreEvent | ModuleEvent
 
 export function emitCmsEvents(event: H3Event, events: CmsEventInput[]) {
   const at = new Date().toISOString()

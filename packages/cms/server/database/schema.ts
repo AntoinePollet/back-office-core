@@ -85,7 +85,7 @@ export const rateLimits = sqliteTable('cms_rate_limits', {
 
 export type WorkflowTrigger = { event: string; /** Types de contenu concernés ; vide = tous. */ types: string[] }
 export type WorkflowAction =
-  | { kind: 'email'; to: string; subject: string; body: string }
+  | { kind: 'email'; to: string; subject: string; body: string; /** Adresse à laquelle répondre (une variable est possible). */ replyTo?: string }
   | { kind: 'webhook'; url: string }
 export type WorkflowStep = { kind: WorkflowAction['kind']; status: 'success' | 'error' | 'skipped'; detail: string; ms: number }
 
@@ -234,6 +234,32 @@ export const userAccess = sqliteTable('cms_user_access', {
   /** Identifiants de collections et de pages uniques (ceux de cms.config.ts). */
   types: text('types', { mode: 'json' }).$type<string[]>().notNull(),
 })
+
+// ───────────── Modules ─────────────
+
+/** Une clé d'API enregistrée : son texte chiffré (voir shared/secrets.ts) et de quoi la reconnaître sans la révéler. */
+export type StoredSecret = { value: string; hint: string }
+
+/** Réglages d'un module saisis dans le back-office. Une ligne par module. */
+export const moduleSettings = sqliteTable('cms_module_settings', {
+  module: text('module').primaryKey(),
+  /** Réglages qui ne sont pas secrets (expéditeur des e-mails…). */
+  values: text('values', { mode: 'json' }).$type<Record<string, string>>().notNull(),
+  /** Clés d'API, chiffrées. Elles ne ressortent jamais par l'API du back-office. */
+  secrets: text('secrets', { mode: 'json' }).$type<Record<string, StoredSecret>>().notNull(),
+  updatedBy: text('updated_by'),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+})
+
+/** Message reçu par un formulaire du site (module `forms`). */
+export const formSubmissions = sqliteTable('cms_form_submissions', {
+  id: text('id').primaryKey(),
+  /** Identifiant du formulaire dans cms.config.ts. */
+  form: text('form').notNull(),
+  values: text('values', { mode: 'json' }).$type<Json>().notNull(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_form_submissions_form').on(t.form, t.createdAt)])
 
 export const verification = sqliteTable('verification', {
   id: text('id').primaryKey(),

@@ -7,6 +7,7 @@
  */
 
 import { type AccessRules, CMS_ACTIONS, DEFAULT_ACCESS } from './access'
+import type { CmsModuleRef } from './modules'
 
 export const FORMAT_VERSION = 1
 
@@ -188,6 +189,8 @@ type Site = {
 
 type Config = {
   site: Site
+  /** Fonctions ajoutées au site : `modules: [brevo(), forms({ … })]`. Voir `shared/modules.ts`. */
+  modules?: readonly CmsModuleRef[]
   singletons?: Record<string, ReturnType<typeof singleton>>
   collections?: Record<string, ReturnType<typeof collection>>
 }
@@ -211,11 +214,15 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
   const { site, singletons = {}, collections = {} } = config
+
+  const moduleIds = (config.modules ?? []).map(m => m?.id)
+  if (moduleIds.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]*$/.test(id))) errors.push('modules : chaque module doit avoir un identifiant (utilisez brevo(), forms()…)')
+  else if (new Set(moduleIds).size !== moduleIds.length) errors.push('modules : un même module est déclaré deux fois')
 
   if (new Set(site.locales).size !== site.locales.length) errors.push('site.locales contient un doublon')
   for (const l of site.locales) if (!LOCALE.test(l)) errors.push(`langue « ${l} » : attendu un code comme 'fr' ou 'pt-BR'`)

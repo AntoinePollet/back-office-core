@@ -3,6 +3,7 @@ import http from 'node:http'
 
 /**
  * - POST /v3/smtp/email → 201, comme Brevo
+ * - GET /v3/account → le compte Brevo, ou 401 avec la clé « mauvaise-cle »
  * - /echec → 500
  * - toute autre adresse → 200
  * - GET /_calls → les appels reçus (pour déboguer à la main)
@@ -20,6 +21,11 @@ export async function startMock(port) {
       catch { body = raw }
       calls.push({ url: req.url, key: req.headers['api-key'] ?? null, body })
       if (req.url === '/echec') { res.statusCode = 500; return res.end('{}') }
+      // Compte Brevo : sert à vérifier une clé d'API. « mauvaise-cle » est refusée, comme une clé inconnue de Brevo.
+      if (req.url === '/v3/account') {
+        if (req.headers['api-key'] === 'mauvaise-cle') { res.statusCode = 401; return res.end('{"code":"unauthorized","message":"Key not found"}') }
+        return res.end('{"email":"contact@cabinet-durand.fr","companyName":"Cabinet Durand"}')
+      }
       res.statusCode = req.url === '/v3/smtp/email' ? 201 : 200
       res.end('{"messageId":"test"}')
     })

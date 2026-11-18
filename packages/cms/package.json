@@ -5,7 +5,8 @@
   "main": "./nuxt.config.ts",
   "exports": {
     ".": "./nuxt.config.ts",
-    "./config": "./shared/format.ts"
+    "./config": "./shared/format.ts",
+    "./modules": "./shared/modules.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",

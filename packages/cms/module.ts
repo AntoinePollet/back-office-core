@@ -57,6 +57,9 @@ export default defineNuxtModule({
   export type CmsCollections = { [K in keyof Defined<Config['collections']>]: Entry<Defined<Config['collections']>[K]> }
   /** Le contenu de chaque page unique, tel que le site le reçoit. */
   export type CmsSingletons = { [K in keyof Defined<Config['singletons']>]: Entry<Defined<Config['singletons']>[K]> }
+  /** Les valeurs de chaque formulaire du site (module « forms »), pour \`useCmsForm\`. */
+  export type CmsForms = [Forms] extends [never] ? Record<string, Record<string, any>> : Forms
+  type Forms = import(${JSON.stringify(resolve(dirname(format), 'modules'))}).InferForms<Config>
 }
 `,
     })

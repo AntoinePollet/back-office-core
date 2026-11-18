@@ -1,4 +1,5 @@
 import { defineCms, collection, singleton, f } from 'backoffice-core/config'
+import { brevo } from 'backoffice-core/modules'
 
 // Ce fichier décrit les contenus que le client peut modifier dans le back-office.
 // Chaque `singleton` est une page unique, chaque `collection` une liste de contenus du même type.
@@ -6,6 +7,14 @@ import { defineCms, collection, singleton, f } from 'backoffice-core/config'
 // Pour renommer un champ ou une collection sans perdre les contenus déjà saisis, utiliser `renamedFrom`.
 export default defineCms({
   site: __SITE_TS__,
+
+  // Modules : des fonctions ajoutées au site. Leurs clés d'API se saisissent dans le back-office, écran « Modules ».
+  // Pour un formulaire de contact : importer `forms` et ajouter
+  //   forms({ contact: { label: 'Contact', fields: { email: f.text({ label: 'E-mail', required: true, format: 'email' }), … } } })
+  // puis, dans une page : `const form = useCmsForm('contact')`. Voir le README.
+  modules: [
+    brevo(),
+  ],
 
   singletons: {
     home: singleton({

@@ -32,6 +32,7 @@ function readOptions(options: ReadOptions) {
 
 type Collections = import('#cms-types').CmsCollections
 type Singletons = import('#cms-types').CmsSingletons
+type Forms = import('#cms-types').CmsForms
 type Key<T> = keyof T & string
 
 /** Filtre par valeur de champ : `{ category: 'identifiant', onQuote: true }`. Champs texte, nombre, interrupteur, date, liste de choix et relation. */
@@ -146,6 +147,58 @@ export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: { /** Ajou
       ]
     }) as never, // la liste mêle deux formes de lien que le type de useHead ne sait pas décrire ensemble
   })
+}
+
+// ───────────── Formulaires du site (module `forms`) ─────────────
+
+/**
+ * Un formulaire déclaré dans cms.config.ts (`forms({ contact: … })`), prêt à brancher sur une page :
+ *
+ *   const form = useCmsForm('contact')
+ *
+ *   <form @submit.prevent="form.submit()">
+ *     <input v-model="form.values.email"> <p v-if="form.errors.email">{{ form.errors.email }}</p>
+ *     <input v-model="form.trap.value" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+ *     <button :disabled="form.pending.value">Envoyer</button>
+ *   </form>
+ *   <p v-if="form.sent.value">Merci, votre message est bien parti.</p>
+ *
+ * Le serveur valide tout (champs obligatoires, formats, longueurs) et renvoie un message par champ dans `errors`.
+ * `trap` est un champ piège facultatif : laissé invisible, il n'est rempli que par les robots, dont l'envoi est ignoré.
+ */
+export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K]> = {}) {
+  type T = Forms[K]
+  const values = reactive<Record<string, any>>({ ...initial }) as T
+  /** Message d'erreur de chaque champ refusé par le serveur. */
+  const errors = ref<Partial<Record<keyof T & string, string>>>({})
+  /** Message général quand l'envoi échoue (trop d'envois, panne…). */
+  const error = ref<string | null>(null)
+  const pending = ref(false)
+  const sent = ref(false)
+  const trap = ref('')
+
+  async function submit() {
+    if (pending.value) return false
+    pending.value = true
+    errors.value = {}
+    error.value = null
+    try {
+      await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value } })
+      sent.value = true
+      for (const key of Object.keys(values)) delete (values as Record<string, unknown>)[key]
+      Object.assign(values, initial)
+      return true
+    }
+    catch (e: any) {
+      errors.value = e?.data?.data?.errors ?? {}
+      error.value = Object.keys(errors.value).length ? 'Certains champs sont à corriger.' : cmsErrorMessage(e, 'L\'envoi a échoué. Réessayez dans un instant.')
+      return false
+    }
+    finally {
+      pending.value = false
+    }
+  }
+  return { values, errors, error, pending, sent, trap, submit }
 }
 
 // ───────────── Pour le back-office ─────────────
@@ -307,4 +360,26 @@ export function useCmsAdminStyle() {
  */
 export function cmsApi<T = unknown>(url: string, options?: Record<string, any>): Promise<T> {
   return $fetch<T>(url, options) as Promise<T>
+}
+
+/** Nombre de messages de formulaire non lus, affiché dans le menu (module « forms »). */
+export const useCmsUnreadMessages = () => useState<number>('cms-forms-unread', () => 0)
+let unreadRequest = 0
+/** Relit ce nombre sur le serveur. Seule la réponse à la demande la plus récente est retenue. */
+export async function refreshCmsUnreadMessages() {
+  const mine = ++unreadRequest
+  const unread = useCmsUnreadMessages()
+  const result = await cmsApi<{ unread: number }>('/api/cms/forms/unread').catch(() => null)
+  if (result && mine === unreadRequest) unread.value = result.unread
+}
+
+/** Un module tel que l'API du back-office le décrit : ses réglages, sans jamais la valeur d'une clé d'API. */
+export type CmsModuleState = {
+  id: string; label: string; description: string
+  settings: {
+    key: string; label: string; type: 'text' | 'secret'; help?: string; placeholder?: string; required?: boolean
+    env?: { name: string }
+    value?: string; saved?: boolean; hint?: string; unreadable?: boolean; fromEnv: boolean
+  }[]
+  configured: boolean; missing: string[]; canTest: boolean; adminPage: { to: string; label: string } | null
 }

@@ -2,6 +2,7 @@ import { desc, eq, lt } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import type { WorkflowAction, WorkflowStep, WorkflowTrigger } from '../database/schema'
 import type { CmsEvent } from './events'
+import type { ModuleWorkflowEvent } from './modules'
 
 type WorkflowRow = typeof schema.workflows.$inferSelect
 type Context = Record<string, Record<string, string>>
@@ -47,6 +48,36 @@ export const WORKFLOW_VARIABLES = {
   ],
 }
 
+type Target = { key: string; label: string }
+const contentTypes = (): Target[] =>
+  [...Object.entries(cmsConfig.collections ?? {}), ...Object.entries(cmsConfig.singletons ?? {})].map(([key, def]) => ({ key, label: def.label }))
+
+/** Déclencheurs apportés par les modules actifs. */
+const moduleEvents = (): ModuleWorkflowEvent[] => activeModules().flatMap(m => m.workflowEvents?.() ?? [])
+
+/**
+ * Tout ce que l'éditeur de workflow propose sur ce site : les déclencheurs du core et ceux des modules actifs,
+ * avec, pour chacun, ses variables et ce sur quoi on peut le restreindre (`targets`).
+ */
+export function workflowCatalog() {
+  const types = contentTypes()
+  return [
+    ...WORKFLOW_EVENTS.map(e => ({
+      name: e.name as string, label: e.label as string,
+      variables: [...WORKFLOW_VARIABLES[e.scope], ...WORKFLOW_VARIABLES.common],
+      targets: e.scope === 'invite' ? [] : types,
+      targetsLabel: 'Pour quels contenus',
+    })),
+    ...moduleEvents().map(e => ({
+      name: e.name, label: e.label,
+      // Un événement de module n'a pas forcément d'auteur : pas de {{ user.email }}.
+      variables: [...e.variables, ...WORKFLOW_VARIABLES.common.filter(v => v.key !== 'user.email')],
+      targets: e.targets ?? [],
+      targetsLabel: e.targetsLabel ?? 'Pour lesquels',
+    })),
+  ]
+}
+
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[c]!)
 
 /** Remplace {{ famille.variable }} par sa valeur. Une variable inconnue est remplacée par du vide. */
@@ -60,11 +91,14 @@ const textToHtml = (text: string) =>
 
 function buildContext(event: H3Event, payload: CmsEvent): { context: Context; summary: string } {
   const origin = getRequestURL(event).origin
-  const meta = WORKFLOW_EVENTS.find(e => e.name === payload.name)!
-  const context: Context = {
-    site: { name: cmsConfig.site.name, url: cmsConfig.site.url ?? origin },
-    user: { email: payload.user.email },
+  const site = { name: cmsConfig.site.name, url: cmsConfig.site.url ?? origin }
+  if (payload.module !== undefined) {
+    const context: Context = { ...payload.context, site, user: { email: payload.user?.email ?? '' } }
+    context.event = { label: payload.summary, name: payload.name, date: payload.at }
+    return { context, summary: payload.summary }
   }
+  const meta = WORKFLOW_EVENTS.find(e => e.name === payload.name)!
+  const context: Context = { site, user: { email: payload.user.email } }
   let summary: string
   if (payload.name === 'user.invited') {
     context.invite = { name: payload.recipient, email: payload.email, link: payload.link }
@@ -89,6 +123,11 @@ function buildContext(event: H3Event, payload: CmsEvent): { context: Context; su
 export function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user: { id: string; email: string }): CmsEvent {
   const at = new Date().toISOString()
   const who = { id: user.id, email: user.email }
+  const fromModule = activeModules().find(m => m.workflowEvents?.().some(e => e.name === trigger.event))
+  if (fromModule) {
+    const sample = fromModule.workflowEvents!().find(e => e.name === trigger.event)!.sample(trigger.types[0])
+    return { name: trigger.event, module: fromModule.id, ...sample, at }
+  }
   if (trigger.event === 'user.invited')
     return { name: 'user.invited', email: user.email, recipient: 'Personne de test', link: `${getRequestURL(event).origin}/admin/invite/exemple`, reason: 'invite', user: who, at }
   const type = trigger.types[0] ?? Object.keys(cmsConfig.collections ?? {})[0] ?? Object.keys(cmsConfig.singletons ?? {})[0]!
@@ -102,8 +141,10 @@ async function runAction(event: H3Event, action: WorkflowAction, context: Contex
     const to = renderTemplate(action.to, context).split(/[,;\s]+/).filter(Boolean)
     const invalid = to.filter(a => !/^\S+@\S+\.\S+$/.test(a))
     if (!to.length || invalid.length) return { status: 'error', detail: to.length ? `Adresse invalide : ${invalid.join(', ')}` : 'Aucun destinataire.' }
-    if (!mailSettings(event).configured) return { status: 'skipped', detail: `E-mail non envoyé à ${to.join(', ')} : l'envoi n'est pas configuré sur ce site.` }
-    await sendEmail(event, { to, subject: renderTemplate(action.subject, context), html: textToHtml(renderTemplate(action.body, context)) })
+    const replyTo = renderTemplate(action.replyTo ?? '', context).trim()
+    if (replyTo && !/^\S+@\S+\.\S+$/.test(replyTo)) return { status: 'error', detail: `Adresse de réponse invalide : ${replyTo}` }
+    if (!(await mailStatus(event)).configured) return { status: 'skipped', detail: `E-mail non envoyé à ${to.join(', ')} : l'envoi n'est pas configuré sur ce site.` }
+    await sendEmail(event, { to, subject: renderTemplate(action.subject, context), html: textToHtml(renderTemplate(action.body, context)), ...(replyTo ? { replyTo } : {}) })
     return { status: 'success', detail: `E-mail envoyé à ${to.join(', ')}` }
   }
   const response = await fetch(action.url, {
@@ -143,8 +184,10 @@ export async function executeWorkflow(event: H3Event, workflow: Pick<WorkflowRow
 /** Déclenche les workflows actifs qui correspondent à un événement. */
 export async function runWorkflows(event: H3Event, payload: CmsEvent) {
   const rows = await useDb(event).select().from(schema.workflows).where(eq(schema.workflows.enabled, true))
+  // Ce sur quoi porte l'événement : un type de contenu, ou la cible indiquée par le module (un formulaire…).
+  const target = payload.module !== undefined ? payload.target : 'type' in payload ? payload.type : undefined
   const matching = rows.filter(w => w.trigger.event === payload.name
-    && (!('type' in payload) || !w.trigger.types.length || w.trigger.types.includes(payload.type)))
+    && (target === undefined || !w.trigger.types.length || w.trigger.types.includes(target)))
   for (const workflow of matching) await executeWorkflow(event, workflow, payload)
 }
 
@@ -153,10 +196,10 @@ export function parseWorkflow(body: any): { name: string; enabled: boolean; trig
   const fail = (message: string) => { throw createError({ statusCode: 400, message }) }
   const name = String(body?.name ?? '').trim()
   if (!name) fail('Donnez un nom au workflow.')
-  const meta = WORKFLOW_EVENTS.find(e => e.name === body?.trigger?.event)
+  const meta = workflowCatalog().find(e => e.name === body?.trigger?.event)
   if (!meta) fail('Choisissez un déclencheur.')
-  const known = [...Object.keys(cmsConfig.collections ?? {}), ...Object.keys(cmsConfig.singletons ?? {})]
-  const types = meta!.scope !== 'invite' && Array.isArray(body.trigger.types) ? body.trigger.types.filter((t: unknown) => known.includes(t as string)) : []
+  const known = meta!.targets.map(t => t.key)
+  const types = Array.isArray(body.trigger.types) ? body.trigger.types.filter((t: unknown) => known.includes(t as string)) : []
   if (!Array.isArray(body.actions) || !body.actions.length) fail('Ajoutez au moins une action.')
   if (body.actions.length > 10) fail('Dix actions au maximum par workflow.')
 
@@ -167,7 +210,8 @@ export function parseWorkflow(body: any): { name: string; enabled: boolean; trig
       if (!to) fail(`${n} : indiquez au moins un destinataire.`)
       if (!subject) fail(`${n} : indiquez l'objet de l'e-mail.`)
       if (!text) fail(`${n} : écrivez le message.`)
-      return { kind: 'email', to, subject, body: text }
+      const replyTo = String(a.replyTo ?? '').trim()
+      return { kind: 'email', to, subject, body: text, ...(replyTo ? { replyTo } : {}) }
     }
     if (a?.kind === 'webhook') {
       const url = String(a.url ?? '').trim()

@@ -93,12 +93,80 @@ Dans le tableau de bord Cloudflare : Workers, `__ID__`, Réglages, Domaines et r
 
 ### Envoi d'e-mails (facultatif)
 
-Les automatisations du back-office envoient leurs e-mails par Brevo. Deux secrets à poser :
+Les e-mails du back-office (workflows, lien de nouveau mot de passe, notifications des formulaires) partent par Brevo.
+Le plus simple : dans le back-office, **Modules → Brevo**, coller la clé d'API et l'expéditeur, puis « Vérifier la
+connexion ». La clé est enregistrée chiffrée et ne peut plus être relue ensuite.
+
+On peut aussi les poser dans l'hébergement ; ce qui est saisi dans le back-office passe avant :
 
 ```sh
 pnpm exec wrangler secret put NUXT_BREVO_API_KEY
 pnpm exec wrangler secret put NUXT_EMAIL_FROM     # « Nom du site <contact@exemple.fr> », expéditeur validé dans Brevo
 ```
+
+Les clés saisies dans le back-office sont chiffrées avec `NUXT_AUTH_SECRET` : si ce secret change, il faut les saisir
+à nouveau.
+
+## Modules
+
+Un module ajoute une fonction au site. Il s'active dans `cms.config.ts` et se règle dans le back-office (écran
+« Modules », réservé aux administrateurs) :
+
+```ts
+import { brevo, forms } from 'backoffice-core/modules'
+
+export default defineCms({
+  site: { … },
+  modules: [
+    brevo(),
+    forms({
+      contact: {
+        label: 'Contact',
+        fields: {
+          name: f.text({ label: 'Nom', required: true }),
+          email: f.text({ label: 'E-mail', required: true, format: 'email' }),
+          message: f.textarea({ label: 'Message', required: true }),
+          consent: f.boolean({ label: 'J\'accepte que mes données soient utilisées pour me répondre', required: true }),
+        },
+      },
+    }),
+  ],
+})
+```
+
+| Module | Ce qu'il apporte |
+| --- | --- |
+| `brevo()` | L'envoi des e-mails. Réglages : clé d'API, expéditeur. |
+| `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
+
+### Brancher un formulaire sur une page
+
+```vue
+<script setup lang="ts">
+const form = useCmsForm('contact')   // les champs sont proposés par l'éditeur, d'après cms.config.ts
+</script>
+
+<template>
+  <p v-if="form.sent.value">Merci, votre message est bien parti.</p>
+  <form v-else @submit.prevent="form.submit()">
+    <input v-model="form.values.email" type="email">
+    <p v-if="form.errors.value.email">{{ form.errors.value.email }}</p>
+    <!-- … les autres champs … -->
+    <!-- Champ piège, à laisser invisible : seuls les robots le remplissent, et leur envoi est ignoré. -->
+    <input v-model="form.trap.value" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <p v-if="form.error.value">{{ form.error.value }}</p>
+    <button :disabled="form.pending.value">Envoyer</button>
+  </form>
+</template>
+```
+
+Types de champ acceptés : `text`, `textarea`, `number`, `boolean`, `select`, `date`. Un même visiteur ne peut pas
+envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 jours (réglable :
+`forms({ … }, { retentionDays: 90 })`).
+
+Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
+« Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
+`{{ fields.email }}` dans « Répondre à ».
 
 ## Mettre à jour le core
 

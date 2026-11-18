@@ -1,7 +1,25 @@
 import { defineCms, collection, singleton, f, type InferEntry } from 'backoffice-core/config'
+import { brevo, forms } from 'backoffice-core/modules'
 
 const config = defineCms({
   site: { name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr' },
+
+  // Fonctions ajoutées au site. Les clés d'API se saisissent dans le back-office, écran « Modules ».
+  modules: [
+    brevo(),
+    forms({
+      contact: {
+        label: 'Contact',
+        fields: {
+          name: f.text({ label: 'Nom', required: true }),
+          email: f.text({ label: 'E-mail', required: true, format: 'email' }),
+          subject: f.select({ label: 'Sujet', options: [{ value: 'devis', label: 'Demande de devis' }, { value: 'autre', label: 'Autre question' }] }),
+          message: f.textarea({ label: 'Message', required: true, min: 10 }),
+          consent: f.boolean({ label: 'J\'accepte que mes données soient utilisées pour me répondre', required: true }),
+        },
+      },
+    }),
+  ],
 
   singletons: {
     home: singleton({

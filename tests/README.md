@@ -52,6 +52,7 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `05-apparence` | back-office clair sur un système en mode sombre, couleur du back-office |
 | `06-connexions` | limitation des tentatives de connexion (sans navigateur) |
 | `07-api-publique` | pagination, filtres, aperçu et liens de l'API publique (sans navigateur) |
+| `11-modules` | modules : clé d'API saisie dans le back-office (chiffrée, jamais renvoyée), vérification Brevo, formulaire du site, messages reçus, workflow « formulaire envoyé », droits, limite d'envois |
 
 ## Ajouter une suite
 

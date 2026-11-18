@@ -1,24 +1,29 @@
 import type { H3Event } from 'h3'
+import type { MailMessage } from './modules'
 
-export function mailSettings(event: H3Event) {
-  const { brevoApiKey, brevoApiUrl, emailFrom } = useRuntimeConfig(event)
-  // « Nom <adresse> » ou une adresse seule.
-  const match = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(emailFrom) ?? /^()\s*(\S+@\S+)\s*$/.exec(emailFrom)
-  const sender = match ? { name: match[1] || cmsConfig.site.name, email: match[2]! } : null
-  return { apiKey: brevoApiKey as string, apiUrl: (brevoApiUrl as string).replace(/\/$/, ''), sender, configured: !!brevoApiKey && !!sender }
+/**
+ * Envoi d'e-mails. Le core ne sait pas en envoyer lui-même : il passe par le premier module actif qui sait le faire
+ * (aujourd'hui Brevo). Sans un tel module, ou tant qu'il n'est pas réglé, le site n'envoie pas d'e-mails et
+ * le back-office le dit là où c'est utile.
+ */
+async function mailProvider(event: H3Event) {
+  for (const definition of activeModules()) {
+    if (!definition.mail) continue
+    const settings = await moduleSettings(event, definition.id)
+    return { definition, settings, sender: definition.mail.sender(settings) }
+  }
+  return null
 }
 
-/** Envoie un e-mail par Brevo. Lève une erreur lisible en cas d'échec. */
-export async function sendEmail(event: H3Event, message: { to: string[]; subject: string; html: string }) {
-  const { apiKey, apiUrl, sender } = mailSettings(event)
-  const response = await fetch(`${apiUrl}/smtp/email`, {
-    method: 'POST',
-    headers: { 'api-key': apiKey, 'content-type': 'application/json', 'accept': 'application/json' },
-    body: JSON.stringify({ sender, to: message.to.map(email => ({ email })), subject: message.subject, htmlContent: message.html }),
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!response.ok) {
-    const detail = await response.text().then(t => (JSON.parse(t) as { message?: string }).message ?? t).catch(() => '')
-    throw new Error(`Brevo a refusé l'envoi (${response.status})${detail ? ` : ${String(detail).slice(0, 200)}` : ''}`)
-  }
+/** Ce site sait-il envoyer des e-mails ? `module` : le module chargé de l'envoi, s'il y en a un d'actif. */
+export async function mailStatus(event: H3Event) {
+  const provider = await mailProvider(event)
+  return { configured: !!provider?.sender, module: provider ? { id: provider.definition.id, label: provider.definition.label } : null }
+}
+
+/** Envoie un e-mail. Lève une erreur lisible en cas d'échec. */
+export async function sendEmail(event: H3Event, message: MailMessage) {
+  const provider = await mailProvider(event)
+  if (!provider?.sender) throw new Error('L\'envoi d\'e-mails n\'est pas configuré sur ce site.')
+  await provider.definition.mail!.send(event, provider.settings, message)
 }

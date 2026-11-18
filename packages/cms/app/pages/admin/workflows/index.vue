@@ -6,7 +6,7 @@ definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-admin'] })
 type Step = { kind: 'email' | 'webhook'; status: 'success' | 'error' | 'skipped'; detail: string; ms: number }
 type Run = { id: string; workflowId: string; workflowName: string; event: string; summary: string; status: Step['status']; test: boolean; steps: Step[]; startedAt: string; durationMs: number }
 type Workflow = { id: string; name: string; enabled: boolean; trigger: { event: string; types: string[] }; actions: { kind: string }[]; lastRun: Run | null }
-type Data = { workflows: Workflow[]; events: { name: string; label: string }[]; types: { key: string; label: string }[]; emailConfigured: boolean }
+type Data = { workflows: Workflow[]; events: { name: string; label: string; targets: { key: string; label: string }[] }[]; emailConfigured: boolean; emailModule: { id: string; label: string } | null }
 
 const toast = useCmsToast()
 const route = useRoute()
@@ -26,7 +26,10 @@ const statusMeta = {
 }
 const actionLabel = { email: 'E-mail', webhook: 'Appel d\'un service' } as Record<string, string>
 const eventLabel = (name: string) => data.value.events.find(e => e.name === name)?.label ?? name
-const typesLabel = (w: Workflow) => (w.trigger.types.length ? w.trigger.types.map(t => data.value.types.find(x => x.key === t)?.label ?? t).join(', ') : '')
+const typesLabel = (w: Workflow) => {
+  const targets = data.value.events.find(e => e.name === w.trigger.event)?.targets ?? []
+  return w.trigger.types.map(t => targets.find(x => x.key === t)?.label ?? t).join(', ')
+}
 const actionsLabel = (w: Workflow) => w.actions.map(a => actionLabel[a.kind] ?? a.kind).join(' puis ')
 const formatDate = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
@@ -60,6 +63,7 @@ const templates = [
 
     <div v-if="!data.emailConfigured" class="alert alert-warning alert-soft text-sm mb-4">
       L'envoi d'e-mails n'est pas configuré sur ce site : les actions « E-mail » sont inscrites au journal mais rien n'est envoyé.
+      <NuxtLink v-if="data.emailModule" :to="`/admin/modules/${data.emailModule.id}`" class="link">Régler {{ data.emailModule.label }}</NuxtLink>
     </div>
 
     <div role="tablist" class="tabs tabs-border mb-3">

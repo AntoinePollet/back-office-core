@@ -6,7 +6,7 @@
  * Tout ce qui précède la réponse (réglage du site, forme de l'adresse, limitation) ne dépend pas des comptes.
  */
 export default defineEventHandler(async (event) => {
-  if (!mailSettings(event).configured)
+  if (!(await mailStatus(event)).configured)
     throw createError({ statusCode: 503, message: 'Ce site n\'envoie pas d\'e-mails. Adressez-vous à un administrateur du site pour recevoir un lien.' })
 
   const body = await readBody<{ email?: unknown }>(event).catch(() => null)

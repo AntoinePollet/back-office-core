@@ -3,13 +3,12 @@ import { ArrowLeft, ChevronDown, ChevronUp, Mail, Trash2, Webhook } from '@lucid
 
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-admin'] })
 
-type Action = { kind: 'email'; to: string; subject: string; body: string } | { kind: 'webhook'; url: string }
+type Action = { kind: 'email'; to: string; subject: string; body: string; replyTo?: string } | { kind: 'webhook'; url: string }
 type Variable = { key: string; label: string }
 type Data = {
   workflows: { id: string; name: string; enabled: boolean; trigger: { event: string; types: string[] }; actions: Action[] }[]
-  events: { name: string; label: string; scope: 'entry' | 'invite' | 'review' }[]
-  variables: { common: Variable[]; entry: Variable[]; invite: Variable[]; review: Variable[] }
-  types: { key: string; label: string }[]
+  /** Déclencheurs du core et des modules actifs, avec leurs variables et ce sur quoi on peut les restreindre. */
+  events: { name: string; label: string; variables: Variable[]; targets: { key: string; label: string }[]; targetsLabel: string }[]
   emailConfigured: boolean
 }
 
@@ -52,9 +51,10 @@ const saving = ref(false)
 const dirty = ref(isNew && !!route.query.modele)
 watch(form, () => { dirty.value = true }, { deep: true })
 
-const scope = computed(() => data.events.find(e => e.name === form.trigger.event)?.scope ?? 'entry')
-const variables = computed(() => [...data.variables[scope.value], ...data.variables.common])
-watch(scope, (s) => { if (s === 'invite') form.trigger.types = [] })
+const trigger = computed(() => data.events.find(e => e.name === form.trigger.event) ?? data.events[0]!)
+const variables = computed(() => trigger.value.variables)
+// Changer de déclencheur : on ne garde que les cases qui ont encore un sens.
+watch(trigger, (t) => { form.trigger.types = form.trigger.types.filter(key => t.targets.some(x => x.key === key)) })
 const toggleType = (key: string) => { form.trigger.types = form.trigger.types.includes(key) ? form.trigger.types.filter(t => t !== key) : [...form.trigger.types, key] }
 
 function addAction(kind: Action['kind']) {
@@ -72,8 +72,9 @@ function insert(variable: string) {
   const text = `{{ ${variable} }}`
   if (!target || !form.actions[target.index]) { navigator.clipboard.writeText(text).then(() => toast.success(`${text} copié`)); return }
   const action = form.actions[target.index] as Record<string, string>
-  const at = target.el.selectionStart ?? action[target.field]!.length
-  action[target.field] = action[target.field]!.slice(0, at) + text + action[target.field]!.slice(target.el.selectionEnd ?? at)
+  const current = action[target.field] ?? ''
+  const at = target.el.selectionStart ?? current.length
+  action[target.field] = current.slice(0, at) + text + current.slice(target.el.selectionEnd ?? at)
   nextTick(() => { target.el.focus(); target.el.setSelectionRange(at + text.length, at + text.length) })
 }
 
@@ -150,14 +151,14 @@ const statusMeta = { success: { label: 'Réussi', cls: 'badge-success' }, error:
               <option v-for="e in data.events" :key="e.name" :value="e.name">{{ e.label }}</option>
             </select>
           </fieldset>
-          <fieldset v-if="scope !== 'invite'" class="fieldset">
-            <legend class="fieldset-legend">Pour quels contenus</legend>
+          <fieldset v-if="trigger.targets.length" class="fieldset">
+            <legend class="fieldset-legend">{{ trigger.targetsLabel }}</legend>
             <div class="flex flex-wrap gap-x-5 gap-y-2">
-              <label v-for="t in data.types" :key="t.key" class="flex items-center gap-2 cursor-pointer text-sm">
+              <label v-for="t in trigger.targets" :key="t.key" class="flex items-center gap-2 cursor-pointer text-sm">
                 <input type="checkbox" class="checkbox checkbox-sm" :checked="form.trigger.types.includes(t.key)" @change="toggleType(t.key)">{{ t.label }}
               </label>
             </div>
-            <p class="label">{{ form.trigger.types.length ? '' : 'Aucune case cochée : le workflow se déclenche pour tous les contenus.' }}</p>
+            <p class="label">{{ form.trigger.types.length ? '' : 'Aucune case cochée : le workflow se déclenche pour tous.' }}</p>
           </fieldset>
         </div>
 
@@ -177,6 +178,11 @@ const statusMeta = { success: { label: 'Réussi', cls: 'badge-success' }, error:
               <legend class="fieldset-legend">Destinataires</legend>
               <input v-model="action.to" class="input w-full" placeholder="adresse@exemple.fr, autre@exemple.fr" @focus="remember(i, 'to', $event)">
               <p class="label">Plusieurs adresses séparées par des virgules. Une variable est possible.</p>
+            </fieldset>
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Répondre à <span class="font-normal text-base-content/50">(facultatif)</span></legend>
+              <input v-model="action.replyTo" class="input w-full" placeholder="Ex. : l'adresse laissée par le visiteur dans un formulaire" @focus="remember(i, 'replyTo', $event)">
+              <p class="label">L'adresse qui reçoit la réponse quand on clique sur « Répondre » dans sa messagerie.</p>
             </fieldset>
             <fieldset class="fieldset">
               <legend class="fieldset-legend">Objet</legend>

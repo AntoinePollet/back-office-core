@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import '../assets/css/admin.css'
@@ -13,6 +13,10 @@ const cmsVersion = useRuntimeConfig().public.cmsVersion
 // Demandes de publication qui concernent la personne, relues à chaque changement d'écran.
 const reviews = useState<unknown[]>('cms-reviews', () => [])
 watch(() => route.fullPath, async () => { reviews.value = await cmsApi<unknown[]>('/api/cms/reviews').catch(() => reviews.value) }, { immediate: true })
+// Module « Formulaires » : messages reçus non lus, pour qui peut les lire (administrateur, éditeur).
+const hasForms = computed(() => !!schema.value.modules?.some(m => m.id === 'forms') && ['admin', 'editor'].includes(user.value?.role ?? ''))
+const unreadMessages = useCmsUnreadMessages()
+watch(() => route.fullPath, () => { if (hasForms.value) refreshCmsUnreadMessages() }, { immediate: true })
 const { toasts } = useCmsToast()
 
 const groups = computed(() => {
@@ -30,10 +34,12 @@ const groups = computed(() => {
   // La médiathèque est une page du back-office, pas un contenu du fichier de configuration.
   if (!out.has('Site')) out.set('Site', [])
   out.get('Site')!.push({ key: 'media', label: 'Médiathèque', icon: Images, to: '/admin/media' })
+  if (hasForms.value) out.get('Site')!.push({ key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value })
   if (user.value?.role === 'admin') {
     out.get('Site')!.push({ key: 'appearance', label: 'Apparence', icon: Palette, to: '/admin/appearance' })
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
+    if (schema.value.modules?.length) out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
     out.get('Site')!.push({ key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' })
   }
   return [...out]
