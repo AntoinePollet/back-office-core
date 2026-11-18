@@ -35,8 +35,12 @@ const mainStatus = (item: Item) => item.statuses[schema.value.site.defaultLocale
 
 function display(key: string, value: unknown) {
   const field = def?.fields[key] as Record<string, any> | undefined
-  if (value == null || value === '') return '—'
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '—'
   if (field?.type === 'boolean') return value ? 'Oui' : 'Non'
+  if (field?.type === 'image' || field?.type === 'file') {
+    const n = Array.isArray(value) ? value.length : 1
+    return `${n} ${field.type === 'image' ? 'image' : 'fichier'}${n > 1 ? 's' : ''}`
+  }
   if (field?.type === 'select') {
     const label = (v: unknown) => field.options.find((o: any) => o.value === v)?.label ?? v
     return Array.isArray(value) ? value.map(label).join(', ') : label(value)

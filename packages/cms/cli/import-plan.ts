@@ -30,6 +30,8 @@
  * - `slug`, `seo`, `status` (`"published"` ou `"draft"`) : adresse de la page, référencement, publication.
  * - Image ou fichier : un chemin (`"/photos/a.jpg"` : dans `public/` ; `"photos/a.jpg"` : à côté du fichier d'import),
  *   ou `{ "file": "…", "alt": "…" }` ; `alt` peut être un objet par langue.
+ * - Galerie (image ou fichier avec `multiple`) : une liste, dans l'ordre d'affichage, de chemins ou d'objets
+ *   `{ "file": "…", "alt": "…", "caption": "Marseille (13)" }` (`caption` si le champ a `captions: true`).
  * - Relation : l'`id` d'un élément de la collection visée, présent dans le même fichier (un tableau si le champ est multiple).
  * - Lien : une adresse (`"https://…"`, `"/contact"`, `"mailto:…"`), ou `{ "url": "…", "label": "…", "newTab": true }`,
  *   ou une page du site : `{ "page": "services", "id": "droit-des-affaires" }` (`{ "page": "home" }` pour une page unique).
@@ -150,13 +152,14 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
   for (const [type, items] of Object.entries(lists))
     keys.set(type, new Set(Array.isArray(items) ? items.flatMap(item => (isObject(item) && typeof item.id === 'string' ? [item.id] : [])) : []))
 
-  function mediaToken(value: unknown, field: AnyField, at: string): MediaToken | null | undefined {
+  function mediaToken(value: unknown, field: AnyField, at: string, extra: string[] = []): MediaToken | null | undefined {
     const cited = typeof value === 'string' ? value : isObject(value) ? value.file : undefined
     if (typeof cited !== 'string' || !cited) {
-      errors.push(`${at} : attendu le chemin d'un fichier ("/photos/a.jpg"), ou { "file": "…", "alt": "…" } (reçu ${kindOf(value)}).`)
+      errors.push(`${at} : attendu le chemin d'un fichier ("/photos/a.jpg"), ou { "file": "…", "alt": "…"${extra.length ? extra.map(k => `, "${k}": "…"`).join('') : ''} } (reçu ${kindOf(value)}).`)
       return undefined
     }
-    if (isObject(value)) for (const k of Object.keys(value)) if (k !== 'file' && k !== 'alt') errors.push(`${at}.${k} : clé inconnue. Clés possibles : file, alt.`)
+    const keys = ['file', 'alt', ...extra]
+    if (isObject(value)) for (const k of Object.keys(value)) if (!keys.includes(k)) errors.push(`${at}.${k} : clé inconnue. Clés possibles : ${list(keys)}.${k === 'caption' ? ' (Ce champ n\'a pas de légende : captions: true dans la configuration.)' : ''}`)
     // « /photos/a.jpg » se lit dans public/, comme dans une page du site ; un chemin relatif part du fichier d'import.
     const path = cited.startsWith('/') ? join(options.publicDir, cited) : isAbsolute(cited) ? cited : resolve(options.baseDir, cited)
     const alt: Record<string, string> = {}
@@ -260,8 +263,25 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
         if (value !== '') check(value, at)
         return value
       }
-      case 'image': case 'file':
-        return value === '' ? null : mediaToken(value, field, at)
+      case 'image': case 'file': {
+        if (!field.multiple) {
+          if (Array.isArray(value)) return wrong('un seul fichier attendu (ce champ n\'est pas une galerie)')
+          return value === '' ? null : mediaToken(value, field, at)
+        }
+        if (value === '') return []
+        if (!Array.isArray(value)) return wrong(`liste de fichiers attendue, dans l'ordre d'affichage : ["/photos/a.jpg", { "file": "…", "alt": "…"${field.captions ? ', "caption": "…"' : ''} }]`)
+        const max = field.max as number | undefined
+        const min = field.min as number | undefined
+        if (max != null && value.length > max) errors.push(`${at} : ${max} fichiers au maximum (${value.length} ici).`)
+        else if (min != null && value.length && value.length < min) errors.push(`${at} : ${min} fichiers au minimum (${value.length} ici).`)
+        return value.map((v, i) => {
+          const where = `${at}[${i}]`
+          const media = mediaToken(v, field, where, field.captions ? ['caption'] : [])
+          const caption = isObject(v) ? v.caption : undefined
+          if (caption != null && typeof caption !== 'string') errors.push(`${where}.caption : texte attendu (reçu ${kindOf(caption)}).`)
+          return { media, ...(typeof caption === 'string' && caption.trim() ? { caption } : {}) }
+        })
+      }
       case 'link':
         return value === '' ? null : linkValue(value, at)
       case 'relation': {

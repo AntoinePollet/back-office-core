@@ -5,6 +5,10 @@
       "heroText": "Le Cabinet Durand conseille les entreprises et les particuliers depuis 1998.",
       "heroImage": { "file": "/photos/cabinet.svg", "alt": { "fr": "La façade du cabinet", "en": "The front of the firm" } },
       "cta": { "page": "services", "id": "droit-des-affaires", "label": "Découvrir nos services" },
+      "gallery": [
+        { "file": "/photos/cabinet.svg", "caption": "L'entrée, rue de la République" },
+        "fichiers/affaires.svg"
+      ],
       "featured": ["droit-des-affaires", "droit-de-la-famille"],
       "faq": [
         { "question": "Le premier rendez-vous est-il payant ?", "answer": "Non, le premier échange de trente minutes est offert." },
@@ -53,12 +57,31 @@
         "onQuote": false,
         "fromPrice": 180,
         "body": "<h2>Notre accompagnement</h2><p>De la <strong>création</strong> à la cession de votre société.</p><ul><li>Statuts</li><li>Contrats commerciaux</li></ul>",
+        "cases": [
+          {
+            "title": "Cession d'une PME industrielle",
+            "text": "Audit, négociation et signature en quatre mois.",
+            "photos": [
+              { "file": "fichiers/affaires.svg", "caption": "Villeurbanne (69)" },
+              { "file": "/photos/cabinet.svg", "caption": "La signature au cabinet" }
+            ]
+          }
+        ],
         "seo": { "description": "Avocats en droit des affaires à Lyon." },
         "en": {
           "title": "Business law",
           "slug": "business-law",
           "excerpt": "Company formation, contracts, transfers.",
-          "body": "<h2>How we help</h2><p>From <strong>formation</strong> to the sale of your company.</p>"
+          "body": "<h2>How we help</h2><p>From <strong>formation</strong> to the sale of your company.</p>",
+          "cases": [
+            {
+              "title": "Sale of an industrial SME",
+              "photos": [
+                { "file": "fichiers/affaires.svg", "caption": "Villeurbanne, France" },
+                { "file": "/photos/cabinet.svg", "caption": "Signing at the firm" }
+              ]
+            }
+          ]
         }
       },
       {

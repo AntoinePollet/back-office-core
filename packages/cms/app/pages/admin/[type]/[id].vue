@@ -38,6 +38,8 @@ const split = ref(false)
 const localeB = ref(locales.find(l => l !== defaultLocale) ?? defaultLocale)
 const conflict = ref<Conflict | null>(null)
 const showHistory = ref(false)
+// Sections du formulaire ouvertes ou fermées, partagées par les volets de langue (voir `Fields.vue`).
+provide('cms-sections', reactive<Record<string, boolean>>({}))
 const duplicating = ref(false)
 
 /**

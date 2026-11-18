@@ -1,4 +1,4 @@
-import { defineCms, collection, singleton, f, type InferEntry } from 'backoffice-core/config'
+import { defineCms, collection, section, singleton, f, type InferEntry } from 'backoffice-core/config'
 import { brevo, forms } from 'backoffice-core/modules'
 
 const config = defineCms({
@@ -28,10 +28,22 @@ const config = defineCms({
       path: '/',
       seo: true,
       fields: {
-        heroTitle: f.text({ label: 'Titre principal', required: true, max: 80 }),
-        heroText: f.textarea({ label: 'Texte d\'introduction', max: 240 }),
-        heroImage: f.image({ label: 'Image' }),
-        cta: f.link({ label: 'Bouton principal' }),
+        // Sections du formulaire : pure présentation, les noms des champs et les données ne changent pas.
+        ...section({ label: 'Bandeau', help: 'Le haut de la page d\'accueil.' }, {
+          heroTitle: f.text({ label: 'Titre principal', required: true, max: 80 }),
+          heroText: f.textarea({ label: 'Texte d\'introduction', max: 240 }),
+          heroImage: f.image({ label: 'Image' }),
+          cta: f.link({ label: 'Bouton principal' }),
+        }),
+        // Galerie au premier niveau : commune aux langues, comme une image seule. Masquée, sa section disparaît.
+        showGallery: f.boolean({ label: 'Afficher une galerie de photos', default: true }),
+        ...section({ label: 'Le cabinet en images', collapsed: true }, {
+          gallery: f.image({
+            label: 'Photos du cabinet', multiple: true, captions: true, max: 12,
+            showIf: { field: 'showGallery', equals: true },
+            help: 'Le texte alternatif de chaque photo se règle dans la médiathèque ; la légende est propre à cette page.',
+          }),
+        }),
         featured: f.relation({ label: 'Services mis en avant', to: 'services', multiple: true }),
         faq: f.repeater({
           label: 'Questions fréquentes',
@@ -77,21 +89,36 @@ const config = defineCms({
         excerpt: f.textarea({ label: 'Résumé', max: 160, help: 'Affiché dans la liste des services.' }),
         cover: f.image({ label: 'Image' }),
         category: f.relation({ label: 'Catégorie', to: 'categories' }),
-        audience: f.select({
-          label: 'Public',
-          width: 'half',
-          // Exemple de champ réservé : un rédacteur le voit mais ne le modifie pas.
-          restricted: true,
-          options: [{ value: 'companies', label: 'Entreprises' }, { value: 'individuals', label: 'Particuliers' }],
-        }),
-        onQuote: f.boolean({ label: 'Tarif sur devis', width: 'half' }),
-        fromPrice: f.number({ label: 'Tarif à partir de', unit: '€ HT', min: 0, required: true, width: 'half', showIf: { field: 'onQuote', equals: false } }),
-        companySize: f.select({
-          label: 'Taille d\'entreprise visée',
-          showIf: { field: 'audience', equals: 'companies' },
-          options: [{ value: 'small', label: 'TPE et PME' }, { value: 'large', label: 'Grandes entreprises' }],
+        ...section({ label: 'Public et tarif', help: 'À qui s\'adresse le service, et à quel prix.' }, {
+          audience: f.select({
+            label: 'Public',
+            width: 'half',
+            // Exemple de champ réservé : un rédacteur le voit mais ne le modifie pas.
+            restricted: true,
+            options: [{ value: 'companies', label: 'Entreprises' }, { value: 'individuals', label: 'Particuliers' }],
+          }),
+          onQuote: f.boolean({ label: 'Tarif sur devis', width: 'half' }),
+          fromPrice: f.number({ label: 'Tarif à partir de', unit: '€ HT', min: 0, required: true, width: 'half', showIf: { field: 'onQuote', equals: false } }),
+          companySize: f.select({
+            label: 'Taille d\'entreprise visée',
+            showIf: { field: 'audience', equals: 'companies' },
+            options: [{ value: 'small', label: 'TPE et PME' }, { value: 'large', label: 'Grandes entreprises' }],
+          }),
         }),
         body: f.richText({ label: 'Contenu' }),
+        // Galerie dans un répéteur : chaque réalisation a ses photos légendées (traduites avec le répéteur).
+        ...section({ label: 'Réalisations', help: 'Quelques dossiers menés, avec leurs photos.', collapsed: true }, {
+          cases: f.repeater({
+            label: 'Dossiers présentés',
+            itemLabel: 'title',
+            max: 6,
+            fields: {
+              title: f.text({ label: 'Titre', required: true }),
+              text: f.textarea({ label: 'Texte', rows: 2 }),
+              photos: f.image({ label: 'Photos', multiple: true, captions: true, max: 8 }),
+            },
+          }),
+        }),
       },
     }),
 
@@ -162,9 +189,14 @@ export function typeChecks(s: Service, h: Home) {
   const coverUrl: string | undefined = s.cover?.url
   const featured: string[] = h.featured.map(e => e.title)
   const firstQuestion: string | undefined = h.faq[0]?.question
+  // Galeries : jamais null (liste vide), légende par image.
+  const photoCaption: string | null | undefined = s.cases[0]?.photos[0]?.caption
+  const galleryUrls: string[] = h.gallery.map(p => p.url)
+  // @ts-expect-error une galerie n'est jamais null
+  const galleryNull: null = h.gallery
   // @ts-expect-error un champ obligatoire n'est jamais null
   const wrong: null = s.title
   // @ts-expect-error champ inexistant
   s.unknown
-  return { title, excerpt, audience, price, priceAlways, faqLink, coverUrl, featured, firstQuestion, wrong }
+  return { title, excerpt, audience, price, priceAlways, faqLink, coverUrl, featured, firstQuestion, photoCaption, galleryUrls, galleryNull, wrong }
 }

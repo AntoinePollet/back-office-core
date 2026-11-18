@@ -96,6 +96,10 @@ variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'h
 - Image ou fichier : un chemin. `"/photos/a.jpg"` est lu dans `public/`, `"photos/a.jpg"` à côté du fichier d'import.
   Le fichier est envoyé dans la médiathèque, une seule fois même s'il est cité plusieurs fois ou si l'import est relancé.
   Texte alternatif : `{ "file": "…", "alt": "…" }`, ou `"alt": { "fr": "…", "en": "…" }`.
+- Galerie (champ `image` ou `file` avec `multiple: true`) : une liste, dans l'ordre d'affichage, de chemins ou d'objets ;
+  la légende (`"caption"`, si le champ a `captions: true`) est propre à cette galerie, le texte alternatif au fichier :
+  `"photos": ["/photos/a.jpg", { "file": "photos/b.jpg", "alt": "Vue de la salle", "caption": "Marseille (13)" }]`.
+  Dans un répéteur, chaque élément a sa propre liste.
 - Relation : l'`id` d'un élément de la collection visée, présent dans le même fichier (un tableau pour un champ multiple).
 - Lien : `"https://…"`, `"/contact"`, `{ "url": "…", "label": "…", "newTab": true }`, ou une page du site :
   `{ "page": "articles", "id": "ouverture" }` (`{ "page": "home" }` pour une page unique).

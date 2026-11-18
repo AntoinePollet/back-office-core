@@ -1,5 +1,12 @@
 import { eq, inArray } from 'drizzle-orm'
 
+/** Vignette : l'image, ou la première image d'une galerie. */
+function thumbOf(value: unknown): string | null {
+  const first = Array.isArray(value) ? value[0] : value
+  const id = first && typeof first === 'object' ? (first as { media?: unknown }).media : first
+  return typeof id === 'string' && id ? id : null
+}
+
 /** Liste des contenus d'une collection, pour le back-office. */
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
@@ -33,7 +40,7 @@ export default defineEventHandler(async (event) => {
       title: String(values[def.titleField] ?? ''),
       slug: main?.slug ?? null,
       values: Object.fromEntries(columns.map(c => [c, values[c] ?? null])),
-      thumbnail: (thumbKey && typeof values[thumbKey] === 'string' ? values[thumbKey] : null) as string | null,
+      thumbnail: thumbOf(thumbKey ? values[thumbKey] : null),
       statuses: Object.fromEntries(mine.map(r => [r.locale, r.status])),
       /** Une publication a été demandée et attend une réponse. */
       review: requested.has(doc.id),

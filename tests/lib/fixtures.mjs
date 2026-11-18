@@ -47,6 +47,10 @@ export function png(width, height) {
 const FILES = {
   // Le nom (majuscules, espaces) compte : les tests vérifient l'adresse « photo-du-cabinet.png ».
   'Photo du Cabinet.png': () => png(320, 240),
+  // Galeries (suite 14) : trois images différentes, donc trois fichiers distincts.
+  'atelier.png': () => png(240, 180),
+  'chantier.png': () => png(200, 150),
+  'reunion.png': () => png(160, 120),
   // Type de fichier refusé par la médiathèque.
   'notes.txt': () => Buffer.from('texte'),
 }

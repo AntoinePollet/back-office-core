@@ -1,7 +1,7 @@
 import projectConfig from '#cms-config'
 import { and, desc, eq, gt, inArray, max, ne, notInArray, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { applyDefaults, copyValues, MAX_REVISIONS, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
+import { applyDefaults, copyValues, MAX_REVISIONS, normalizeValues, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
 import type { AnyField, CmsConfig, CmsDefinition } from '../../shared/format'
 import { unknownValues } from '../../shared/migrate'
 import { mergeValues, splitFlat, strayKeys, strayMessage } from '../../shared/flat'
@@ -27,7 +27,12 @@ export function getDef(type: string): CmsDefinition {
 }
 
 const hasSlug = (def: CmsDefinition) => def.kind === 'collection' && !!def.path?.includes('[slug]')
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+/** Écriture canonique : l'ordre des clés ne compte pas (une valeur par défaut ajoutée après coup se range ailleurs). */
+const canon = (v: unknown): string =>
+  Array.isArray(v) ? `[${v.map(canon).join(',')}]`
+  : v && typeof v === 'object' ? `{${Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon((v as Record<string, unknown>)[k])).join(',')}}`
+  : JSON.stringify(v ?? null)
+const same = (a: unknown, b: unknown) => canon(a) === canon(b)
 
 // ───────────── Lecture pour le back-office ─────────────
 
@@ -267,7 +272,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
     }
   }
 
-  const shared = sanitizeRichText(parts.shared, applyDefaults(parts.shared, pick(parts.shared, body.shared ?? existing?.sharedDraft ?? {}, system)))
+  // Listes d'images : `['id']` est accepté et enregistré sous la forme `[{ media: 'id' }]`.
+  const shared = normalizeValues(parts.shared, sanitizeRichText(parts.shared, applyDefaults(parts.shared, pick(parts.shared, body.shared ?? existing?.sharedDraft ?? {}, system))))
   // Ce que le formulaire ne connaît pas (champ retiré de la configuration, valeur mise de côté par une migration) reste en base.
   Object.assign(shared, unknownValues(parts.shared, existing?.sharedDraft, system))
   const keepLocked = (target: Values, part: Fields, stored: Values | undefined) => {
@@ -305,7 +311,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
 
   for (const [locale, input] of incoming) {
     const prev = byLocale.get(locale)
-    const values = sanitizeRichText(parts.localized, pick(parts.localized, input.values ?? {}, system))
+    const values = normalizeValues(parts.localized, sanitizeRichText(parts.localized, pick(parts.localized, input.values ?? {}, system)))
     if (!prev && Object.values(values).every(isEmpty)) continue // langue pas encore traduite
     applyDefaults(parts.localized, values)
     Object.assign(values, unknownValues(parts.localized, prev?.draft, system))

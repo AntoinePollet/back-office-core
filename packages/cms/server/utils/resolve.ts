@@ -22,7 +22,7 @@ function walk(fields: Fields, values: Values, visit: (field: AnyField, values: V
 
 /**
  * Remplace, dans des contenus destinés au site, les références par leur contenu :
- * image et fichier → Media, relation → EntryRef, lien → { label, href, newTab }.
+ * image et fichier → Media (liste de Media, avec leur légende, pour une galerie), relation → EntryRef, lien → { label, href, newTab }.
  * Une référence vers un contenu supprimé ou non publié dans cette langue devient null (ou disparaît d'une liste).
  */
 export async function resolveRefs(event: H3Event, locale: string, jobs: { fields: Fields; values: Values }[], preview = false) {
@@ -31,7 +31,13 @@ export async function resolveRefs(event: H3Event, locale: string, jobs: { fields
   for (const job of jobs) {
     walk(job.fields, job.values, (field, values, key) => {
       const v = values[key]
-      if ((field.type === 'image' || field.type === 'file') && typeof v === 'string') mediaIds.add(v)
+      if (field.type === 'image' || field.type === 'file') {
+        // Liste (galerie) : éléments { media, caption } déjà mis en forme par `toPublicValues`.
+        for (const item of [v].flat()) {
+          const id = field.multiple ? (item as { media?: unknown } | null)?.media : item
+          if (typeof id === 'string') mediaIds.add(id)
+        }
+      }
       else if (field.type === 'relation') {
         for (const id of [v].flat()) if (typeof id === 'string') entryIds.add(id)
       }
@@ -66,7 +72,15 @@ export async function resolveRefs(event: H3Event, locale: string, jobs: { fields
   for (const job of jobs) {
     walk(job.fields, job.values, (field, values, key) => {
       const v = values[key]
-      if (field.type === 'image' || field.type === 'file') values[key] = typeof v === 'string' ? mediaById.get(v) ?? null : null
+      if (field.type === 'image' || field.type === 'file') {
+        if (!field.multiple) values[key] = typeof v === 'string' ? mediaById.get(v) ?? null : null
+        // Un fichier supprimé de la médiathèque disparaît de la liste ; la légende accompagne le fichier.
+        else values[key] = (Array.isArray(v) ? v : []).flatMap((item: { media?: unknown; caption?: unknown }) => {
+          const media = typeof item?.media === 'string' ? mediaById.get(item.media) : undefined
+          if (!media) return []
+          return [field.captions ? { ...media, caption: typeof item.caption === 'string' ? item.caption : null } : { ...media }]
+        })
+      }
       else if (field.type === 'relation') {
         const refs = [v].flat().flatMap(id => (typeof id === 'string' ? target(id)?.ref ?? [] : []))
         values[key] = field.multiple ? refs : refs[0] ?? null

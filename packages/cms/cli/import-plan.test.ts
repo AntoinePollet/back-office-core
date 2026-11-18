@@ -206,3 +206,44 @@ test('dimensions d\'une image lues dans le fichier', () => {
   assert.deepEqual(imageSize(jpeg), { width: 320, height: 240 })
   assert.equal(imageSize(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')), null)
 })
+
+test('galerie : liste ordonnée de chemins ou de { file, alt, caption }, au premier niveau et dans un répéteur', () => {
+  const gallery = defineCms({
+    site: { name: 'Test', locales: ['fr', 'en'], defaultLocale: 'fr' },
+    collections: {
+      works: collection({
+        label: 'Réalisations',
+        titleField: 'title',
+        fields: {
+          title: f.text({ label: 'Titre' }),
+          photos: f.image({ label: 'Photos', multiple: true, captions: true, max: 3 }),
+          docs: f.file({ label: 'Documents', multiple: true }),
+          cases: f.repeater({ label: 'Cas', fields: { name: f.text({ label: 'Nom' }), photos: f.image({ label: 'Photos', multiple: true, captions: true }) } }),
+        },
+      }),
+    },
+  }) as unknown as CmsConfig
+  const run = (item: object) => planImport(gallery, { collections: { works: [{ id: 'w', title: 'W', ...item }] } }, options)
+  const p = run({
+    photos: ['/a.jpg', { file: 'b.png', alt: 'Vue B', caption: 'Marseille (13)' }],
+    docs: [],
+    cases: [{ name: 'Un', photos: [{ file: '/a.jpg', caption: 'Lyon' }] }],
+    en: { cases: [{ name: 'One', photos: [{ file: '/a.jpg', caption: 'Lyon, France' }] }] },
+  })
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.files.map(x => [x.path, x.image, x.alt]), [['/projet/public/a.jpg', true, {}], ['/projet/import/b.png', true, { fr: 'Vue B' }]])
+  const ids = new Map([['/projet/public/a.jpg', 'm-a'], ['/projet/import/b.png', 'm-b']])
+  const body = requestBody(p.entries[0]!, ids, { create: true, dryRun: false })
+  assert.deepEqual(body.values.photos, [{ media: 'm-a' }, { media: 'm-b', caption: 'Marseille (13)' }])
+  assert.deepEqual(body.values.docs, [])
+  assert.deepEqual(body.values.cases, [{ name: 'Un', photos: [{ media: 'm-a', caption: 'Lyon' }] }])
+  assert.deepEqual(body.translations?.en?.values.cases, [{ name: 'One', photos: [{ media: 'm-a', caption: 'Lyon, France' }] }])
+
+  const bad = run({ photos: '/a.jpg', docs: [{ file: 'x.pdf', caption: 'Non' }], cases: [{ photos: [{ file: '/a.jpg', caption: 3 }] }] })
+  assert.deepEqual(bad.errors, [
+    'collections.works[0] (« w »).photos : liste de fichiers attendue, dans l\'ordre d\'affichage : ["/photos/a.jpg", { "file": "…", "alt": "…", "caption": "…" }] (reçu un texte).',
+    'collections.works[0] (« w »).docs[0].caption : clé inconnue. Clés possibles : file, alt. (Ce champ n\'a pas de légende : captions: true dans la configuration.)',
+    'collections.works[0] (« w »).cases[0].photos[0].caption : texte attendu (reçu un nombre).',
+  ])
+  assert.match(run({ photos: ['/1.jpg', '/2.jpg', '/3.jpg', '/4.jpg'] }).errors[0]!, /photos : 3 fichiers au maximum \(4 ici\)/)
+})

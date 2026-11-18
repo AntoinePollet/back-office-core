@@ -55,6 +55,7 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `11-ecriture-a-plat` | API d'enregistrement : écriture à plat, refus des valeurs inconnues ou mal rangées, simulation, forme unique des champs vides |
 | `12-import` | outil d'import (`backoffice-import`) : simulation, import, relance sans doublon, mise à jour, erreurs, droits, exemple du playground |
 | `13-modules` | modules : clé d'API saisie dans le back-office (chiffrée, jamais renvoyée), vérification Brevo, formulaire du site, messages reçus, workflow « formulaire envoyé », droits, limite d'envois |
+| `14-galeries-sections` | galeries (envoi et sélection de plusieurs images, ordre au clavier et par glisser-déposer, légendes, retrait, dépôt de fichiers, dans un répéteur, deux langues), site et API, « Utilisé dans », import d'une galerie ; sections du formulaire (repliées, erreur dans une section repliée, côte à côte, section masquée) |
 
 ## Ajouter une suite
 

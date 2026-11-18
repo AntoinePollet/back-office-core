@@ -19,6 +19,16 @@ useCmsSeo(home, { titleSuffix: 'Cabinet Durand' })
       <a v-if="home?.cta" :href="home.cta.href" :target="home.cta.newTab ? '_blank' : undefined" class="btn btn-primary">{{ home.cta.label }}</a>
     </section>
 
+    <section v-if="home?.gallery?.length" class="cms-gallery">
+      <h2 class="text-xl font-bold mb-2">Le cabinet en images</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <figure v-for="photo in home.gallery" :key="photo.id" class="space-y-1">
+          <CmsImage :media="photo" sizes="(min-width: 48rem) 15rem, 50vw" class="w-full aspect-[4/3] object-cover rounded-box" />
+          <figcaption v-if="photo.caption" class="text-sm opacity-70">{{ photo.caption }}</figcaption>
+        </figure>
+      </div>
+    </section>
+
     <section v-if="home?.featured?.length">
       <h2 class="text-xl font-bold mb-2">À la une</h2>
       <div class="flex flex-wrap gap-2">

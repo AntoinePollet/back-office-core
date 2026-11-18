@@ -3,7 +3,7 @@
  * lesquelles dans la partie traduite, et lesquelles n'ont leur place nulle part.
  * Fonctions pures, utilisées par le serveur (`server/utils/entries.ts`) et par l'outil d'import (`cli/`).
  */
-import { partition } from './content'
+import { isMediaList, MEDIA_ITEM_KEYS, partition } from './content'
 import type { AnyField } from './format'
 import { KEPT_KEY } from './migrate'
 
@@ -20,7 +20,8 @@ const isObject = (v: unknown): v is Values => !!v && typeof v === 'object' && !A
  * Range des valeurs données « à plat » (par nom de champ, sans se soucier de ce qui est traduit).
  * - `shared` : champs communs aux langues ; `localized` : champs traduits ;
  * - `seo` (si le contenu a l'onglet Référencement) : `title` et `description` sont traduits, `image` et `noindex` communs ;
- * - `unknown` : noms qui ne correspondent à aucun champ, y compris dans un répéteur (`faq.0.reponse`).
+ * - `unknown` : noms qui ne correspondent à aucun champ, y compris dans un répéteur (`faq.0.reponse`) ou dans un
+ *   élément de galerie (`photos.0.legende` : seules `media` et `caption` existent).
  */
 export function splitFlat(fields: Fields, values: Values, seo = false) {
   const parts = partition(fields)
@@ -43,13 +44,22 @@ export function splitFlat(fields: Fields, values: Values, seo = false) {
     if (field.type === 'repeater' && Array.isArray(value)) {
       const sub = field.fields as Fields
       value.forEach((item, i) => {
-        if (isObject(item)) for (const k of Object.keys(item)) if (!(k in sub) && k !== KEPT_KEY) unknown.push(`${key}.${i}.${k}`)
+        if (!isObject(item)) return
+        for (const k of Object.keys(item)) {
+          if (!(k in sub) && k !== KEPT_KEY) unknown.push(`${key}.${i}.${k}`)
+          else if (sub[k] && isMediaList(sub[k]) && Array.isArray(item[k])) unknown.push(...galleryStrays(item[k] as unknown[], `${key}.${i}.${k}`))
+        }
       })
     }
+    if (isMediaList(field) && Array.isArray(value)) unknown.push(...galleryStrays(value, key))
     ;(key in parts.shared ? shared : localized)[key] = value
   }
   return { shared, localized, unknown }
 }
+
+/** Clés inconnues dans les éléments d'une galerie. */
+const galleryStrays = (items: unknown[], at: string) =>
+  items.flatMap((item, i) => (isObject(item) ? Object.keys(item).filter(k => !MEDIA_ITEM_KEYS.includes(k)).map(k => `${at}.${i}.${k}`) : []))
 
 /** Fusionne des valeurs nouvelles dans des valeurs existantes ; le bloc `seo` est fusionné clé par clé. */
 export function mergeValues(base: Values, extra: Values): Values {
