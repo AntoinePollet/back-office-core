@@ -165,6 +165,43 @@ export function useCmsToast() {
 export const cmsErrorMessage = (error: any, fallback = 'Une erreur est survenue.') =>
   error?.data?.message || error?.message || fallback
 
+/**
+ * Vrai quand une modification est bien enregistrée mais que le site n'a pas pu être actualisé tout de suite
+ * (le cache du réseau n'a pas pu être vidé). L'avertissement est affiché par `<CmsSiteDelayNotice />`.
+ */
+export const useCmsSiteDelay = () => useState<boolean>('cms-site-delay', () => false)
+
+/**
+ * À appeler avec la réponse d'une route qui modifie le site. Renvoie vrai si le site est à jour,
+ * faux si la mise à jour du site a échoué : le message de confirmation ne doit alors pas dire « Le site est à jour ».
+ * Une réponse sans `purgeFailed` (rien n'a été mis en ligne) ne change pas l'avertissement en cours.
+ */
+export function cmsSiteUpdated(response: unknown) {
+  const failed = (response as { purgeFailed?: boolean } | null)?.purgeFailed
+  if (typeof failed === 'boolean') useCmsSiteDelay().value = failed
+  return failed !== true
+}
+
+/** Date lisible d'un enregistrement : « aujourd'hui à 14:32 », « le 3 nov. à 09:10 ». */
+export function cmsFormatWhen(date: string | Date) {
+  const d = new Date(date)
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  if (d.toDateString() === new Date().toDateString()) return `aujourd'hui à ${time}`
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return `le ${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })} à ${time}`
+}
+
+/**
+ * Duplique un contenu et renvoie l'adresse du formulaire de la copie.
+ * Avec brouillons, la copie est créée tout de suite, en brouillon. Sans brouillons, enregistrer c'est publier :
+ * le formulaire s'ouvre prérempli et rien n'existe tant qu'il n'est pas enregistré.
+ */
+export async function cmsDuplicate(type: string, id: string, drafts: boolean) {
+  if (!drafts) return `/admin/${type}/new?copy=${encodeURIComponent(id)}`
+  const copy = await cmsApi<{ id: string }>(`/api/cms/entries/${type}/${id}/duplicate`, { method: 'POST' })
+  return `/admin/${type}/${copy.id}`
+}
+
 // ───────────── Médiathèque et listes de choix (back-office) ─────────────
 
 export type CmsMedia = {

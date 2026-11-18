@@ -6,6 +6,9 @@ type Values = Record<string, unknown>
 export const slugify = (text: string) =>
   text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
+/** Nombre de versions gardées par contenu dans l'historique ; les plus anciennes sont supprimées. */
+export const MAX_REVISIONS = 30
+
 /** Vide : null, texte vide, liste vide, ou objet dont toutes les valeurs sont vides (ex. un bloc SEO non rempli). */
 export const isEmpty = (v: unknown): boolean =>
   v == null || v === '' || (Array.isArray(v) ? v.length === 0 : typeof v === 'object' && Object.values(v as object).every(isEmpty))
@@ -42,6 +45,23 @@ export function applyDefaults(fields: Fields, values: Values): Values {
       for (const item of values[key] as Values[]) applyDefaults(field.fields as Fields, item)
   }
   return values
+}
+
+/**
+ * Valeurs d'une copie de contenu : les mêmes, avec « (copie) » ajouté au titre (dans chaque langue si le titre est traduit).
+ * Le titre est raccourci au besoin pour respecter la longueur maximale du champ.
+ */
+export function copyValues(def: { kind: string; titleField?: string; fields: Fields }, shared: Values, locales: Record<string, Values>) {
+  const out = JSON.parse(JSON.stringify({ shared, locales })) as { shared: Values; locales: Record<string, Values> }
+  const field = def.titleField ? def.fields[def.titleField] : undefined
+  if (!field || !def.titleField) return out
+  const suffix = ' (copie)'
+  const max = typeof field.max === 'number' ? field.max : undefined
+  for (const target of field.localized ? Object.values(out.locales) : [out.shared]) {
+    const title = String(target[def.titleField] ?? '').trim()
+    if (title) target[def.titleField] = (max != null ? title.slice(0, Math.max(0, max - suffix.length)).trimEnd() : title) + suffix
+  }
+  return out
 }
 
 /**

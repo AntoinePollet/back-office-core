@@ -42,8 +42,9 @@ const sampleCards = Object.values(schema.value.collections ?? {}).slice(0, 3).ma
 async function save() {
   saving.value = true
   try {
-    saved.value = (await cmsApi<{ theme: CmsTheme }>('/api/cms/theme', { method: 'PUT', body: theme })).theme
-    toast.success('Thème enregistré. Le site est à jour.')
+    const result = await cmsApi<{ theme: CmsTheme }>('/api/cms/theme', { method: 'PUT', body: theme })
+    saved.value = result.theme
+    toast.success(cmsSiteUpdated(result) ? 'Thème enregistré. Le site est à jour.' : 'Thème enregistré')
   }
   catch (e) {
     toast.error(cmsErrorMessage(e))
@@ -54,7 +55,7 @@ async function save() {
 async function reset() {
   if (!confirm('Revenir à l\'apparence d\'origine du site ? Le thème enregistré sera supprimé.')) return
   try {
-    await cmsApi('/api/cms/theme', { method: 'DELETE' })
+    cmsSiteUpdated(await cmsApi('/api/cms/theme', { method: 'DELETE' }))
     saved.value = null
     Object.assign(theme, DEFAULT_THEME)
     toast.success('Apparence d\'origine rétablie')
@@ -69,6 +70,7 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
 
 <template>
   <section class="max-w-6xl mx-auto">
+    <CmsSiteDelayNotice />
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div>
         <h1 class="text-2xl font-bold">Apparence</h1>

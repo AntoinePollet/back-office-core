@@ -14,6 +14,5 @@ export default defineEventHandler(async (event) => {
   }
   await useBucket(event).delete(row.key)
   await db.delete(schema.media).where(eq(schema.media.id, id))
-  await purgeSiteCache(event)
-  return { ok: true }
+  return { ok: true, purgeFailed: !(await purgeSiteCache(event)) }
 })

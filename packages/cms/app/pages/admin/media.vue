@@ -27,7 +27,8 @@ async function saveAlt() {
   const media = selected.value
   if (!media || locales.every(l => (alt.value[l] ?? '') === (media.alt[l] ?? ''))) return
   try {
-    const updated = await cmsApi<CmsMedia>(`/api/cms/media/${media.id}`, { method: 'PATCH', body: { alt: alt.value } })
+    const { purgeFailed, ...updated } = await cmsApi<CmsMedia & { purgeFailed: boolean }>(`/api/cms/media/${media.id}`, { method: 'PATCH', body: { alt: alt.value } })
+    cmsSiteUpdated({ purgeFailed })
     items.value = (items.value ?? []).map(m => (m.id === updated.id ? updated : m))
     if (selected.value?.id === updated.id) selected.value = updated
     toast.success('Texte alternatif enregistré')
@@ -46,7 +47,7 @@ async function remove() {
     : 'Supprimer définitivement ce fichier ?'
   if (!confirm(question)) return
   try {
-    await cmsApi(`/api/cms/media/${media.id}`, { method: 'DELETE', query: used ? { force: 1 } : {} })
+    cmsSiteUpdated(await cmsApi(`/api/cms/media/${media.id}`, { method: 'DELETE', query: used ? { force: 1 } : {} }))
     items.value = (items.value ?? []).filter(m => m.id !== media.id)
     selected.value = null
     toast.success('Fichier supprimé')
@@ -63,6 +64,7 @@ async function copyUrl() {
 
 <template>
   <section class="max-w-6xl mx-auto">
+    <CmsSiteDelayNotice />
     <div class="mb-6">
       <h1 class="text-2xl font-bold">Médiathèque</h1>
       <p class="text-sm text-base-content/60">{{ items?.length ?? 0 }} fichier{{ (items?.length ?? 0) > 1 ? 's' : '' }} · {{ formatFileSize(totalSize) }}</p>

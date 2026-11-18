@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GripVertical, Plus, Search } from '@lucide/vue'
+import { Copy, GripVertical, Plus, Search } from '@lucide/vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -62,7 +62,7 @@ async function dragEnd() {
   const ids = items.value.map(i => i.id)
   if (ids.join() === orderBefore) return
   try {
-    await cmsApi(`/api/cms/entries/${type}/order`, { method: 'PUT', body: { ids } })
+    cmsSiteUpdated(await cmsApi(`/api/cms/entries/${type}/order`, { method: 'PUT', body: { ids } }))
     toast.success('Ordre enregistré')
   }
   catch (e) {
@@ -71,11 +71,27 @@ async function dragEnd() {
   }
 }
 
+const duplicating = ref<string | null>(null)
+/** Duplique un contenu et ouvre le formulaire de la copie. */
+async function duplicate(item: Item) {
+  duplicating.value = item.id
+  try {
+    const to = await cmsDuplicate(type, item.id, !!def?.drafts)
+    if (def?.drafts) toast.success('Copie créée en brouillon')
+    await navigateTo(to)
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+  duplicating.value = null
+}
+
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 </script>
 
 <template>
   <section v-if="def" class="max-w-6xl mx-auto">
+    <CmsSiteDelayNotice />
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div>
         <h1 class="text-2xl font-bold">{{ def.label }}</h1>
@@ -105,6 +121,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
             <th v-if="locales.length > 1">Langues</th>
             <th v-if="def.drafts">Statut</th>
             <th class="text-right">Modifié</th>
+            <th class="w-8" />
           </tr>
         </thead>
         <tbody>
@@ -138,9 +155,17 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
             </td>
             <td v-if="def.drafts"><span class="badge badge-sm badge-soft" :class="statusMeta[mainStatus(item)]?.cls">{{ statusMeta[mainStatus(item)]?.label }}</span></td>
             <td class="text-right text-sm text-base-content/60 whitespace-nowrap">{{ formatDate(item.updatedAt) }}</td>
+            <td class="pl-0">
+              <button
+                type="button" class="btn btn-ghost btn-xs btn-square" title="Dupliquer" aria-label="Dupliquer"
+                :disabled="duplicating === item.id" @click.stop="duplicate(item)"
+              >
+                <Copy :size="14" />
+              </button>
+            </td>
           </tr>
           <tr v-if="!filtered.length">
-            <td :colspan="columns.length + 5" class="text-center py-12 text-base-content/50">
+            <td :colspan="columns.length + 6" class="text-center py-12 text-base-content/50">
               {{ items.length ? 'Aucun élément ne correspond à ce filtre.' : 'Aucun élément pour le moment.' }}
             </td>
           </tr>

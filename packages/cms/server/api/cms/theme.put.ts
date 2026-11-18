@@ -8,6 +8,5 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   await useDb(event).insert(schema.settings).values({ key: 'theme', value: theme, updatedAt: now })
     .onConflictDoUpdate({ target: schema.settings.key, set: { value: theme, updatedAt: now } })
-  await purgeSiteCache(event)
-  return { theme }
+  return { theme, purgeFailed: !(await purgeSiteCache(event)) }
 })

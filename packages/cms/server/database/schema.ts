@@ -15,6 +15,12 @@ export const entries = sqliteTable('cms_entries', {
   sharedPublished: text('shared_published', { mode: 'json' }).$type<Json | null>(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Numéro de version du contenu : augmente d'un à chaque enregistrement qui change quelque chose. */
+  version: integer('version').notNull().default(0),
+  /** Numéro de version auquel les champs communs aux langues ont changé pour la dernière fois. */
+  sharedVersion: integer('shared_version').notNull().default(0),
+  /** Identifiant de la dernière personne à avoir enregistré ce contenu. */
+  updatedBy: text('updated_by'),
 }, t => [index('cms_entries_type').on(t.type, t.position)])
 
 /** Une ligne par document et par langue : adresse, statut, champs traduits. */
@@ -28,6 +34,8 @@ export const entryLocales = sqliteTable('cms_entry_locales', {
   published: text('published', { mode: 'json' }).$type<Json | null>(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   publishedAt: integer('published_at', { mode: 'timestamp_ms' }),
+  /** Numéro de version du contenu auquel cette langue a changé pour la dernière fois. */
+  version: integer('version').notNull().default(0),
 }, t => [
   primaryKey({ columns: [t.entryId, t.locale] }),
   uniqueIndex('cms_entry_locales_slug').on(t.type, t.locale, t.slug),
@@ -104,6 +112,37 @@ export const workflowRuns = sqliteTable('cms_workflow_runs', {
   startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
   durationMs: integer('duration_ms').notNull(),
 }, t => [index('cms_workflow_runs_started').on(t.startedAt)])
+
+// ───────────── Historique des contenus ─────────────
+
+/** L'état d'un contenu tel que le formulaire le montre : champs communs et brouillon de chaque langue. */
+export type RevisionSnapshot = { shared: Json; locales: Record<string, { slug: string | null; values: Json }> }
+/** Une partie d'un contenu : 'shared' (champs communs aux langues) ou le code d'une langue. */
+export type RevisionPart = string
+
+/**
+ * Une ligne par enregistrement qui a changé quelque chose. Chaque ligne garde l'état complet du contenu
+ * (toutes les langues et les champs communs) : restaurer une version redonne donc un ensemble cohérent.
+ */
+export const revisions = sqliteTable('cms_revisions', {
+  id: text('id').primaryKey(),
+  entryId: text('entry_id').notNull().references(() => entries.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  /** Numéro de version du contenu après cet enregistrement. */
+  version: integer('version').notNull(),
+  snapshot: text('snapshot', { mode: 'json' }).$type<RevisionSnapshot>().notNull(),
+  /** Parties modifiées par cet enregistrement. */
+  changed: text('changed', { mode: 'json' }).$type<RevisionPart[]>().notNull(),
+  /** Langues publiées, et langues retirées du site, par cet enregistrement. */
+  published: text('published', { mode: 'json' }).$type<string[]>().notNull(),
+  unpublished: text('unpublished', { mode: 'json' }).$type<string[]>().notNull(),
+  /** Enregistrement particulier : restauration d'une version, copie d'un autre contenu, ou état d'avant l'historique. */
+  origin: text('origin').$type<'restore' | 'duplicate' | 'initial'>(),
+  authorId: text('author_id'),
+  /** Nom au moment de l'enregistrement : l'historique reste lisible si le compte est supprimé. */
+  authorName: text('author_name'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_revisions_entry').on(t.entryId, t.version)])
 
 // ───────────── Authentification (tables attendues par Better Auth) ─────────────
 
