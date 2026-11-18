@@ -4,6 +4,5 @@ import { eq } from 'drizzle-orm'
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
   await useDb(event).delete(schema.settings).where(eq(schema.settings.key, 'theme'))
-  await purgeSiteCache(event)
-  return { theme: null }
+  return { theme: null, purgeFailed: !(await purgeSiteCache(event)) }
 })

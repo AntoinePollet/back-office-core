@@ -13,10 +13,11 @@ export default defineEventHandler(async (event) => {
   const title = (await entryTitles(event, [id])).get(id) ?? 'Sans titre'
   await db.batch([
     db.delete(schema.redirects).where(eq(schema.redirects.entryId, id)),
+    db.delete(schema.revisions).where(eq(schema.revisions.entryId, id)),
     db.delete(schema.entryLocales).where(eq(schema.entryLocales.entryId, id)),
     db.delete(schema.entries).where(eq(schema.entries.id, id)),
   ])
-  await purgeSiteCache(event)
+  const purged = await purgeSiteCache(event)
   emitCmsEvents(event, [{ name: 'entry.deleted', type, id, title, user: { id: user.id, email: user.email } }])
-  return { ok: true }
+  return { ok: true, purgeFailed: !purged }
 })

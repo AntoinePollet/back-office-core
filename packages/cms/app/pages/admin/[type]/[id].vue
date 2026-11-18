@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ArrowLeft, Eye, EyeOff, Trash2 } from '@lucide/vue'
-import { applyDefaults, isEmpty, partition } from '../../../../shared/content'
+import { ArrowLeft, Copy, Eye, EyeOff, History, Trash2 } from '@lucide/vue'
+import { applyDefaults, copyValues, isEmpty, partition } from '../../../../shared/content'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
 type LocaleState = { slug: string; status: string | null; values: Record<string, any> }
-type Doc = { id: string | null; shared: Record<string, any>; locales: Record<string, LocaleState> }
+type Doc = { id: string | null; version: number; shared: Record<string, any>; locales: Record<string, LocaleState> }
+/** Refus d'enregistrer renvoyé par le serveur : quelqu'un d'autre a modifié le contenu entre-temps. */
+type Conflict = { by: string | null; self: boolean; at: string; parts: string[]; retry: () => Promise<void> }
 
 const route = useRoute()
 const toast = useCmsToast()
@@ -21,7 +23,7 @@ const isCollection = def.kind === 'collection'
 const hasSlug = isCollection && !!def.path?.includes('[slug]')
 const hasShared = multi && Object.keys(partition(def.fields).shared).length > 0
 
-const doc = ref<Doc>({ id: null, shared: {}, locales: {} })
+const doc = ref<Doc>({ id: null, version: 0, shared: {}, locales: {} })
 const dirty = ref(false)
 const saving = ref(false)
 const errors = ref<Record<string, Record<string, string>>>({})
@@ -29,11 +31,27 @@ const tab = ref<'content' | 'seo'>('content')
 const locale = ref(defaultLocale)
 const split = ref(false)
 const localeB = ref(locales.find(l => l !== defaultLocale) ?? defaultLocale)
+const conflict = ref<Conflict | null>(null)
+const showHistory = ref(false)
+const duplicating = ref(false)
 
-/** Met le contenu reçu de l'API dans la forme attendue par le formulaire : toutes les langues présentes. */
-function hydrate(data?: any) {
+/**
+ * État de chaque partie (champs communs, chaque langue) au dernier chargement. Seules les parties modifiées depuis
+ * sont envoyées à l'enregistrement : deux personnes peuvent ainsi travailler sur deux langues sans se gêner.
+ */
+let baseline: { shared: string; locales: Record<string, string> } = { shared: '', locales: {} }
+const localeState = (l: string) => JSON.stringify({ slug: doc.value.locales[l]!.slug, values: doc.value.locales[l]!.values })
+const sharedChanged = () => JSON.stringify(doc.value.shared) !== baseline.shared
+const localeChanged = (l: string) => localeState(l) !== baseline.locales[l]
+
+/**
+ * Met le contenu reçu de l'API dans la forme attendue par le formulaire : toutes les langues présentes.
+ * `unsaved` : le contenu affiché n'est pas encore enregistré (copie préparée dans le formulaire).
+ */
+function hydrate(data?: any, unsaved = false) {
   const next: Doc = {
     id: data?.id ?? null,
+    version: data?.version ?? 0,
     shared: { ...data?.shared },
     locales: Object.fromEntries(locales.map(l => [l, {
       slug: data?.locales?.[l]?.slug ?? '',
@@ -48,10 +66,24 @@ function hydrate(data?: any) {
   // Interrupteurs jamais touchés : valeur par défaut, pour que les conditions d'affichage se comportent comme sur le serveur.
   applyDefaults(partition(def!.fields).shared, next.shared)
   doc.value = next
-  nextTick(() => { dirty.value = false })
+  // Après l'affichage : les champs ont alors fini de mettre leurs valeurs en forme.
+  nextTick(() => {
+    dirty.value = unsaved
+    baseline = { shared: JSON.stringify(doc.value.shared), locales: Object.fromEntries(locales.map(l => [l, localeState(l)])) }
+  })
 }
 
-if (route.params.id === 'new') hydrate()
+/** Contenu à copier (collections sans brouillons) : le formulaire s'ouvre prérempli, rien n'est créé avant l'enregistrement. */
+const copyOf = route.params.id === 'new' && isCollection && typeof route.query.copy === 'string' ? route.query.copy : null
+
+if (route.params.id === 'new') {
+  const source = copyOf ? await cmsApi<any>(`/api/cms/entries/${type}/${copyOf}`).catch(() => null) : null
+  if (source) {
+    const copy = copyValues(def as any, source.shared, Object.fromEntries(Object.entries<any>(source.locales).map(([l, state]) => [l, state.values])))
+    hydrate({ shared: copy.shared, locales: Object.fromEntries(Object.entries(copy.locales).map(([l, values]) => [l, { values }])) }, true)
+  }
+  else hydrate()
+}
 else {
   try {
     hydrate(await cmsApi(`/api/cms/entries/${type}/${route.params.id}`))
@@ -85,22 +117,35 @@ function toggleSplit() {
   if (localeB.value === locale.value) localeB.value = locales.find(l => l !== locale.value) ?? locale.value
 }
 
-async function send(extra: { publish?: string[]; unpublish?: string[] }, done: string) {
+async function send(extra: { publish?: string[]; unpublish?: string[] }, done: string, force = false) {
   saving.value = true
   errors.value = {}
+  conflict.value = null
+  const wasNew = !doc.value.id
+  // Sans brouillons, enregistrer publie le contenu entier : tout est envoyé. Sinon, seulement ce qui a été modifié
+  // (et ce qui est publié : une publication met aussi en ligne les champs communs).
+  const whole = wasNew || !def!.drafts
+  const sent = locales.filter(l => whole || localeChanged(l) || extra.publish?.includes(l))
   const body = {
-    shared: doc.value.shared,
-    locales: Object.fromEntries(locales.map(l => [l, { slug: doc.value.locales[l]!.slug, values: doc.value.locales[l]!.values }])),
+    ...(whole || sharedChanged() || extra.publish?.length ? { shared: doc.value.shared } : {}),
+    locales: Object.fromEntries(sent.map(l => [l, { slug: doc.value.locales[l]!.slug, values: doc.value.locales[l]!.values }])),
     ...extra,
+    ...(wasNew ? (copyOf ? { after: copyOf } : {}) : { baseVersion: doc.value.version, ...(force ? { force: true } : {}) }),
   }
   try {
-    const wasNew = !doc.value.id
     const saved = await cmsApi<any>(wasNew ? `/api/cms/entries/${type}` : `/api/cms/entries/${type}/${doc.value.id}`, { method: wasNew ? 'POST' : 'PUT', body })
     hydrate(saved)
-    toast.success(done)
+    // Si le site n'a pas pu être actualisé, un avertissement s'affiche et le message ne prétend pas le contraire.
+    toast.success(cmsSiteUpdated(saved) ? done : done.replace(/\.? Le site est à jour\.$/, ''))
     if (wasNew) await navigateTo(`/admin/${type}/${saved.id}`, { replace: true })
   }
   catch (e: any) {
+    const found = e?.data?.data?.conflict
+    if (e?.statusCode === 409 && found) {
+      conflict.value = { ...found, retry: () => send(extra, done, true) }
+      saving.value = false
+      return
+    }
     errors.value = e?.data?.data?.errors ?? {}
     const first = Object.keys(errors.value)[0]
     if (first && multi && !split.value) pickLocale(first)
@@ -130,8 +175,8 @@ async function preview() {
   const tab = window.open('', '_blank')
   if (dirty.value || !doc.value.id) await save()
   const state = doc.value.locales[locale.value]
-  const ready = doc.value.id && !errorCount.value && (!hasSlug || state?.slug)
-  if (!ready) { tab?.close(); if (!errorCount.value) toast.error('Rien à prévisualiser dans cette langue : remplissez d\'abord le contenu.'); return }
+  const ready = doc.value.id && !errorCount.value && !conflict.value && (!hasSlug || state?.slug)
+  if (!ready) { tab?.close(); if (!errorCount.value && !conflict.value) toast.error('Rien à prévisualiser dans cette langue : remplissez d\'abord le contenu.'); return }
   const path = (locale.value === defaultLocale ? '' : `/${locale.value}`) + def!.path.replace('[slug]', state!.slug)
   if (tab) tab.location.href = `${path}?preview=1`
 }
@@ -142,7 +187,7 @@ function unpublish() {
 async function remove() {
   if (!confirm('Supprimer définitivement ce contenu, dans toutes les langues ?')) return
   try {
-    await cmsApi(`/api/cms/entries/${type}/${doc.value.id}`, { method: 'DELETE' })
+    cmsSiteUpdated(await cmsApi(`/api/cms/entries/${type}/${doc.value.id}`, { method: 'DELETE' }))
     dirty.value = false
     toast.success('Contenu supprimé')
     await navigateTo(`/admin/${type}`)
@@ -150,6 +195,55 @@ async function remove() {
   catch (e) {
     toast.error(cmsErrorMessage(e))
   }
+}
+
+// ───── Modification simultanée ─────
+
+const partName = (p: string) => (p === 'shared' ? 'les champs communs à toutes les langues' : `le texte en ${localeName(p)}`)
+const conflictWho = computed(() => (conflict.value?.self ? 'Vous avez' : `${conflict.value?.by ?? 'Une autre personne'} a`))
+
+/** Abandonne ses modifications et affiche la version enregistrée par l'autre personne. */
+async function reloadLatest() {
+  if (!confirm('Recharger la version à jour ? Vos modifications non enregistrées seront perdues.')) return
+  try {
+    hydrate(await cmsApi(`/api/cms/entries/${type}/${doc.value.id}`))
+    conflict.value = null
+    errors.value = {}
+    toast.success('Version à jour chargée')
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+}
+
+// ───── Historique et duplication ─────
+
+function onRestored(saved: any) {
+  showHistory.value = false
+  errors.value = {}
+  hydrate(saved)
+  toast.success('Version restaurée comme brouillon. Relisez-la, puis publiez.')
+}
+/** Sans brouillons : la version est reprise dans le formulaire, à enregistrer pour la mettre en ligne. */
+function onLoadVersion(snapshot: { shared: Record<string, any>; locales: Record<string, { values: Record<string, any> }> }) {
+  showHistory.value = false
+  doc.value.shared = { ...snapshot.shared }
+  if (def!.seo) doc.value.shared.seo ??= {}
+  for (const l of locales) if (snapshot.locales[l]) doc.value.locales[l]!.values = { ...snapshot.locales[l]!.values }
+  toast.success('Version reprise dans le formulaire. Vérifiez-la, puis enregistrez.')
+}
+
+async function duplicate() {
+  duplicating.value = true
+  try {
+    const to = await cmsDuplicate(type, doc.value.id!, !!def!.drafts)
+    if (def!.drafts) toast.success('Copie créée en brouillon')
+    await navigateTo(to)
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+  duplicating.value = false
 }
 
 onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas enregistrées. Quitter quand même ?'))
@@ -182,6 +276,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </div>
     </div>
 
+    <CmsSiteDelayNotice />
     <div v-if="errorCount" class="alert alert-error alert-soft text-sm mb-4">
       {{ errorCount }} champ{{ errorCount > 1 ? 's' : '' }} à corriger avant de publier
       <template v-if="multi">({{ Object.keys(errors).map(localeName).join(', ') }})</template>.
@@ -253,11 +348,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       </div>
 
       <aside :class="split ? 'grid sm:grid-cols-2 gap-4' : 'space-y-4 lg:sticky lg:top-32'">
-        <div v-if="def.drafts || def.path || (isCollection && doc.id)" class="card bg-base-100 border border-base-300 p-4 text-sm space-y-3">
+        <div v-if="def.drafts || def.path || doc.id" class="card bg-base-100 border border-base-300 p-4 text-sm space-y-3">
           <div class="font-semibold">Publication</div>
           <div v-if="def.drafts" class="flex justify-between"><span class="text-base-content/60">Statut</span><span>{{ statusMeta[status]?.label }}</span></div>
           <button v-if="def.path" class="btn btn-sm btn-block" :disabled="saving" @click="preview"><Eye :size="16" />Aperçu du brouillon</button>
           <button v-if="def.drafts && isOnline" class="btn btn-sm btn-block" :disabled="saving" @click="unpublish"><EyeOff :size="16" />Retirer du site</button>
+          <button v-if="doc.id" class="btn btn-sm btn-ghost btn-block" @click="showHistory = true"><History :size="16" />Historique</button>
+          <button
+            v-if="isCollection && doc.id" class="btn btn-sm btn-ghost btn-block" :disabled="dirty || duplicating"
+            :title="dirty ? 'Enregistrez d\'abord vos modifications' : 'Créer une copie de ce contenu'" @click="duplicate"
+          >
+            <Copy :size="16" />Dupliquer
+          </button>
           <button v-if="isCollection && doc.id" class="btn btn-sm btn-ghost btn-block text-error" @click="remove"><Trash2 :size="16" />Supprimer</button>
         </div>
         <div v-if="multi" class="card bg-base-100 border border-base-300 p-4 text-sm space-y-2">
@@ -276,6 +378,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
         </div>
       </aside>
+    </div>
+
+    <CmsHistory
+      v-if="showHistory && doc.id" :type="type" :id="doc.id" :def="def" :locales="locales" :default-locale="defaultLocale" :dirty="dirty"
+      @close="showHistory = false" @restored="onRestored" @load="onLoadVersion"
+    />
+
+    <div v-if="conflict" class="modal modal-open" data-cms-conflict>
+      <div class="modal-box space-y-4">
+        <h3 class="font-bold text-lg">Ce contenu a été modifié entre-temps</h3>
+        <p class="text-sm">
+          {{ conflictWho }} enregistré des modifications {{ cmsFormatWhen(conflict.at) }}<template v-if="conflict.self"> dans une autre fenêtre</template>,
+          après l'ouverture de cette page.
+          <template v-if="multi">Elles concernent {{ conflict.parts.map(partName).join(' et ') }}.</template>
+          Vos propres modifications ne sont pas encore enregistrées.
+        </p>
+        <div class="space-y-3">
+          <div class="border border-base-300 rounded-box p-3 space-y-2">
+            <button type="button" class="btn btn-sm btn-block" @click="reloadLatest">Recharger la version à jour</button>
+            <p class="text-xs text-base-content/60">Vous voyez les modifications enregistrées entre-temps. Les vôtres sont abandonnées.</p>
+          </div>
+          <div class="border border-base-300 rounded-box p-3 space-y-2">
+            <button type="button" class="btn btn-sm btn-block btn-primary" :disabled="saving" @click="conflict.retry()">Enregistrer quand même</button>
+            <p class="text-xs text-base-content/60">Vos modifications remplacent les autres. La version remplacée reste disponible dans l'historique.</p>
+          </div>
+        </div>
+        <div class="modal-action"><button type="button" class="btn btn-ghost" @click="conflict = null">Annuler</button></div>
+      </div>
     </div>
   </section>
 </template>
