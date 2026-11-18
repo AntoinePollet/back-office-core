@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Nom du Worker Cloudflare.
+  "name": __ID_JSON__,
+  "main": ".output/server/index.mjs",
+  "assets": { "directory": ".output/public", "binding": "ASSETS" },
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Cache du site sur le réseau Cloudflare. Le core décide de ce qui est mis en cache et le purge à la publication.
+  "cache": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": __ID_JSON__,
+      // Identifiant de la base, donné par `wrangler d1 create`. Tant qu'il vaut des zéros, la base distante n'existe pas.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Les migrations sont fournies par le core : une mise à jour du core peut en apporter de nouvelles.
+      "migrations_dir": "node_modules/backoffice-core/server/database/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": __BUCKET_JSON__ }],
+  // Redimensionnement des images de la médiathèque. Sans cette liaison, les images sont servies dans leur taille d'origine.
+  "images": { "binding": "IMAGES" },
+  // Journaux consultables dans le tableau de bord Cloudflare.
+  "observability": { "enabled": true }
+}

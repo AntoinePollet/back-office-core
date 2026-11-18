@@ -1,0 +1,11 @@
+node_modules
+.nuxt
+.output
+.wrangler
+.data
+dist
+.env
+.dev.vars
+*.log
+.DS_Store
+.secrets.env

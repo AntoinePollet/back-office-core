@@ -1,0 +1,12 @@
+/* Styles du site public. daisyUI fournit les composants ; le thème vient de l'écran Apparence du back-office. */
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* Texte mis en forme saisi dans le back-office : Tailwind remet à zéro les titres et les listes, on leur redonne une apparence. */
+.rich-text > * + * { margin-top: 0.75em; }
+.rich-text h2 { font-size: 1.5rem; font-weight: 700; }
+.rich-text h3 { font-size: 1.25rem; font-weight: 700; }
+.rich-text ul { list-style: disc; padding-left: 1.25rem; }
+.rich-text ol { list-style: decimal; padding-left: 1.25rem; }
+.rich-text blockquote { border-left: 3px solid var(--color-base-300); padding-left: 0.75rem; opacity: 0.8; }
+.rich-text a { color: var(--color-primary); text-decoration: underline; }
