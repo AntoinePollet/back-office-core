@@ -46,6 +46,8 @@ async function logout() {
     <div class="drawer-content flex flex-col min-w-0">
       <header class="navbar bg-base-100 border-b border-base-300 sticky top-0 z-20 min-h-14 px-4 gap-2">
         <label for="cms-nav" class="btn btn-ghost btn-sm btn-square lg:hidden" aria-label="Ouvrir le menu"><Menu :size="18" /></label>
+        <!-- Recherche et navigation rapide (⌘K) : le bouton et sa fenêtre. -->
+        <CmsCommandPalette :schema="schema" :groups="groups" @logout="logout" />
         <div class="ml-auto">
           <a href="/" target="_blank" class="btn btn-ghost btn-sm"><ExternalLink :size="16" />Voir le site</a>
         </div>
