@@ -6,6 +6,9 @@
     "dev": "pnpm --filter playground dev",
     "build": "pnpm --filter playground build",
     "db:generate": "pnpm --filter backoffice-core db:generate",
-    "db:migrate": "pnpm --filter playground db:migrate"
+    "db:migrate": "pnpm --filter playground db:migrate",
+    "typecheck": "pnpm --filter playground typecheck",
+    "test:e2e": "node tests/run.mjs",
+    "test": "pnpm typecheck && pnpm test:e2e"
   }
 }
