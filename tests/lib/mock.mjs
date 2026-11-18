@@ -7,6 +7,8 @@ import http from 'node:http'
  * - /echec → 500
  * - toute autre adresse → 200
  * - GET /_calls → les appels reçus (pour déboguer à la main)
+ * - Stripe, sous /stripe : POST /stripe/v1/checkout/sessions → une session (cs_test_<n>) ; GET /stripe/v1/checkout/sessions →
+ *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement »
  */
 export async function startMock(port) {
   const calls = []
@@ -18,8 +20,9 @@ export async function startMock(port) {
     req.on('end', () => {
       let body = null
       try { body = JSON.parse(raw || 'null') }
-      catch { body = raw }
-      calls.push({ url: req.url, key: req.headers['api-key'] ?? null, body })
+      catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
+      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, version: req.headers['stripe-version'] ?? null, body })
+      if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
       if (req.url === '/echec') { res.statusCode = 500; return res.end('{}') }
       // Compte Brevo : sert à vérifier une clé d'API. « mauvaise-cle » est refusée, comme une clé inconnue de Brevo.
       if (req.url === '/v3/account') {
@@ -30,6 +33,21 @@ export async function startMock(port) {
       res.end('{"messageId":"test"}')
     })
   })
+  // Stripe : les deux appels du module (créer une session, vérifier la clé) et la page de paiement où le site redirige.
+  let sessions = 0
+  function stripe(req, res, body) {
+    const key = req.headers.authorization?.replace(/^Bearer /, '')
+    if (req.url.startsWith('/stripe/checkout/')) { res.setHeader('content-type', 'text/html'); return res.end('<h1>Page de paiement Stripe (factice)</h1>') }
+    if (key === 'rk_test_mauvaise') { res.statusCode = 401; return res.end('{"error":{"type":"invalid_request_error","message":"Invalid API Key provided"}}') }
+    if (key === 'rk_test_sans-droit') { res.statusCode = 403; return res.end('{"error":{"type":"invalid_request_error","message":"The provided key does not have the required permissions"}}') }
+    if (req.method === 'GET' && req.url.startsWith('/stripe/v1/checkout/sessions')) return res.end('{"object":"list","data":[],"has_more":false}')
+    if (req.method === 'POST' && req.url === '/stripe/v1/checkout/sessions') {
+      const id = `cs_test_session${String(++sessions).padStart(4, '0')}`
+      return res.end(JSON.stringify({ id, object: 'checkout.session', url: `http://localhost:${port}/stripe/checkout/${id}`, amount_total: Number(body['line_items[0][price_data][unit_amount]']) * Number(body['line_items[0][quantity]']) }))
+    }
+    res.statusCode = 404
+    res.end('{"error":{"message":"Unrecognized request URL"}}')
+  }
   await new Promise((resolve, reject) => {
     server.once('error', e => reject(e.code === 'EADDRINUSE' ? new Error(`Le port ${port} du faux service est déjà utilisé (E2E_MOCK_PORT pour en changer).`) : e))
     server.listen(port, resolve)

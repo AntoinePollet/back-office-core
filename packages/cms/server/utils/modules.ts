@@ -4,6 +4,7 @@ import type { StoredSecret } from '../database/schema'
 import { decryptSecret, encryptSecret, secretHint } from '../../shared/secrets'
 import { brevoModule } from '../cms-modules/brevo'
 import { formsModule } from '../cms-modules/forms'
+import { stripeModule } from '../cms-modules/stripe'
 
 /**
  * Modules : ce qu'un module apporte au serveur, et le registre où ils sont inscrits.
@@ -72,9 +73,11 @@ export type CmsModuleDefinition = {
   workflowEvents?: () => ModuleWorkflowEvent[]
   /** Lien vers l'écran du module dans le back-office, s'il en a un en plus de ses réglages. */
   adminPage?: { to: string; label: string }
+  /** Informations à recopier ailleurs (l'adresse d'un webhook…), affichées sous les réglages avec un bouton « Copier ». */
+  details?: (event: H3Event) => { label: string; value: string; help?: string }[]
 }
 
-const registry = new Map<string, CmsModuleDefinition>([brevoModule, formsModule].map(m => [m.id, m]))
+const registry = new Map<string, CmsModuleDefinition>([brevoModule, formsModule, stripeModule].map(m => [m.id, m]))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {
@@ -172,6 +175,7 @@ export async function describeModule(event: H3Event, definition: CmsModuleDefini
     missing: missing.map(s => s.label),
     canTest: !!definition.test,
     adminPage: definition.adminPage ?? null,
+    details: definition.details?.(event) ?? [],
     updatedAt: row?.updatedAt ?? null,
   }
 }

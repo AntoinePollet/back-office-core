@@ -186,7 +186,7 @@ export default async function (t) {
     })
     const r = await run([bad])
     expect(r, 1, 'rien n\'a été envoyé',
-      'collections.articles : collection inconnue. Collections de cms.config.ts : services, categories, testimonials, documents',
+      'collections.articles : collection inconnue. Collections de cms.config.ts : services, categories, testimonials, products, documents',
       'collections.categories[1] : id manquant',
       'collections.services[0] (« s1 »).titel : champ inconnu dans « services »',
       'collections.services[1] (« s2 »).fromPrice : nombre attendu (reçu un texte)',

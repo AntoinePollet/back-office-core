@@ -29,6 +29,8 @@ export default defineNuxtConfig({
     brevoApiKey: '',
     /** Adresse de l'API Brevo. Ne se change que pour les tests : NUXT_BREVO_API_URL. */
     brevoApiUrl: 'https://api.brevo.com/v3',
+    /** Adresse de l'API Stripe. Ne se change que pour les tests : NUXT_STRIPE_API_URL. */
+    stripeApiUrl: 'https://api.stripe.com',
     /** Expéditeur des e-mails, validé dans Brevo : « Cabinet Durand <contact@cabinet-durand.fr> ». Variable NUXT_EMAIL_FROM. */
     emailFrom: '',
   },
