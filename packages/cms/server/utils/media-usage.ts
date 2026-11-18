@@ -15,7 +15,8 @@ export async function findMediaUsage(event: H3Event, mediaId: string) {
   for (const id of ids) {
     const [entry] = await db.select().from(entries).where(eq(entries.id, id))
     if (!entry) continue
-    const def = getDef(entry.type)
+    const def = findDef(entry.type)
+    if (!def) continue // type retiré de la configuration : le contenu n'est plus affiché nulle part
     const rows = await db.select().from(entryLocales).where(eq(entryLocales.entryId, id))
     const main = rows.find(r => r.locale === cmsConfig.site.defaultLocale) ?? rows[0]
     const values = { ...entry.sharedDraft, ...main?.draft } as Record<string, unknown>

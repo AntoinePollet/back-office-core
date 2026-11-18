@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow } from '@lucide/vue'
+import { ArrowLeftRight, ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import '../assets/css/admin.css'
 
@@ -26,6 +26,7 @@ const groups = computed(() => {
     out.get('Site')!.push({ key: 'appearance', label: 'Apparence', icon: Palette, to: '/admin/appearance' })
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
+    out.get('Site')!.push({ key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' })
   }
   return [...out]
 })
@@ -51,6 +52,7 @@ async function logout() {
         </div>
       </header>
       <main class="p-4 lg:p-8 w-full mx-auto flex-1 max-w-[104rem]">
+        <CmsMigrationNotice />
         <slot />
       </main>
     </div>

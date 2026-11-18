@@ -3,6 +3,7 @@ import { and, eq, inArray, max, ne } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { applyDefaults, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
 import type { AnyField, CmsConfig, CmsDefinition } from '../../shared/format'
+import { unknownValues } from '../../shared/migrate'
 import type { CmsEventInput } from './events'
 
 type Values = Record<string, unknown>
@@ -14,8 +15,11 @@ type EntryRow = typeof schema.entries.$inferSelect
 const config = projectConfig as unknown as CmsConfig
 export const cmsConfig = config
 
+/** Comme `getDef`, sans erreur : un contenu peut rester en base après le retrait de son type de la configuration. */
+export const findDef = (type: string): CmsDefinition | undefined => config.collections?.[type] ?? config.singletons?.[type]
+
 export function getDef(type: string): CmsDefinition {
-  const def = config.collections?.[type] ?? config.singletons?.[type]
+  const def = findDef(type)
   if (!def) throw createError({ statusCode: 404, message: `Type de contenu inconnu : ${type}` })
   return def
 }
@@ -52,7 +56,8 @@ export async function entryTitles(event: H3Event, ids: string[]) {
       db.select().from(entryLocales).where(inArray(entryLocales.entryId, chunk)),
     ])
     for (const doc of docs) {
-      const def = getDef(doc.type)
+      const def = findDef(doc.type)
+      if (!def) continue
       const mine = rows.filter(r => r.entryId === doc.id)
       const main = mine.find(r => r.locale === config.site.defaultLocale) ?? mine[0]
       const values = { ...doc.sharedDraft, ...main?.draft } as Values
@@ -96,6 +101,8 @@ export async function saveDoc(event: H3Event, type: string, id: string | null) {
   const byLocale = new Map(rows.map(r => [r.locale, r]))
 
   const shared = sanitizeRichText(parts.shared, applyDefaults(parts.shared, pick(parts.shared, body.shared ?? existing?.sharedDraft ?? {}, system)))
+  // Ce que le formulaire ne connaît pas (champ retiré de la configuration, valeur mise de côté par une migration) reste en base.
+  Object.assign(shared, unknownValues(parts.shared, existing?.sharedDraft, system))
   const incoming = Object.entries(body.locales ?? {}).filter(([locale]) => config.site.locales.includes(locale))
   const unpublish = body.unpublish ?? []
   const requested = (def.drafts ? body.publish ?? [] : []).filter(l => !unpublish.includes(l))
@@ -112,6 +119,7 @@ export async function saveDoc(event: H3Event, type: string, id: string | null) {
     const values = sanitizeRichText(parts.localized, pick(parts.localized, input.values ?? {}, system))
     if (!prev && Object.values(values).every(isEmpty)) continue // langue pas encore traduite
     applyDefaults(parts.localized, values)
+    Object.assign(values, unknownValues(parts.localized, prev?.draft, system))
 
     let slug: string | null = null
     if (hasSlug(def) && def.kind === 'collection') {

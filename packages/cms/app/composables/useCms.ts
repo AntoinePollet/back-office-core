@@ -149,6 +149,9 @@ export async function useCmsSchema() {
   return schema as Ref<CmsConfig>
 }
 
+/** Nombre de changements de structure en attente de validation (avertissement du back-office). */
+export const useCmsMigrationsPending = () => useState<number>('cms-migrations-pending', () => 0)
+
 type Toast = { id: number; message: string; kind: 'success' | 'error' }
 
 export function useCmsToast() {

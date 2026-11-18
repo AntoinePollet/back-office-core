@@ -44,7 +44,13 @@ type Common = {
   localized?: boolean
   /** Largeur dans le formulaire. Défaut : 'full'. */
   width?: 'full' | 'half'
-  /** Ancien nom du champ : la migration déplace les données au lieu de les abandonner. */
+  /**
+   * Ancien nom du champ, à indiquer quand on le renomme : au premier accès après le déploiement, ses valeurs
+   * (brouillons et versions publiées, toutes langues) sont déplacées sous le nouveau nom. Sans cette option,
+   * l'ancien champ est considéré comme retiré (ses valeurs restent en base, sans être affichées) et le nouveau est vide.
+   * Peut rester dans le fichier après la migration : il est alors ignoré. Ne peut pas désigner un champ encore présent.
+   * Dans un répéteur, s'applique aux sous-champs de la même façon. Voir `shared/migrate.ts`.
+   */
   renamedFrom?: string
   /**
    * N'affiche le champ que si la condition est remplie.
@@ -115,7 +121,13 @@ type SingletonOpts<F> = {
   /** Seuls les administrateurs peuvent modifier ce contenu ; il n'apparaît pas dans le menu des éditeurs. */
   adminOnly?: boolean
   fields: F
-  /** Ancien identifiant, pour conserver les contenus après un renommage. */
+  /**
+   * Ancien identifiant, à indiquer quand on renomme la collection ou le singleton : ses contenus, leurs redirections
+   * et les liens qui pointent vers eux suivent au premier accès après le déploiement. Sans cette option, les anciens
+   * contenus restent en base mais ne sont plus affichés. Peut rester dans le fichier après la migration (il est ignoré) ;
+   * ne peut pas désigner un identifiant encore utilisé. Si des contenus existent déjà sous le nouvel identifiant,
+   * rien n'est déplacé : l'écran « Structure des contenus » du back-office l'explique.
+   */
   renamedFrom?: string
 }
 
@@ -180,7 +192,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
@@ -191,6 +203,12 @@ export function validate(config: Config): string[] {
   if (!site.locales.includes(site.defaultLocale)) errors.push('site.defaultLocale doit faire partie de site.locales')
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'
+  // Un ancien nom encore porté par un voisin, ou revendiqué deux fois : impossible de savoir quelles données suivre.
+  const checkRename = (at: string, key: string, from: string | undefined, siblings: Record<string, { renamedFrom?: string }>) => {
+    if (!from || from === key) return
+    if (from in siblings) errors.push(`${at} : renamedFrom désigne « ${from} », qui existe encore. Retirez renamedFrom si la migration est faite, sinon choisissez un autre nom`)
+    else if (Object.entries(siblings).some(([other, s]) => other !== key && s.renamedFrom === from)) errors.push(`${at} : renamedFrom « ${from} » est déjà utilisé par un autre élément`)
+  }
   const checkFields = (where: string, fields: Fields, nested: boolean) => {
     if (!Object.keys(fields).length) errors.push(`${where} : aucun champ`)
     for (const [key, field] of Object.entries(fields)) {
@@ -199,6 +217,7 @@ export function validate(config: Config): string[] {
       if (RESERVED.includes(key)) errors.push(`${at} : nom réservé`)
       if (!field.label) errors.push(`${at} : label manquant`)
       if (field.renamedFrom && !KEY.test(field.renamedFrom)) errors.push(`${at} : renamedFrom invalide`)
+      checkRename(at, key, field.renamedFrom, fields)
       if (nested && field.localized !== undefined) errors.push(`${at} : localized se règle sur le répéteur, pas sur ses sous-champs`)
       if (field.type === 'select') {
         const values = (field.options as { value: string }[]).map(o => o.value)
@@ -252,6 +271,8 @@ export function validate(config: Config): string[] {
     seen.add(key)
     if (def.path && !def.path.startsWith('/')) errors.push(`${key}.path doit commencer par /`)
     if (def.seo && !def.path) errors.push(`${key} : seo exige path`)
+    if (def.renamedFrom && !KEY.test(def.renamedFrom)) errors.push(`${key} : renamedFrom invalide`)
+    checkRename(key, key, def.renamedFrom, { ...singletons, ...collections })
     checkFields(key, def.fields, false)
   }
 
