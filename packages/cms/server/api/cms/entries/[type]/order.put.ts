@@ -6,6 +6,8 @@ export default defineEventHandler(async (event) => {
   const type = getRouterParam(event, 'type')!
   const def = getDef(type)
   assertAccess(user, type, 'publish') // l'ordre s'applique au site tout de suite
+  // L'ordre concerne les contenus de tout le monde : pas pour qui n'a droit qu'aux siens.
+  if (rightsFor(user, type).own) throw createError({ statusCode: 403, message: 'Vous ne pouvez pas changer l\'ordre : vous n\'avez accès qu\'à vos propres contenus.' })
   if (def.kind !== 'collection' || !def.orderable) throw createError({ statusCode: 400, message: 'Cette collection n\'a pas d\'ordre manuel.' })
 
   const { ids } = await readBody<{ ids?: unknown }>(event)

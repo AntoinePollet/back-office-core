@@ -7,7 +7,8 @@ export default defineEventHandler(async (event) => {
   const name = body.name?.trim()
   const email = body.email?.trim().toLowerCase()
   if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) throw createError({ statusCode: 400, message: 'Nom et adresse e-mail valides obligatoires.' })
-  const role = CMS_ROLES.includes(body.role as CmsRole) ? body.role as CmsRole : 'editor'
+  if (body.role !== undefined && !await isKnownRole(event, body.role)) throw createError({ statusCode: 400, message: 'Rôle inconnu.' })
+  const role = body.role ?? 'editor'
 
   const db = useDb(event)
   const [taken] = await db.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.email, email))

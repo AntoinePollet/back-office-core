@@ -12,13 +12,13 @@ export default defineEventHandler(async (event) => {
   const [target] = await db.select().from(schema.user).where(eq(schema.user.id, id))
   if (!target) throw createError({ statusCode: 404, message: 'Compte introuvable.' })
 
-  const set: { name?: string; role?: CmsRole; updatedAt: Date } = { updatedAt: new Date() }
+  const set: { name?: string; role?: string; updatedAt: Date } = { updatedAt: new Date() }
   if (body.name?.trim()) set.name = body.name.trim()
   if (body.role !== undefined && body.role !== target.role) {
-    if (!CMS_ROLES.includes(body.role as CmsRole)) throw createError({ statusCode: 400, message: 'Rôle inconnu.' })
+    if (!await isKnownRole(event, body.role)) throw createError({ statusCode: 400, message: 'Rôle inconnu.' })
     if (id === admin.id) throw createError({ statusCode: 400, message: 'Vous ne pouvez pas changer votre propre rôle.' })
     if (target.role === 'admin' && await countAdmins(event) <= 1) throw createError({ statusCode: 400, message: 'Il doit rester au moins un administrateur.' })
-    set.role = body.role as CmsRole
+    set.role = body.role
   }
   await db.update(schema.user).set(set).where(eq(schema.user.id, id))
 

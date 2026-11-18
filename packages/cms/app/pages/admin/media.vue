@@ -100,7 +100,7 @@ async function copyUrl() {
 
           <div class="flex gap-2 pt-1">
             <button class="btn btn-sm grow" @click="copyUrl">Copier l'adresse</button>
-            <button v-if="useCmsUser().value?.role !== 'writer'" class="btn btn-sm btn-error btn-soft" @click="remove">Supprimer</button>
+            <button v-if="useCmsUser().value?.deleteMedia !== false" class="btn btn-sm btn-error btn-soft" @click="remove">Supprimer</button>
           </div>
         </div>
       </aside>

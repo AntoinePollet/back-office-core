@@ -62,6 +62,8 @@ const config = defineCms({
         audience: f.select({
           label: 'Public',
           width: 'half',
+          // Exemple de champ réservé : un rédacteur le voit mais ne le modifie pas.
+          restricted: true,
           options: [{ value: 'companies', label: 'Entreprises' }, { value: 'individuals', label: 'Particuliers' }],
         }),
         onQuote: f.boolean({ label: 'Tarif sur devis', width: 'half' }),
@@ -89,7 +91,8 @@ const config = defineCms({
       label: 'Témoignages',
       icon: 'message-square-quote',
       // Exemple de droits par collection : ici les rédacteurs publient eux-mêmes, mais seuls les éditeurs suppriment.
-      access: { publish: ['editor', 'writer'] },
+      // et chaque rédacteur ne voit que les témoignages qu'il a saisis.
+      access: { publish: ['editor', 'writer'], own: ['writer'] },
       labelSingular: 'témoignage',
       titleField: 'author',
       orderable: true,

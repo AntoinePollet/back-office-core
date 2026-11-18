@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow } from '@lucide/vue'
+import { ArrowLeftRight, ExternalLink, FileText, Images, LayoutList, LogOut, Menu, Palette, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import '../assets/css/admin.css'
@@ -9,10 +9,16 @@ const schema = await useCmsSchema()
 const user = useCmsUser()
 const route = useRoute()
 const cmsVersion = useRuntimeConfig().public.cmsVersion
+
+// Demandes de publication qui concernent la personne, relues à chaque changement d'écran.
+const reviews = useState<unknown[]>('cms-reviews', () => [])
+watch(() => route.fullPath, async () => { reviews.value = await cmsApi<unknown[]>('/api/cms/reviews').catch(() => reviews.value) }, { immediate: true })
 const { toasts } = useCmsToast()
 
 const groups = computed(() => {
-  const out = new Map<string, { key: string; label: string; to: string; icon: Component }[]>()
+  const out = new Map<string, { key: string; label: string; to: string; icon: Component; count?: number }[]>()
+  // Demandes de publication : l'entrée n'apparaît que s'il y en a, pour ne pas encombrer le menu.
+  if (reviews.value.length) out.set('À faire', [{ key: 'reviews', label: 'À valider', icon: ClipboardCheck, to: '/admin/reviews', count: reviews.value.length }])
   const all = [...Object.entries(schema.value.singletons ?? {}), ...Object.entries(schema.value.collections ?? {})]
   for (const [key, def] of all) {
     const group = def.group ?? (def.kind === 'singleton' ? 'Pages' : 'Collections')
@@ -74,7 +80,7 @@ async function logout() {
           <template v-for="[group, items] in groups" :key="group">
             <li class="menu-title mt-2 first:mt-0">{{ group }}</li>
             <li v-for="item in items" :key="item.key">
-              <NuxtLink :to="item.to" :class="{ 'menu-active': route.params.type === item.key || route.path === item.to || route.path.startsWith(item.to + '/') }"><component :is="item.icon" :size="16" class="shrink-0" />{{ item.label }}</NuxtLink>
+              <NuxtLink :to="item.to" :class="{ 'menu-active': route.params.type === item.key || route.path === item.to || route.path.startsWith(item.to + '/') }"><component :is="item.icon" :size="16" class="shrink-0" />{{ item.label }}<span v-if="item.count" class="badge badge-sm badge-info">{{ item.count }}</span></NuxtLink>
             </li>
           </template>
         </ul>
@@ -84,7 +90,7 @@ async function logout() {
           </div>
           <NuxtLink to="/admin/account" class="text-sm min-w-0 grow hover:underline" title="Mon compte">
             <div class="font-medium truncate">{{ user?.name }}</div>
-            <div class="text-xs text-base-content/50">{{ roleLabel(user?.role) }}</div>
+            <div class="text-xs text-base-content/50">{{ user?.roleName ?? roleLabel(user?.role) }}</div>
           </NuxtLink>
           <button class="btn btn-ghost btn-sm btn-square" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><LogOut :size="16" /></button>
         </div>

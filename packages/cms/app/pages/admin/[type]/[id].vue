@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Copy, Eye, EyeOff, History, Trash2 } from '@lucide/vue'
+import { ArrowLeft, Copy, Eye, EyeOff, History, Trash2, Send } from '@lucide/vue'
 import { applyDefaults, copyValues, isEmpty, partition } from '../../../../shared/content'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
@@ -49,7 +49,11 @@ const localeChanged = (l: string) => localeState(l) !== baseline.locales[l]
  * Met le contenu reçu de l'API dans la forme attendue par le formulaire : toutes les langues présentes.
  * `unsaved` : le contenu affiché n'est pas encore enregistré (copie préparée dans le formulaire).
  */
+/** Demande de publication en attente sur ce contenu. Hors de `doc` : ce n'est pas une modification du formulaire. */
+const review = ref<{ by: string; byId: string; note: string | null; at: string } | null>(null)
+
 function hydrate(data?: any, unsaved = false) {
+  review.value = data?.review ?? null
   const next: Doc = {
     id: data?.id ?? null,
     version: data?.version ?? 0,
@@ -217,6 +221,33 @@ async function reloadLatest() {
   }
 }
 
+// ───── Demande de publication ─────
+const me = useCmsUser()
+const asking = ref(false)
+const reviewNote = ref('')
+async function requestReview() {
+  try {
+    const res = await cmsApi<{ review: NonNullable<typeof review.value> }>(`/api/cms/entries/${type}/${doc.value.id}/review`, { method: 'POST', body: { note: reviewNote.value } })
+    review.value = res.review
+    asking.value = false
+    reviewNote.value = ''
+    toast.success('Demande envoyée. Un éditeur relira et publiera.')
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+}
+async function dropReview() {
+  try {
+    await cmsApi(`/api/cms/entries/${type}/${doc.value.id}/review`, { method: 'DELETE' })
+    review.value = null
+    toast.success('Demande retirée')
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+}
+
 // ───── Historique et duplication ─────
 
 function onRestored(saved: any) {
@@ -358,6 +389,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <div v-if="def.drafts" class="flex justify-between"><span class="text-base-content/60">Statut</span><span>{{ statusMeta[status]?.label }}</span></div>
           <button v-if="def.path" class="btn btn-sm btn-block" :disabled="saving" @click="preview"><Eye :size="16" />Aperçu du brouillon</button>
           <p v-if="def.drafts && !access.publish" class="text-xs text-base-content/60">Vous préparez le brouillon. La mise en ligne est faite par un éditeur.</p>
+          <div v-if="review" class="rounded-field bg-info/10 p-3 space-y-2">
+            <div class="font-medium">Publication demandée</div>
+            <div class="text-xs text-base-content/70">par {{ review.byId === me?.id ? 'vous' : review.by }}, {{ cmsFormatWhen(review.at) }}</div>
+            <p v-if="review.note" class="text-sm whitespace-pre-line">« {{ review.note }} »</p>
+            <p v-if="access.publish" class="text-xs text-base-content/60">Relisez puis publiez : la demande sera close.</p>
+            <button v-if="access.publish || review.byId === me?.id" class="btn btn-xs" @click="dropReview">{{ review.byId === me?.id ? 'Retirer ma demande' : 'Écarter la demande' }}</button>
+          </div>
+          <button
+            v-else-if="def.drafts && doc.id && !access.publish" class="btn btn-sm btn-primary btn-block" :disabled="dirty"
+            :title="dirty ? 'Enregistrez d\'abord votre brouillon' : 'Prévenir un éditeur que ce brouillon est prêt'" @click="asking = true"
+          >
+            <Send :size="16" />Demander la publication
+          </button>
           <button v-if="def.drafts && isOnline && access.publish" class="btn btn-sm btn-block" :disabled="saving" @click="unpublish"><EyeOff :size="16" />Retirer du site</button>
           <button v-if="doc.id" class="btn btn-sm btn-ghost btn-block" @click="showHistory = true"><History :size="16" />Historique</button>
           <button
@@ -412,6 +456,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <div class="modal-action"><button type="button" class="btn btn-ghost" @click="conflict = null">Annuler</button></div>
       </div>
+    </div>
+    <div v-if="asking" class="modal modal-open">
+      <form class="modal-box space-y-3" @submit.prevent="requestReview">
+        <h3 class="font-bold text-lg">Demander la publication</h3>
+        <p class="text-sm text-base-content/60">Les personnes qui peuvent publier ce contenu verront votre demande. Vous pouvez continuer à modifier le brouillon en attendant.</p>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Message (facultatif)</legend>
+          <textarea v-model="reviewNote" class="textarea w-full" rows="3" maxlength="500" placeholder="Ce qui a changé, ce qu'il faut vérifier…" />
+        </fieldset>
+        <div class="modal-action">
+          <button type="button" class="btn" @click="asking = false">Annuler</button>
+          <button class="btn btn-primary">Envoyer la demande</button>
+        </div>
+      </form>
+      <div class="modal-backdrop" @click="asking = false" />
     </div>
   </section>
 </template>

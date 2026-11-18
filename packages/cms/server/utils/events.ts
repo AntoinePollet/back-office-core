@@ -11,6 +11,8 @@ import type { H3Event } from 'h3'
  */
 export type CmsEvent = { user: { id: string; email: string }; at: string } & (
   | { name: 'entry.created' | 'entry.updated' | 'entry.published' | 'entry.unpublished' | 'entry.deleted'; type: string; id: string; title: string; locale?: string; /** Adresse publique, si le contenu a une page. */ url?: string }
+  /** Quelqu'un qui ne peut pas publier signale qu'un brouillon est prêt. */
+  | { name: 'entry.review_requested'; type: string; id: string; title: string; locale?: string; url?: string; note: string; requester: string }
   /** Un lien de mot de passe vient d'être créé : un workflow peut l'envoyer par e-mail à `email`. */
   | { name: 'user.invited'; email: string; recipient: string; link: string; reason: 'invite' | 'reset' }
 )

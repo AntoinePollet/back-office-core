@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import type { H3Event } from 'h3'
-import { CMS_ROLES as SHARED_ROLES, type CmsRole as SharedRole } from '../../shared/access'
+import { CMS_ROLES as SHARED_ROLES, type CmsRole as SharedRole, type CustomRights, isBuiltinRole } from '../../shared/access'
 
 function createAuth(event: H3Event) {
   const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
@@ -37,7 +37,12 @@ export async function requireUser(event: H3Event) {
   if (!session) throw createError({ statusCode: 401, message: 'Connexion requise.' })
   // Les contenus attribués au compte sont lus une fois par requête.
   const types = (event.context._cmsUserTypes ??= await loadUserTypes(event, session.user.id)) as string[] | null
-  return { ...session.user, types } as typeof session.user & { role: CmsRole; types: string[] | null }
+  const role = (session.user as { role?: string }).role ?? 'editor'
+  // Rôle personnalisé : ses droits sont lus en base (null s'il a été supprimé : la personne n'a alors plus aucun droit).
+  const loaded = isBuiltinRole(role) ? undefined : (event.context._cmsCustomRole ??= await loadCustomRole(event, role)) as { name: string; rights: CustomRights } | null
+  return { ...session.user, role, types, custom: loaded === undefined ? undefined : loaded?.rights ?? null, roleName: loaded?.name ?? null } as typeof session.user & {
+    role: string; types: string[] | null; custom?: CustomRights | null; roleName: string | null
+  }
 }
 
 /** Renvoie l'utilisateur connecté s'il est administrateur, sinon répond 403. */

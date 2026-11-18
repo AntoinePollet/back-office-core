@@ -5,6 +5,7 @@ export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const type = getRouterParam(event, 'type')!
   assertAccess(user, type, 'edit')
+  await assertOwnEntry(event, user, type, getRouterParam(event, 'id')!)
   const { revisions } = schema
   const [revision] = await useDb(event).select().from(revisions).where(and(
     eq(revisions.id, getRouterParam(event, 'revision')!), eq(revisions.entryId, getRouterParam(event, 'id')!), eq(revisions.type, type),

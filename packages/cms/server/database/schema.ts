@@ -21,6 +21,8 @@ export const entries = sqliteTable('cms_entries', {
   sharedVersion: integer('shared_version').notNull().default(0),
   /** Identifiant de la dernière personne à avoir enregistré ce contenu. */
   updatedBy: text('updated_by'),
+  /** Compte qui a créé le contenu ; sert au droit « seulement ses contenus ». Vide pour les contenus antérieurs. */
+  createdBy: text('created_by'),
 }, t => [index('cms_entries_type').on(t.type, t.position)])
 
 /** Une ligne par document et par langue : adresse, statut, champs traduits. */
@@ -152,7 +154,8 @@ export const user = sqliteTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
   image: text('image'),
-  role: text('role').$type<'admin' | 'editor' | 'writer'>().notNull().default('editor'),
+  /** Rôle intégré ('admin', 'editor', 'writer') ou identifiant d'un rôle personnalisé (table cms_roles). */
+  role: text('role').notNull().default('editor'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
@@ -189,6 +192,25 @@ export const invites = sqliteTable('cms_invites', {
   tokenHash: text('token_hash').primaryKey(),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   expiresAt: integer('expires_at', { mode: 'timestamp' }).notNull(),
+})
+
+/** Rôle créé depuis le back-office, avec ses droits contenu par contenu. */
+export const roles = sqliteTable('cms_roles', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  rights: text('rights', { mode: 'json' }).$type<import('../../shared/access').CustomRights>().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+})
+
+/** Demande de publication : quelqu'un qui ne peut pas publier signale qu'un brouillon est prêt. Une au plus par contenu. */
+export const reviewRequests = sqliteTable('cms_review_requests', {
+  entryId: text('entry_id').primaryKey().references(() => entries.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  requestedBy: text('requested_by').notNull(),
+  requestedByName: text('requested_by_name').notNull(),
+  note: text('note'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 /** Limite un compte à certains types de contenu. Pas de ligne : le compte a tous les accès de son rôle. */

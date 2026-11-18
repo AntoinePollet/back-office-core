@@ -17,6 +17,8 @@ const props = defineProps<{
 }>()
 
 const context = computed(() => ({ ...props.shared, ...props.values }))
+// Champs réservés : affichés, mais figés pour qui n'a pas le droit de les modifier (le serveur ignore de toute façon sa saisie).
+const cannotEditRestricted = useCmsUser().value?.restrictedFields === false
 const target = (field: any) => (field.localized === false ? props.shared : props.values)
 const visible = computed(() => Object.entries(props.fields).filter(([, field]) =>
   (props.scope === 'all' || (props.scope === 'localized') === (field.localized !== false)) && isVisible(field, context.value)))
@@ -25,7 +27,9 @@ const visible = computed(() => Object.entries(props.fields).filter(([, field]) =
 <template>
   <div class="grid grid-cols-2 gap-x-5 gap-y-4">
     <div v-for="[key, field] in visible" :key="key" :class="field.width === 'half' ? 'col-span-2 sm:col-span-1' : 'col-span-2'">
+      <p v-if="field.restricted && cannotEditRestricted" class="text-xs text-base-content/50 -mb-1">Champ réservé : vous pouvez le lire, pas le modifier.</p>
       <CmsField
+        :inert="field.restricted && cannotEditRestricted" :class="{ 'opacity-60': field.restricted && cannotEditRestricted }"
         :field="field"
         :model-value="target(field)[key]"
         :path="(prefix ?? '') + key"

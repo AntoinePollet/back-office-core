@@ -13,6 +13,7 @@ export const WORKFLOW_EVENTS = [
   { name: 'entry.created', label: 'Un contenu est créé', done: 'créé', scope: 'entry' },
   { name: 'entry.updated', label: 'Un contenu est modifié', done: 'modifié', scope: 'entry' },
   { name: 'entry.deleted', label: 'Un contenu est supprimé', done: 'supprimé', scope: 'entry' },
+  { name: 'entry.review_requested', label: 'Une publication est demandée', done: 'attend d\'être publié', scope: 'review' },
   { name: 'user.invited', label: 'Un lien de mot de passe est créé (invitation ou réinitialisation)', done: '', scope: 'invite' },
 ] as const
 
@@ -29,6 +30,14 @@ export const WORKFLOW_VARIABLES = {
     { key: 'entry.type', label: 'Type de contenu (Services, Accueil…)' },
     { key: 'entry.locale', label: 'Langue concernée' },
     { key: 'entry.url', label: 'Adresse publique de la page' },
+    { key: 'entry.adminUrl', label: 'Adresse du contenu dans le back-office' },
+  ],
+  /** Demande de publication : s'ajoutent aux variables d'un contenu. */
+  review: [
+    { key: 'request.by', label: 'Nom de la personne qui demande la publication' },
+    { key: 'request.note', label: 'Message laissé avec la demande' },
+    { key: 'entry.title', label: 'Titre du contenu' },
+    { key: 'entry.type', label: 'Type de contenu (Services, Accueil…)' },
     { key: 'entry.adminUrl', label: 'Adresse du contenu dans le back-office' },
   ],
   invite: [
@@ -67,6 +76,7 @@ function buildContext(event: H3Event, payload: CmsEvent): { context: Context; su
       title: payload.title, type: def.label, locale: payload.locale ?? '', url: payload.url ?? '',
       adminUrl: `${origin}/admin/${payload.type}/${payload.id}`,
     }
+    if (payload.name === 'entry.review_requested') context.request = { by: payload.requester, note: payload.note }
     summary = def.kind === 'collection'
       ? `${def.label} : « ${payload.title} » ${meta.done}${payload.locale ? ` (${payload.locale})` : ''}`
       : `${def.label} ${meta.done}${payload.locale ? ` (${payload.locale})` : ''}`
@@ -82,7 +92,9 @@ export function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user: { id
   if (trigger.event === 'user.invited')
     return { name: 'user.invited', email: user.email, recipient: 'Personne de test', link: `${getRequestURL(event).origin}/admin/invite/exemple`, reason: 'invite', user: who, at }
   const type = trigger.types[0] ?? Object.keys(cmsConfig.collections ?? {})[0] ?? Object.keys(cmsConfig.singletons ?? {})[0]!
-  return { name: trigger.event as 'entry.published', type, id: 'exemple', title: 'Contenu d\'exemple', locale: cmsConfig.site.defaultLocale, url: `${cmsConfig.site.url ?? getRequestURL(event).origin}/exemple`, user: who, at }
+  const sample = { type, id: 'exemple', title: 'Contenu d\'exemple', locale: cmsConfig.site.defaultLocale, url: `${cmsConfig.site.url ?? getRequestURL(event).origin}/exemple`, user: who, at }
+  if (trigger.event === 'entry.review_requested') return { ...sample, name: 'entry.review_requested', note: 'Message d\'exemple laissé avec la demande.', requester: 'Personne de test' }
+  return { ...sample, name: trigger.event as 'entry.published' }
 }
 
 async function runAction(event: H3Event, action: WorkflowAction, context: Context): Promise<Omit<WorkflowStep, 'ms' | 'kind'>> {
@@ -144,7 +156,7 @@ export function parseWorkflow(body: any): { name: string; enabled: boolean; trig
   const meta = WORKFLOW_EVENTS.find(e => e.name === body?.trigger?.event)
   if (!meta) fail('Choisissez un déclencheur.')
   const known = [...Object.keys(cmsConfig.collections ?? {}), ...Object.keys(cmsConfig.singletons ?? {})]
-  const types = meta!.scope === 'entry' && Array.isArray(body.trigger.types) ? body.trigger.types.filter((t: unknown) => known.includes(t as string)) : []
+  const types = meta!.scope !== 'invite' && Array.isArray(body.trigger.types) ? body.trigger.types.filter((t: unknown) => known.includes(t as string)) : []
   if (!Array.isArray(body.actions) || !body.actions.length) fail('Ajoutez au moins une action.')
   if (body.actions.length > 10) fail('Dix actions au maximum par workflow.')
 

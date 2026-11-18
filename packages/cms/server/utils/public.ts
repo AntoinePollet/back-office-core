@@ -82,7 +82,8 @@ export async function isPreview(event: H3Event, type: string) {
   if (!getQuery(event).preview) return false
   const user = await requireUser(event).catch(() => null)
   // Un brouillon ne se montre qu'à quelqu'un qui pourrait l'ouvrir dans le back-office.
-  return !!user && can(user, type, 'edit')
+  // Avec le droit « seulement ses contenus », on ne sait pas trier ici : pas d'aperçu des listes ni des pages.
+  return !!user && can(user, type, 'edit') && !rightsFor(user, type).own
 }
 
 /**

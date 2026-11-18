@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { UserPlus } from '@lucide/vue'
-import { type CmsRole, CMS_ROLES, ROLE_HELP, ROLE_LABELS } from '../../../shared/access'
+import { type CustomRights, CMS_ROLES, ROLE_HELP, ROLE_LABELS } from '../../../shared/access'
 
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-admin'] })
 
-type Role = CmsRole
+/** Rôle intégré ou identifiant d'un rôle personnalisé. */
+type Role = string
 type User = { id: string; name: string; email: string; role: Role; types: string[] | null; status: 'active' | 'invited' | 'expired'; createdAt: string }
 
 const me = useCmsUser()
@@ -12,8 +13,12 @@ const toast = useCmsToast()
 const users = ref<User[]>(await cmsApi<User[]>('/api/cms/users'))
 const refresh = async () => { users.value = await cmsApi<User[]>('/api/cms/users') }
 
+// Rôles personnalisés créés dans le back-office, proposés à la suite des trois rôles intégrés.
+const customRoles = await cmsApi<{ id: string; name: string; rights: CustomRights; users: number }[]>('/api/cms/roles')
 // Du rôle le plus limité au plus étendu.
-const roles = [...CMS_ROLES].reverse().map(value => ({ value, label: ROLE_LABELS[value], help: ROLE_HELP[value] }))
+const builtinRoles = [...CMS_ROLES].reverse().map(value => ({ value: value as Role, label: ROLE_LABELS[value], help: ROLE_HELP[value] }))
+const roles = [...builtinRoles, ...customRoles.map(r => ({ value: r.id, label: r.name, help: 'Rôle personnalisé : ses droits se règlent dans « Gérer les rôles ».' }))]
+const roleName = (role: Role) => roles.find(r => r.value === role)?.label ?? 'Rôle supprimé'
 
 // Contenus attribués : limiter un compte à certaines collections ou pages.
 const schema = await useCmsSchema()
@@ -117,7 +122,8 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
         <h1 class="text-2xl font-bold">Utilisateurs</h1>
         <p class="text-sm text-base-content/60">{{ users.length }} compte{{ users.length > 1 ? 's' : '' }}</p>
       </div>
-      <button class="btn btn-primary ml-auto" @click="openInvite"><UserPlus :size="18" />Inviter</button>
+      <NuxtLink to="/admin/roles" class="btn ml-auto">Gérer les rôles<span v-if="customRoles.length" class="badge badge-sm">{{ customRoles.length }}</span></NuxtLink>
+      <button class="btn btn-primary" @click="openInvite"><UserPlus :size="18" />Inviter</button>
     </div>
 
     <div class="card bg-base-100 border border-base-300 overflow-x-auto">
@@ -137,6 +143,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
                 :title="u.id === me?.id ? 'Vous ne pouvez pas changer votre propre rôle' : ''"
                 @change="setRole(u, ($event.target as HTMLSelectElement).value as Role)"
               >
+                <option v-if="!roles.some(r => r.value === u.role)" :value="u.role" disabled>Rôle supprimé</option>
                 <option v-for="r in roles" :key="r.value" :value="r.value">{{ r.label }}</option>
               </select>
             </td>
@@ -158,7 +165,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
     </div>
 
     <div class="grid sm:grid-cols-3 gap-3 mt-4 text-sm">
-      <div v-for="r in roles" :key="r.value" class="text-base-content/60"><span class="font-medium text-base-content">{{ r.label }}</span> : {{ r.help }}</div>
+      <div v-for="r in builtinRoles" :key="r.value" class="text-base-content/60"><span class="font-medium text-base-content">{{ r.label }}</span> : {{ r.help }}</div>
     </div>
 
     <!-- Contenus attribués -->
@@ -166,7 +173,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
       <form class="modal-box space-y-3" @submit.prevent="saveLimit">
         <h3 class="font-bold text-lg">Contenus accessibles à {{ limiting.name }}</h3>
         <p class="text-sm text-base-content/60">
-          Son rôle ({{ ROLE_LABELS[limiting.role] }}) fixe ce qu'il peut y faire. Ici, vous choisissez sur quels contenus.
+          Son rôle ({{ roleName(limiting.role) }}) fixe ce qu'il peut y faire. Ici, vous choisissez sur quels contenus.
           Les contenus non cochés disparaissent de son menu.
         </p>
         <label class="flex items-center gap-2 cursor-pointer text-sm"><input v-model="limit.all" type="radio" class="radio radio-sm" :value="true">Tous les contenus</label>

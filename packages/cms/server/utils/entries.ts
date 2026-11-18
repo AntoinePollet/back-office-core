@@ -4,7 +4,7 @@ import type { H3Event } from 'h3'
 import { applyDefaults, copyValues, MAX_REVISIONS, partition, pick, slugify, isEmpty, toPublicValues, validateValues } from '../../shared/content'
 import type { AnyField, CmsConfig, CmsDefinition } from '../../shared/format'
 import { unknownValues } from '../../shared/migrate'
-import type { CmsRole } from '../../shared/access'
+import { type CustomRights, canEditRestricted } from '../../shared/access'
 import type { CmsEventInput } from './events'
 
 type Values = Record<string, unknown>
@@ -35,7 +35,10 @@ export async function loadDoc(event: H3Event, type: string, id: string) {
   const { entries, entryLocales } = schema
   const [entry] = await db.select().from(entries).where(and(eq(entries.id, id), eq(entries.type, type)))
   if (!entry) return null
-  const rows = await db.select().from(entryLocales).where(eq(entryLocales.entryId, id))
+  const [rows, [review]] = await Promise.all([
+    db.select().from(entryLocales).where(eq(entryLocales.entryId, id)),
+    db.select().from(schema.reviewRequests).where(eq(schema.reviewRequests.entryId, id)),
+  ])
   return {
     id,
     type,
@@ -43,6 +46,9 @@ export async function loadDoc(event: H3Event, type: string, id: string) {
     updatedAt: entry.updatedAt,
     /** À renvoyer dans `baseVersion` à l'enregistrement, pour détecter une modification faite entre-temps. */
     version: entry.version,
+    createdBy: entry.createdBy,
+    /** Demande de publication en attente, s'il y en a une. */
+    review: review ? { by: review.requestedByName, byId: review.requestedBy, note: review.note, at: review.createdAt } : null,
     locales: Object.fromEntries(rows.map(r => [r.locale, { slug: r.slug, status: r.status, values: r.draft, publishedAt: r.publishedAt }])),
   }
 }
@@ -92,7 +98,7 @@ type SaveBody = {
   /** À la création dans une collection à ordre manuel : identifiant du contenu après lequel placer le nouveau. */
   after?: string
 }
-type Author = { id: string; name: string; email: string; role: CmsRole; types?: string[] | null }
+type Author = { id: string; name: string; email: string; role: string; types?: string[] | null; custom?: CustomRights | null }
 type Origin = 'restore' | 'duplicate'
 
 /**
@@ -136,6 +142,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
   if (id) {
     ;[existing] = await db.select().from(entries).where(and(eq(entries.id, id), eq(entries.type, type)))
     if (!existing) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
+    assertEntryAccess(user, type, existing, 'edit')
     rows = await db.select().from(entryLocales).where(eq(entryLocales.entryId, id))
   }
   const entryId = id ?? crypto.randomUUID()
@@ -144,6 +151,17 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
   const shared = sanitizeRichText(parts.shared, applyDefaults(parts.shared, pick(parts.shared, body.shared ?? existing?.sharedDraft ?? {}, system)))
   // Ce que le formulaire ne connaît pas (champ retiré de la configuration, valeur mise de côté par une migration) reste en base.
   Object.assign(shared, unknownValues(parts.shared, existing?.sharedDraft, system))
+  // Champs réservés : pour qui n'a pas le droit de les modifier, la valeur en base est conservée quoi qu'envoie le formulaire.
+  const locked = canEditRestricted(user) ? [] : Object.entries(fields).filter(([, f]) => f.restricted).map(([key]) => key)
+  const keepLocked = (target: Values, part: Fields, stored: Values | undefined) => {
+    for (const key of locked) {
+      if (!(key in part)) continue
+      if (stored?.[key] === undefined) delete target[key]
+      else target[key] = stored[key]
+    }
+  }
+  keepLocked(shared, parts.shared, existing?.sharedDraft)
+  applyDefaults(parts.shared, shared)
   const incoming = Object.entries(body.locales ?? {}).filter(([locale]) => config.site.locales.includes(locale))
   const unpublish = body.unpublish ?? []
   const requested = (def.drafts ? body.publish ?? [] : []).filter(l => !unpublish.includes(l))
@@ -174,6 +192,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
     if (!prev && Object.values(values).every(isEmpty)) continue // langue pas encore traduite
     applyDefaults(parts.localized, values)
     Object.assign(values, unknownValues(parts.localized, prev?.draft, system))
+    keepLocked(values, parts.localized, prev?.draft)
 
     let slug: string | null = null
     if (hasSlug(def) && def.kind === 'collection') {
@@ -214,7 +233,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
 
   for (const locale of requested) if (!publish.includes(locale)) (errors[locale] ??= {})._ = 'Rien à publier dans cette langue.'
   // Tout ce qui change le site tout de suite (mise en ligne, retrait, nouvelle adresse d'une page publiée) demande le droit de publier.
-  if (publish.length || unpublish.length || moved.length) assertAccess(user, type, 'publish')
+  // Le contrôle porte sur ce qui est demandé, même si rien ne serait finalement publié : le refus est alors clair.
+  if (requested.length || publish.length || unpublish.length || moved.length) assertAccess(user, type, 'publish')
   if (Object.keys(errors).length) throw createError({ statusCode: 422, message: 'Certains champs sont à corriger.', data: { errors } })
 
   const sharedPublished = publish.length ? shared : existing?.sharedPublished ?? null
@@ -267,7 +287,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
     }
     statements.push(db.insert(entries).values({
       id: entryId, type, position, sharedDraft: shared, sharedPublished, createdAt: now, updatedAt: now,
-      version, sharedVersion: version, updatedBy: user.id,
+      version, sharedVersion: version, updatedBy: user.id, createdBy: user.id,
     }))
   }
   for (const row of writes) {
@@ -313,6 +333,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, body: S
       notInArray(revisions.id, db.select({ id: revisions.id }).from(revisions).where(eq(revisions.entryId, entryId)).orderBy(desc(revisions.version), desc(revisions.createdAt)).limit(MAX_REVISIONS)),
     )))
   }
+  // Publier ou retirer du site répond à la demande de publication en attente, s'il y en a une.
+  if (existing && (publish.length || unpublish.length)) statements.push(db.delete(schema.reviewRequests).where(eq(schema.reviewRequests.entryId, entryId)))
   if (statements.length) await db.batch(statements as [any, ...any[]])
   // Le site a changé si quelque chose a été publié, retiré, ou si une adresse en ligne a bougé.
   const purged = publish.length || moved.length || unpublish.some(l => byLocale.get(l)?.published) ? await purgeSiteCache(event) : null
@@ -367,6 +389,7 @@ export async function duplicateDoc(event: H3Event, type: string, id: string) {
   if (!def.drafts) throw createError({ statusCode: 400, message: 'Cette collection n\'a pas de brouillon : la copie se prépare dans le formulaire.' })
   const source = await loadDoc(event, type, id)
   if (!source) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
+  assertEntryAccess(user, type, source, 'edit')
 
   const db = useDb(event)
   const { entryLocales, redirects } = schema

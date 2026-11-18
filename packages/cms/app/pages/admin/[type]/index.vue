@@ -3,7 +3,7 @@ import { Copy, GripVertical, Plus, Search } from '@lucide/vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
-type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; values: Record<string, unknown>; statuses: Record<string, string>; updatedAt: string }
+type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; values: Record<string, unknown>; statuses: Record<string, string>; review?: boolean; updatedAt: string }
 
 const route = useRoute()
 const type = route.params.type as string
@@ -155,7 +155,10 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
                 <span v-for="l in locales" :key="l" class="badge badge-xs uppercase" :class="item.statuses[l] ? 'badge-neutral' : 'badge-outline opacity-40'">{{ l }}</span>
               </div>
             </td>
-            <td v-if="def.drafts"><span class="badge badge-sm badge-soft" :class="statusMeta[mainStatus(item)]?.cls">{{ statusMeta[mainStatus(item)]?.label }}</span></td>
+            <td v-if="def.drafts">
+              <span class="badge badge-sm badge-soft" :class="statusMeta[mainStatus(item)]?.cls">{{ statusMeta[mainStatus(item)]?.label }}</span>
+              <span v-if="item.review" class="badge badge-sm badge-info badge-soft ml-1" title="Quelqu'un a demandé la publication de ce contenu">Publication demandée</span>
+            </td>
             <td class="text-right text-sm text-base-content/60 whitespace-nowrap">{{ formatDate(item.updatedAt) }}</td>
             <td class="pl-0">
               <button

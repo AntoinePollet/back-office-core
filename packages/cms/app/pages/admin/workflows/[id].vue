@@ -7,8 +7,8 @@ type Action = { kind: 'email'; to: string; subject: string; body: string } | { k
 type Variable = { key: string; label: string }
 type Data = {
   workflows: { id: string; name: string; enabled: boolean; trigger: { event: string; types: string[] }; actions: Action[] }[]
-  events: { name: string; label: string; scope: 'entry' | 'invite' }[]
-  variables: { common: Variable[]; entry: Variable[]; invite: Variable[] }
+  events: { name: string; label: string; scope: 'entry' | 'invite' | 'review' }[]
+  variables: { common: Variable[]; entry: Variable[]; invite: Variable[]; review: Variable[] }
   types: { key: string; label: string }[]
   emailConfigured: boolean
 }
@@ -24,6 +24,11 @@ const presets: Record<string, { name: string; trigger: { event: string; types: s
     name: 'Envoyer les invitations par e-mail',
     trigger: { event: 'user.invited', types: [] },
     actions: [{ kind: 'email', to: '{{ invite.email }}', subject: 'Votre accès au back-office de {{ site.name }}', body: 'Bonjour {{ invite.name }},\n\nVoici le lien pour choisir votre mot de passe :\n{{ invite.link }}\n\nIl fonctionne une seule fois et reste valable 7 jours.' }],
+  },
+  review: {
+    name: 'Prévenir quand une publication est demandée',
+    trigger: { event: 'entry.review_requested', types: [] },
+    actions: [{ kind: 'email', to: user.value?.email ?? '', subject: '{{ request.by }} demande une publication : {{ entry.title }}', body: '{{ request.by }} a préparé « {{ entry.title }} » ({{ entry.type }}) et demande sa publication.\n\n{{ request.note }}\n\nRelire et publier : {{ entry.adminUrl }}' }],
   },
   publish: {
     name: 'Prévenir quand un contenu est publié',
@@ -49,7 +54,7 @@ watch(form, () => { dirty.value = true }, { deep: true })
 
 const scope = computed(() => data.events.find(e => e.name === form.trigger.event)?.scope ?? 'entry')
 const variables = computed(() => [...data.variables[scope.value], ...data.variables.common])
-watch(scope, (s) => { if (s !== 'entry') form.trigger.types = [] })
+watch(scope, (s) => { if (s === 'invite') form.trigger.types = [] })
 const toggleType = (key: string) => { form.trigger.types = form.trigger.types.includes(key) ? form.trigger.types.filter(t => t !== key) : [...form.trigger.types, key] }
 
 function addAction(kind: Action['kind']) {
@@ -145,7 +150,7 @@ const statusMeta = { success: { label: 'Réussi', cls: 'badge-success' }, error:
               <option v-for="e in data.events" :key="e.name" :value="e.name">{{ e.label }}</option>
             </select>
           </fieldset>
-          <fieldset v-if="scope === 'entry'" class="fieldset">
+          <fieldset v-if="scope !== 'invite'" class="fieldset">
             <legend class="fieldset-legend">Pour quels contenus</legend>
             <div class="flex flex-wrap gap-x-5 gap-y-2">
               <label v-for="t in data.types" :key="t.key" class="flex items-center gap-2 cursor-pointer text-sm">

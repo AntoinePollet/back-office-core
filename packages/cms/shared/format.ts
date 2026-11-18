@@ -55,6 +55,11 @@ type Common = {
    */
   renamedFrom?: string
   /**
+   * Champ réservé : tout le monde le voit, mais seuls les rôles qui ont le droit « champs réservés » le modifient
+   * (administrateur et éditeur ; pas le rédacteur ; au choix pour un rôle personnalisé). Interdit dans un répéteur.
+   */
+  restricted?: boolean
+  /**
    * N'affiche le champ que si la condition est remplie.
    * Un champ masqué n'est pas validé (même `required`) et le site le reçoit vide ;
    * sa valeur reste en base et réapparaît si la condition redevient vraie.
@@ -127,7 +132,10 @@ type SingletonOpts<F> = {
    * - `edit` : voir et modifier le brouillon. Défaut : ['editor', 'writer'].
    * - `publish` : mettre en ligne, retirer du site, changer l'ordre ou l'adresse d'une page publiée. Défaut : ['editor'].
    * - `delete` : supprimer. Défaut : ['editor'].
+   * - `own` : rôles limités aux contenus qu'ils ont créés eux-mêmes (collections seulement). Défaut : aucun.
    * Exemple, des actualités que les rédacteurs publient eux-mêmes : `access: { publish: ['editor', 'writer'] }`.
+   * Exemple, chaque rédacteur ne voit que ses propres articles : `access: { own: ['writer'] }`.
+   * Les rôles personnalisés créés dans le back-office ont leurs propres droits et ne dépendent pas de ce réglage.
    * Sans brouillons (`drafts: false`), enregistrer c'est publier : il faut alors le droit `publish` pour modifier.
    */
   access?: AccessRules
@@ -203,7 +211,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
@@ -230,6 +238,7 @@ export function validate(config: Config): string[] {
       if (field.renamedFrom && !KEY.test(field.renamedFrom)) errors.push(`${at} : renamedFrom invalide`)
       checkRename(at, key, field.renamedFrom, fields)
       if (nested && field.localized !== undefined) errors.push(`${at} : localized se règle sur le répéteur, pas sur ses sous-champs`)
+      if (nested && field.restricted) errors.push(`${at} : restricted se règle sur le répéteur, pas sur ses sous-champs`)
       if (field.type === 'select') {
         const values = (field.options as { value: string }[]).map(o => o.value)
         if (!values.length || new Set(values).size !== values.length) errors.push(`${at} : options vides ou en double`)
@@ -283,12 +292,13 @@ export function validate(config: Config): string[] {
     if (def.path && !def.path.startsWith('/')) errors.push(`${key}.path doit commencer par /`)
     if (def.seo && !def.path) errors.push(`${key} : seo exige path`)
     for (const [action, roles] of Object.entries(def.access ?? {})) {
-      if (!(CMS_ACTIONS as string[]).includes(action)) errors.push(`${key}.access : droit inconnu « ${action} » (edit, publish ou delete)`)
+      if (![...CMS_ACTIONS, 'own'].includes(action)) errors.push(`${key}.access : droit inconnu « ${action} » (edit, publish, delete ou own)`)
       else if (!Array.isArray(roles) || !roles.every(r => r === 'editor' || r === 'writer')) errors.push(`${key}.access.${action} : liste de rôles attendue ('editor', 'writer')`)
     }
     if (def.adminOnly && def.access) errors.push(`${key} : adminOnly et access sont incompatibles`)
     const edit = def.access?.edit ?? DEFAULT_ACCESS.edit
-    for (const action of ['publish', 'delete'] as const)
+    if (def.access?.own?.length && def.kind !== 'collection') errors.push(`${key}.access.own : réservé aux collections`)
+    for (const action of ['publish', 'delete', 'own'] as const)
       for (const role of def.access?.[action] ?? []) if (!edit.includes(role)) errors.push(`${key}.access.${action} : le rôle « ${role} » doit aussi avoir le droit edit`)
     if (def.renamedFrom && !KEY.test(def.renamedFrom)) errors.push(`${key} : renamedFrom invalide`)
     checkRename(key, key, def.renamedFrom, { ...singletons, ...collections })

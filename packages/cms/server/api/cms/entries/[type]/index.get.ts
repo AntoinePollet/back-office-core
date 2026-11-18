@@ -11,10 +11,14 @@ export default defineEventHandler(async (event) => {
   if (!full && !canListTitles(user, type)) assertAccess(user, type, 'edit')
 
   const db = useDb(event)
-  const [docs, rows] = await Promise.all([
+  const [allDocs, rows, pending] = await Promise.all([
     db.select().from(schema.entries).where(eq(schema.entries.type, type)),
     db.select().from(schema.entryLocales).where(eq(schema.entryLocales.type, type)),
+    db.select({ entryId: schema.reviewRequests.entryId }).from(schema.reviewRequests).where(eq(schema.reviewRequests.type, type)),
   ])
+  // Avec le droit « seulement ses contenus », la liste complète ne montre que les siens (les titres, eux, restent proposés aux champs relation).
+  const docs = full && rightsFor(user, type).own ? allDocs.filter(d => d.createdBy === user.id) : allDocs
+  const requested = new Set(pending.map(p => p.entryId))
   const sortKey = def.defaultSort?.field
   const columns = def.list?.columns ?? []
   const thumbKey = def.list?.thumbnail
@@ -31,6 +35,8 @@ export default defineEventHandler(async (event) => {
       values: Object.fromEntries(columns.map(c => [c, values[c] ?? null])),
       thumbnail: (thumbKey && typeof values[thumbKey] === 'string' ? values[thumbKey] : null) as string | null,
       statuses: Object.fromEntries(mine.map(r => [r.locale, r.status])),
+      /** Une publication a été demandée et attend une réponse. */
+      review: requested.has(doc.id),
       createdAt: doc.createdAt,
       updatedAt: new Date(Math.max(doc.updatedAt.getTime(), ...mine.map(r => r.updatedAt.getTime()))),
       sortValue: sortKey ? values[sortKey] : undefined,

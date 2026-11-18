@@ -1,27 +1,39 @@
 import { eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { type CmsAction, type Who, CMS_ACTIONS, userCan } from '../../shared/access'
+import { type CmsAction, type Who, rightsOn } from '../../shared/access'
 import type { AnyField, CmsDefinition } from '../../shared/format'
 
 const REFUSAL: Record<CmsAction, (label: string) => string> = {
   edit: label => `Vous n'avez pas accès à « ${label} ».`,
-  publish: label => `Vous pouvez préparer « ${label} » en brouillon, mais pas le publier, le retirer du site ni changer son adresse. Demandez à un éditeur.`,
+  publish: label => `Vous pouvez préparer « ${label} » en brouillon, mais pas le publier, le retirer du site ni changer son adresse. Demandez la publication à un éditeur.`,
   delete: label => `Vous ne pouvez pas supprimer dans « ${label} ». Demandez à un éditeur.`,
 }
 
-export const can = (who: Who, type: string, action: CmsAction) => userCan(who, type, getDef(type), action)
+export const rightsFor = (who: Who, type: string) => rightsOn(who, type, getDef(type))
+export const can = (who: Who, type: string, action: CmsAction) => rightsFor(who, type)[action]
 
 /** Répond 403 si la personne n'a pas ce droit sur ce type de contenu. */
 export function assertAccess(who: Who, type: string, action: CmsAction) {
   const def = getDef(type)
-  if (!userCan(who, type, def, action)) throw createError({ statusCode: 403, message: REFUSAL[action](def.label) })
+  if (!rightsOn(who, type, def)[action]) throw createError({ statusCode: 403, message: REFUSAL[action](def.label) })
+}
+
+/** Vrai si ce contenu précis est ouvert à la personne : hors du droit « seulement ses contenus », ou créé par elle. */
+export const ownsOrFree = (who: Who, type: string, entry: { createdBy?: string | null }) =>
+  !rightsFor(who, type).own || (!!who.id && entry.createdBy === who.id)
+
+/** Comme `assertAccess`, pour un contenu précis : refuse aussi celui d'un autre à qui n'a droit qu'aux siens. */
+export function assertEntryAccess(who: Who, type: string, entry: { createdBy?: string | null }, action: CmsAction) {
+  assertAccess(who, type, action)
+  if (!ownsOrFree(who, type, entry)) throw createError({ statusCode: 403, message: 'Ce contenu a été créé par quelqu\'un d\'autre : vous n\'avez accès qu\'aux vôtres.' })
 }
 
 const allDefinitions = () => [...Object.entries(cmsConfig.collections ?? {}), ...Object.entries(cmsConfig.singletons ?? {})] as [string, CmsDefinition][]
+export const allTypeKeys = () => allDefinitions().map(([type]) => type)
 
 /** Droits de la personne sur chaque type de contenu, pour que l'interface masque ce qui lui est interdit. */
 export function accessMap(who: Who) {
-  return Object.fromEntries(allDefinitions().map(([type, def]) => [type, Object.fromEntries(CMS_ACTIONS.map(a => [a, userCan(who, type, def, a)])) as Record<CmsAction, boolean>]))
+  return Object.fromEntries(allDefinitions().map(([type, def]) => [type, rightsOn(who, type, def)]))
 }
 
 /**
@@ -31,14 +43,27 @@ export function accessMap(who: Who) {
  */
 export function canListTitles(who: Who, type: string) {
   const def = getDef(type)
-  if (userCan(who, type, def, 'edit') || def.path) return true
+  if (rightsOn(who, type, def).edit || def.path) return true
   const pointsTo = (fields: Record<string, AnyField>): boolean => Object.values(fields).some(f =>
     (f.type === 'relation' && f.to === type) || (f.type === 'repeater' && pointsTo(f.fields as Record<string, AnyField>)))
-  return allDefinitions().some(([other, d]) => userCan(who, other, d, 'edit') && pointsTo(d.fields as Record<string, AnyField>))
+  return allDefinitions().some(([other, d]) => rightsOn(who, other, d).edit && pointsTo(d.fields as Record<string, AnyField>))
 }
 
 /** Types de contenu auxquels un compte est limité (null : aucune limite). Lu une fois par requête. */
 export async function loadUserTypes(event: H3Event, userId: string): Promise<string[] | null> {
   const [row] = await useDb(event).select().from(schema.userAccess).where(eq(schema.userAccess.userId, userId))
   return row?.types ?? null
+}
+
+/** Rôle personnalisé d'un compte, ou null s'il n'existe plus. */
+export async function loadCustomRole(event: H3Event, roleId: string) {
+  const [row] = await useDb(event).select().from(schema.roles).where(eq(schema.roles.id, roleId))
+  return row ? { name: row.name, rights: row.rights } : null
+}
+
+/** Refuse (403) un contenu créé par quelqu'un d'autre à qui n'a droit qu'aux siens. Ne fait aucune requête sinon. */
+export async function assertOwnEntry(event: H3Event, who: Who, type: string, id: string) {
+  if (!rightsFor(who, type).own) return
+  const [entry] = await useDb(event).select({ createdBy: schema.entries.createdBy }).from(schema.entries).where(eq(schema.entries.id, id))
+  if (!entry || !ownsOrFree(who, type, entry)) throw createError({ statusCode: 403, message: 'Ce contenu a été créé par quelqu\'un d\'autre : vous n\'avez accès qu\'aux vôtres.' })
 }

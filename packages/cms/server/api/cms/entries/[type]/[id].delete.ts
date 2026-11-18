@@ -8,12 +8,14 @@ export default defineEventHandler(async (event) => {
   if (getDef(type).kind !== 'collection') throw createError({ statusCode: 400, message: 'Un singleton ne se supprime pas.' })
 
   const db = useDb(event)
-  const [entry] = await db.select({ id: schema.entries.id }).from(schema.entries).where(and(eq(schema.entries.id, id), eq(schema.entries.type, type)))
+  const [entry] = await db.select({ id: schema.entries.id, createdBy: schema.entries.createdBy }).from(schema.entries).where(and(eq(schema.entries.id, id), eq(schema.entries.type, type)))
   if (!entry) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
+  assertEntryAccess(user, type, entry, 'delete')
   const title = (await entryTitles(event, [id])).get(id) ?? 'Sans titre'
   await db.batch([
     db.delete(schema.redirects).where(eq(schema.redirects.entryId, id)),
     db.delete(schema.revisions).where(eq(schema.revisions.entryId, id)),
+    db.delete(schema.reviewRequests).where(eq(schema.reviewRequests.entryId, id)),
     db.delete(schema.entryLocales).where(eq(schema.entryLocales.entryId, id)),
     db.delete(schema.entries).where(eq(schema.entries.id, id)),
   ])

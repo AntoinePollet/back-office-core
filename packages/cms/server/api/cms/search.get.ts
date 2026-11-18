@@ -37,6 +37,7 @@ export default defineEventHandler(async (event): Promise<{ items: CmsSearchItem[
       type: entries.type,
       locale: entryLocales.locale,
       status: entryLocales.status,
+      createdBy: entries.createdBy,
       // Le champ titre est soit traduit (une valeur par langue), soit commun aux langues.
       title: sql<string | null>`coalesce(json_extract(${entryLocales.draft}, ${path}), json_extract(${entries.sharedDraft}, ${path}))`,
     }).from(entries).leftJoin(entryLocales, eq(entryLocales.entryId, entries.id)).where(eq(entries.type, type))
@@ -49,6 +50,8 @@ export default defineEventHandler(async (event): Promise<{ items: CmsSearchItem[
   const mainStatus = new Map<string, EntryStatus>()
   for (const row of rows) {
     if (row.locale === main && row.status) mainStatus.set(row.id, row.status)
+    // Avec le droit « seulement ses contenus », on ne trouve que les siens.
+    if (!ownsOrFree(user, row.type, row)) continue
     if (typeof row.title !== 'string') continue
     const score = matchScore(row.title, words)
     if (score === null) continue

@@ -43,6 +43,7 @@ async function toggle(w: Workflow) {
 
 const templates = [
   { id: 'invite', title: 'Envoyer les invitations par e-mail', text: 'La personne invitée reçoit directement son lien de mot de passe.' },
+  { id: 'review', title: 'Prévenir quand une publication est demandée', text: 'Un e-mail part quand un rédacteur signale que son brouillon est prêt.' },
   { id: 'publish', title: 'Prévenir quand un contenu est publié', text: 'Un e-mail part à chaque publication, avec le lien de la page.' },
 ]
 </script>
@@ -90,7 +91,7 @@ const templates = [
       </div>
       <div v-else class="card bg-base-100 border border-base-300 p-6">
         <p class="text-sm text-base-content/60 mb-4">Aucun workflow pour l'instant. Partez d'un modèle ou créez le vôtre.</p>
-        <div class="grid sm:grid-cols-2 gap-3">
+        <div class="grid sm:grid-cols-3 gap-3">
           <NuxtLink v-for="t in templates" :key="t.id" :to="`/admin/workflows/new?modele=${t.id}`" class="border border-base-300 rounded-box p-4 hover:border-primary">
             <div class="font-medium">{{ t.title }}</div>
             <div class="text-sm text-base-content/60">{{ t.text }}</div>

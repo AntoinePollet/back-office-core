@@ -29,10 +29,10 @@ export default async function (t) {
     const me = await lina.json('/api/cms/me')
     check(me.role === 'writer', 'rôle : ' + me.role)
     const want = {
-      services: { edit: true, publish: false, delete: false },
-      testimonials: { edit: true, publish: true, delete: false }, // access: { publish: ['editor', 'writer'] }
-      categories: { edit: false, publish: false, delete: false }, // sans brouillons : modifier = publier
-      settings: { edit: false, publish: false, delete: false }, // adminOnly
+      services: { edit: true, publish: false, delete: false, own: false },
+      testimonials: { edit: true, publish: true, delete: false, own: true }, // access: { publish: ['editor', 'writer'], own: ['writer'] }
+      categories: { edit: false, publish: false, delete: false, own: false }, // sans brouillons : modifier = publier
+      settings: { edit: false, publish: false, delete: false, own: false }, // adminOnly
     }
     for (const [type, rights] of Object.entries(want)) check(JSON.stringify(me.access[type]) === JSON.stringify(rights), `${type} : ${JSON.stringify(me.access[type])}`)
     const schema = await lina.json('/api/cms/schema')

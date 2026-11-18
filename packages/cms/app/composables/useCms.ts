@@ -141,9 +141,14 @@ export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: { /** Ajou
 
 // ───────────── Pour le back-office ─────────────
 
-type CmsRights = { edit: boolean; publish: boolean; delete: boolean }
+type CmsRights = { edit: boolean; publish: boolean; delete: boolean; /** Limité aux contenus créés par la personne. */ own: boolean }
 export const useCmsUser = () => useState<{
   id: string; name: string; email: string; role?: string
+  /** Nom du rôle à afficher. */
+  roleName?: string
+  /** Peut modifier les champs réservés ; peut supprimer des fichiers. */
+  restrictedFields?: boolean
+  deleteMedia?: boolean
   /** Contenus auxquels le compte est limité (null : aucune limite). */
   types?: string[] | null
   /** Droits sur chaque type de contenu, calculés par le serveur. */
@@ -156,7 +161,7 @@ export const useCmsUser = () => useState<{
  */
 export function useCmsAccess(type: string): CmsRights {
   const user = useCmsUser().value
-  return user?.access?.[type] ?? { edit: true, publish: user?.role !== 'writer', delete: user?.role !== 'writer' }
+  return user?.access?.[type] ?? { edit: true, publish: user?.role !== 'writer', delete: user?.role !== 'writer', own: false }
 }
 
 export async function useCmsSchema() {

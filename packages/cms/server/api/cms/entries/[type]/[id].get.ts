@@ -13,5 +13,6 @@ export default defineEventHandler(async (event) => {
     doc = await loadDoc(event, type, id)
   }
   if (!doc) throw createError({ statusCode: 404, message: 'Contenu introuvable.' })
+  assertEntryAccess(user, type, doc, 'edit')
   return doc
 })
