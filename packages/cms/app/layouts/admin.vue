@@ -7,6 +7,7 @@ import '../assets/css/admin.css'
 const schema = await useCmsSchema()
 const user = useCmsUser()
 const route = useRoute()
+const cmsVersion = useRuntimeConfig().public.cmsVersion
 const { toasts } = useCmsToast()
 
 const groups = computed(() => {
@@ -86,6 +87,7 @@ async function logout() {
           </NuxtLink>
           <button class="btn btn-ghost btn-sm btn-square" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><LogOut :size="16" /></button>
         </div>
+        <div class="px-4 pb-2 -mt-1 text-[11px] text-base-content/40" title="Version du back-office">Version {{ cmsVersion }}</div>
       </aside>
     </div>
 

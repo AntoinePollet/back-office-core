@@ -22,7 +22,7 @@ Le site
 
 Le core
   --core <git|local>        Dépendance vers backoffice-core : dépôt git, ou lien vers un dossier local
-  --core-ref <référence>    Avec --core git : branche, étiquette ou commit (défaut : main)
+  --core-ref <référence>    Avec --core git : étiquette de version, branche ou commit (défaut : la version du core, ex. v0.1.0)
   --core-path <dossier>     Avec --core local : dossier du core (défaut : packages/cms de ce dépôt)
 
 Les étapes

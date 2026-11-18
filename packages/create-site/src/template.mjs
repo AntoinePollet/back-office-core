@@ -5,6 +5,20 @@ import { CORE_REPO, CORE_SUBDIR } from './args.mjs'
 
 export const TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url))
 
+/**
+ * Référence git proposée par défaut : l'étiquette de la version du core qui accompagne cette commande (« v0.1.0 »).
+ * Un nouveau site est ainsi fixé sur une version précise, et ne change que quand on modifie ce numéro.
+ */
+export function defaultCoreRef() {
+  try {
+    const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('../../cms/package.json', import.meta.url)), 'utf8'))
+    return /^\d+\.\d+\.\d+/.test(version) ? `v${version}` : 'main'
+  }
+  catch {
+    return 'main'
+  }
+}
+
 /** Nom du bucket R2 de la médiathèque. */
 export const bucketName = id => `${id}-media`
 
@@ -46,7 +60,7 @@ function tokens(answers) {
     __SITE_TS__: siteTs(answers),
     __CORE_SPEC_JSON__: JSON.stringify(coreSpec(answers)),
     __CORE_SPEC__: coreSpec(answers),
-    __CORE_GIT_SPEC__: coreSpec({ ...answers, core: 'git', coreRef: answers.coreRef ?? 'main' }),
+    __CORE_GIT_SPEC__: coreSpec({ ...answers, core: 'git', coreRef: answers.coreRef ?? defaultCoreRef() }),
     __SITE_URL__: answers.url ?? 'https://exemple.fr',
   }
 }

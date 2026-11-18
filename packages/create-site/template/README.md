@@ -123,14 +123,20 @@ pnpm run deploy     # applique aussi les migrations en ligne
 "backoffice-core": "__CORE_GIT_SPEC__"
 ```
 
-La partie après `#` est la branche, l'étiquette ou le commit ; `path:` désigne le dossier du core dans le dépôt.
-pnpm retient le commit exact dans `pnpm-lock.yaml` : le site ne change pas tant qu'on ne le demande pas.
+La partie après `#` est le numéro de version du core (une étiquette git, par exemple `v0.1.0`) ; `path:` désigne le
+dossier du core dans le dépôt. Le site reste sur cette version tant qu'on ne change pas ce numéro. La version installée
+est affichée en bas du menu du back-office.
+
+Pour passer à une version plus récente, remplacer le numéro puis installer :
 
 ```sh
-pnpm update backoffice-core     # prend le dernier commit de la branche
+# dans package.json : …#v0.1.0&path:/packages/cms  →  …#v0.2.0&path:/packages/cms
+pnpm install
 ```
 
-Pour figer une version, remplacer la branche par une étiquette (`#v1.2.0&path:/packages/cms`) puis `pnpm install`.
+Les versions disponibles sont les étiquettes du dépôt du core (`git ls-remote --tags` ou la page « Tags » sur GitHub).
+On peut aussi suivre une branche (`#main&path:/packages/cms`, mise à jour par `pnpm update backoffice-core`), mais le
+site change alors à chaque mise à jour des dépendances : à réserver aux essais.
 Le dépôt étant privé, la machine doit y avoir accès (clé SSH ou identifiants git).
 
 ### Lien local

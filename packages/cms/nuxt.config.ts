@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
+
+// Version du core, lue dans son package.json : elle est affichée en bas du menu du back-office.
+const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8')) as { version: string }
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-01-01',
@@ -15,6 +19,10 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    public: {
+      /** Version du core installée dans ce projet. */
+      cmsVersion: version,
+    },
     /** Secret des sessions. En production : variable NUXT_AUTH_SECRET. */
     authSecret: '',
     /** Clé d'API Brevo pour l'envoi d'e-mails par les workflows : variable NUXT_BREVO_API_KEY. */

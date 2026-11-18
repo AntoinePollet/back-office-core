@@ -5,7 +5,7 @@ import * as p from '@clack/prompts'
 import { CORE_REPO, CORE_SUBDIR, HELP, UsageError, readArgs } from './args.mjs'
 import { StepError, manualCommands, runCloudflare } from './cloudflare.mjs'
 import { run, shellLine } from './run.mjs'
-import { coreSpec, generate } from './template.mjs'
+import { coreSpec, generate, defaultCoreRef } from './template.mjs'
 import {
   checkCorePath, checkDefaultLocale, checkGitRef, checkId, checkLocales, checkName, checkTargetDir, checkUrl,
   normalizeUrl, parseLocales, slugify,
@@ -152,12 +152,12 @@ async function collect(args) {
       showInstructions: false,
       message: `Comment le projet référence-t-il backoffice-core ? ${ARROWS}`,
       options: [
-        { value: 'local', label: 'Lien vers un dossier local', hint: 'tant que le dépôt du core n\'est pas poussé, ou pour travailler sur le core en même temps' },
-        { value: 'git', label: `Dépôt git github.com/${CORE_REPO}`, hint: 'à préférer une fois le dépôt poussé' },
+        { value: 'git', label: `Dépôt git github.com/${CORE_REPO}, à une version précise`, hint: 'le choix normal pour un site client' },
+        { value: 'local', label: 'Lien vers un dossier local', hint: 'pour travailler sur le core en même temps que sur le site' },
       ],
-      initialValue: hasLocalCore() ? 'local' : 'git',
+      initialValue: 'git',
     }),
-    fallback: () => (hasLocalCore() ? 'local' : 'git'),
+    fallback: () => 'git',
   })
 
   let coreRef
@@ -166,8 +166,8 @@ async function collect(args) {
     if (args.corePath !== undefined) throw new UsageError('--core-path ne s\'utilise qu\'avec --core local.')
     coreRef = await answer({
       given: args.coreRef, option: '--core-ref', check: checkGitRef,
-      ask: text('Branche, étiquette ou commit du core', { initialValue: 'main', validate: checkGitRef }),
-      fallback: () => 'main',
+      ask: text('Version du core (étiquette, branche ou commit)', { initialValue: defaultCoreRef(), validate: checkGitRef }),
+      fallback: () => defaultCoreRef(),
     })
   }
   else {
