@@ -37,3 +37,17 @@
   color: var(--color-primary);
   box-shadow: none;
 }
+
+/*
+ * Typographie propre au back-office : le site hôte règle souvent ses polices, l'espacement de ses lettres et l'allure
+ * de ses titres pour toute la page. Rien de cela ne doit entrer ici.
+ */
+.cms-admin,
+.cms-admin :is(h1, h2, h3, h4, h5, h6, button, input, select, textarea) {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.cms-admin .font-mono, .cms-admin code, .cms-admin kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* Un texte d'aide long passe à la ligne au lieu d'élargir son champ. */
+.cms-admin .fieldset .label { white-space: normal; }
