@@ -258,7 +258,12 @@ export const useCmsUser = () => useState<{
   types?: string[] | null
   /** Droits sur chaque type de contenu, calculés par le serveur. */
   access?: Record<string, CmsRights>
+  /** Double authentification : activée ; à activer avant toute autre chose (règle du site). */
+  twoFactor?: { enabled: boolean; setupRequired: boolean }
 } | null>('cms-user', () => null)
+
+/** Écran où un compte tenu d'activer la double authentification est conduit. */
+export const CMS_TWO_FACTOR_SETUP_PATH = '/admin/two-factor-setup'
 
 /**
  * Droits de la personne connectée sur un type de contenu, pour masquer les actions interdites.
@@ -461,7 +466,12 @@ export function useCmsAdminStyle() {
  * le typage automatique des routes de Nuxt, appliqué à des adresses construites dynamiquement, fait échouer TypeScript.
  */
 export function cmsApi<T = unknown>(url: string, options?: Record<string, any>): Promise<T> {
-  return $fetch<T>(url, options) as Promise<T>
+  return ($fetch<T>(url, options) as Promise<T>).catch((error) => {
+    // Le site vient d'exiger la double authentification pour ce compte : le serveur refuse tout, on conduit à l'activation.
+    if (import.meta.client && error?.status === 403 && error?.data?.data?.code === 'two-factor-required' && location.pathname !== CMS_TWO_FACTOR_SETUP_PATH)
+      location.assign(CMS_TWO_FACTOR_SETUP_PATH)
+    throw error
+  })
 }
 
 /** Nombre de messages de formulaire non lus, affiché dans le menu (module « forms »). */

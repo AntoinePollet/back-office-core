@@ -23,9 +23,10 @@ async function submit() {
   loading.value = true
   try {
     const { email } = await cmsApi<{ email: string }>(`/api/cms/invite/${token}`, { method: 'POST', body: { password: form.password } })
-    await cmsApi('/api/auth/sign-in/email', { method: 'POST', body: { email, password: form.password } })
+    const signedIn = await cmsApi<{ twoFactorRedirect?: boolean }>('/api/auth/sign-in/email', { method: 'POST', body: { email, password: form.password } })
     useCmsUser().value = null
-    await navigateTo('/admin')
+    // Un nouveau mot de passe ne dispense pas du second facteur : le code est demandé avant d'entrer.
+    await navigateTo(signedIn?.twoFactorRedirect ? '/admin/login?etape=code' : '/admin')
   }
   catch (e) {
     error.value = cmsErrorMessage(e)

@@ -19,5 +19,7 @@ export default defineEventHandler(async (event) => {
     types: typesOf.get(u.id) ?? null,
     status: active.has(u.id) ? 'active' : invited.has(u.id) ? 'invited' : 'expired',
     pendingLink: invited.has(u.id),
+    /** Double authentification activée (rien d'autre n'en est renvoyé). */
+    twoFactor: !!u.twoFactorEnabled,
   }))
 })

@@ -170,9 +170,27 @@ export const user = sqliteTable('user', {
   image: text('image'),
   /** Rôle intégré ('admin', 'editor', 'writer') ou identifiant d'un rôle personnalisé (table cms_roles). */
   role: text('role').notNull().default('editor'),
+  /** Double authentification activée et confirmée par un premier code (colonne tenue par Better Auth). */
+  twoFactorEnabled: integer('two_factor_enabled', { mode: 'boolean' }).default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 })
+
+/**
+ * Double authentification d'un compte (table de l'extension « two-factor » de Better Auth). `secret` : la clé de
+ * l'application d'authentification, chiffrée avec NUXT_AUTH_SECRET ; `backupCodes` : les empreintes des codes de secours
+ * restants (voir server/utils/two-factor.ts). Rien de cette table ne sort par l'API.
+ */
+export const twoFactor = sqliteTable('two_factor', {
+  id: text('id').primaryKey(),
+  secret: text('secret').notNull(),
+  backupCodes: text('backup_codes').notNull(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  /** Faux tant que le premier code n'a pas été saisi : la double authentification n'est alors pas encore active. */
+  verified: integer('verified', { mode: 'boolean' }).default(true),
+  failedVerificationCount: integer('failed_verification_count').default(0),
+  lockedUntil: integer('locked_until', { mode: 'timestamp' }),
+}, t => [index('two_factor_user').on(t.userId)])
 
 export const session = sqliteTable('session', {
   id: text('id').primaryKey(),

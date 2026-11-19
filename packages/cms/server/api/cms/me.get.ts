@@ -2,7 +2,8 @@ import { canDeleteMedia, canEditRestricted, canOrganizeMedia, roleLabel } from '
 
 /** La personne connectée, avec ses droits sur chaque type de contenu. */
 export default defineEventHandler(async (event) => {
-  const user = await requireUser(event)
+  // Seule route qui répond à un compte tenu d'activer la double authentification : l'interface l'y conduit.
+  const user = await requireUser(event, { allowTwoFactorSetup: true })
   return {
     id: user.id, name: user.name, email: user.email, role: user.role,
     /** Nom du rôle à afficher (celui du rôle personnalisé le cas échéant). */
@@ -15,5 +16,7 @@ export default defineEventHandler(async (event) => {
     organizeMedia: canOrganizeMedia(user),
     /** Peut créer un lien d'aperçu à partager. */
     sharePreview: canSharePreview(user),
+    /** Double authentification : activée sur ce compte ; à activer avant toute autre chose (règle du site). */
+    twoFactor: { enabled: !!user.twoFactorEnabled, setupRequired: user.twoFactorSetup },
   }
 })
