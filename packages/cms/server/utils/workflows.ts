@@ -14,7 +14,8 @@ export const WORKFLOW_EVENTS = [
   { name: 'entry.unpublished', label: 'Un contenu est retiré du site', done: 'retiré du site', scope: 'entry' },
   { name: 'entry.created', label: 'Un contenu est créé', done: 'créé', scope: 'entry' },
   { name: 'entry.updated', label: 'Un contenu est modifié', done: 'modifié', scope: 'entry' },
-  { name: 'entry.deleted', label: 'Un contenu est supprimé', done: 'supprimé', scope: 'entry' },
+  { name: 'entry.deleted', label: 'Un contenu est supprimé (mis à la corbeille)', done: 'supprimé', scope: 'entry' },
+  { name: 'entry.restored', label: 'Un contenu est restauré depuis la corbeille', done: 'restauré', scope: 'entry' },
   { name: 'entry.review_requested', label: 'Une publication est demandée', done: 'attend d\'être publié', scope: 'review' },
   { name: 'user.invited', label: 'Un lien de mot de passe est créé (invitation ou réinitialisation)', done: '', scope: 'invite' },
 ] as const

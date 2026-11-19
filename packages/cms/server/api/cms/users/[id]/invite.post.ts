@@ -10,5 +10,6 @@ export default defineEventHandler(async (event) => {
   const [credential] = await db.select({ id: schema.account.id }).from(schema.account).where(and(eq(schema.account.userId, id), eq(schema.account.providerId, 'credential')))
   const invite = await createInviteLink(event, id)
   emitCmsEvents(event, [{ name: 'user.invited', email: target.email, recipient: target.name, link: invite.link, reason: credential ? 'reset' : 'invite', user: { id: admin.id, email: admin.email } }])
+  logActivity(event, { action: 'user.link_created', actor: admin, details: { name: target.name, email: target.email }, target: { kind: 'user', id } })
   return invite
 })

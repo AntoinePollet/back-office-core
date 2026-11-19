@@ -9,5 +9,6 @@ export default defineEventHandler(async (event) => {
   if (!link) return { ok: true }
   if (link.createdBy !== user.id && user.role !== 'admin') throw createError({ statusCode: 403, message: 'Ce lien a été créé par quelqu\'un d\'autre.' })
   await db.delete(schema.previewLinks).where(eq(schema.previewLinks.id, id))
+  logActivity(event, { action: 'preview_link.revoked', actor: user, details: { name: link.label } })
   return { ok: true }
 })

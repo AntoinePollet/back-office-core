@@ -160,6 +160,70 @@ export const revisions = sqliteTable('cms_revisions', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_revisions_entry').on(t.entryId, t.version)])
 
+// ───────────── Corbeille et journal d'activité ─────────────
+
+/**
+ * Corbeille : un contenu ou un fichier supprimé quitte ses tables d'origine et est gardé ici, entier, le temps du délai
+ * de récupération (shared/trash.ts). Aucune lecture du site ne passe par cette table : un élément supprimé n'existe
+ * donc plus pour le site, sans filtre à ne pas oublier. Logique dans server/utils/trash.ts.
+ */
+export const trash = sqliteTable('cms_trash', {
+  id: text('id').primaryKey(),
+  kind: text('kind').$type<'entry' | 'media'>().notNull(),
+  /** Identifiant d'origine du contenu ou du fichier : il le retrouve à la restauration. */
+  itemId: text('item_id').notNull(),
+  /** Type de contenu (collection) ; vide pour un fichier. */
+  type: text('type'),
+  /** Titre du contenu ou nom du fichier au moment de la suppression. */
+  title: text('title').notNull(),
+  /** Compte qui avait créé le contenu : sert au droit « seulement ses contenus ». */
+  ownerId: text('owner_id'),
+  /** Les lignes d'origine, telles qu'elles étaient (voir TrashSnapshot dans server/utils/trash.ts). */
+  snapshot: text('snapshot', { mode: 'json' }).$type<Json>().notNull(),
+  deletedAt: integer('deleted_at', { mode: 'timestamp_ms' }).notNull(),
+  deletedBy: text('deleted_by'),
+  /** Nom au moment de la suppression : la corbeille reste lisible si le compte est supprimé. */
+  deletedByName: text('deleted_by_name'),
+}, t => [index('cms_trash_item').on(t.kind, t.itemId), index('cms_trash_deleted').on(t.deletedAt)])
+
+/** Historique des versions d'un contenu à la corbeille : mêmes colonnes que cms_revisions, déplacées telles quelles. */
+export const trashRevisions = sqliteTable('cms_trash_revisions', {
+  id: text('id').primaryKey(),
+  trashId: text('trash_id').notNull().references(() => trash.id, { onDelete: 'cascade' }),
+  entryId: text('entry_id').notNull(),
+  type: text('type').notNull(),
+  version: integer('version').notNull(),
+  snapshot: text('snapshot', { mode: 'json' }).$type<RevisionSnapshot>().notNull(),
+  changed: text('changed', { mode: 'json' }).$type<RevisionPart[]>().notNull(),
+  published: text('published', { mode: 'json' }).$type<string[]>().notNull(),
+  unpublished: text('unpublished', { mode: 'json' }).$type<string[]>().notNull(),
+  origin: text('origin').$type<'restore' | 'duplicate' | 'initial'>(),
+  authorId: text('author_id'),
+  authorName: text('author_name'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_trash_revisions_trash').on(t.trashId)])
+
+/** Journal d'activité : qui a fait quoi et quand. Une ligne par action ; écrit par `logActivity` (server/utils/activity.ts). */
+export const activity = sqliteTable('cms_activity', {
+  id: text('id').primaryKey(),
+  at: integer('at', { mode: 'timestamp_ms' }).notNull(),
+  /** Code de l'action (« entry.published », « media.deleted »…) et sa famille, pour les filtres. */
+  action: text('action').notNull(),
+  category: text('category').notNull(),
+  /** La personne, telle qu'elle s'appelait au moment de l'action : conservée même si le compte est supprimé. Vide : action automatique. */
+  actorId: text('actor_id'),
+  actorName: text('actor_name'),
+  actorEmail: text('actor_email'),
+  /** L'action en une phrase : « Claire Durand a publié « Droit des affaires » (Services, français) ». */
+  summary: text('summary').notNull(),
+  /** Ce sur quoi porte l'action, pour proposer un lien tant que l'élément existe. */
+  targetKind: text('target_kind'),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  /** Adresse IP : seulement pour les échecs de connexion répétés. */
+  ip: text('ip'),
+}, t => [index('cms_activity_at').on(t.at)])
+
 // ───────────── Authentification (tables attendues par Better Auth) ─────────────
 
 export const user = sqliteTable('user', {

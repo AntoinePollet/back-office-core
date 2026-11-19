@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import type { EntryActivityHint } from '../../shared/activity'
 
 /**
  * Événements émis par le back-office. C'est le point d'accroche des futurs workflows
@@ -18,8 +19,9 @@ export type CmsEvent = { at: string } & (CoreEvent | ModuleEvent)
  */
 export type ModuleEvent = { name: string; module: string; summary: string; context: Record<string, Record<string, string>>; target?: string; user?: { id: string; email: string } }
 
-export type CoreEvent = { user: { id: string; email: string }; module?: undefined } & (
-  | { name: 'entry.created' | 'entry.updated' | 'entry.published' | 'entry.unpublished' | 'entry.deleted'; type: string; id: string; title: string; locale?: string; /** Adresse publique, si le contenu a une page. */ url?: string }
+export type CoreEvent = { user: { id: string; email: string; /** Pour le journal d'activité ; relu en base s'il manque. */ name?: string }; module?: undefined } & (
+  /** `entry.deleted` : le contenu part à la corbeille ; `entry.restored` : il en revient. */
+  | { name: 'entry.created' | 'entry.updated' | 'entry.published' | 'entry.unpublished' | 'entry.deleted' | 'entry.restored'; type: string; id: string; title: string; locale?: string; /** Adresse publique, si le contenu a une page. */ url?: string }
   /** Quelqu'un qui ne peut pas publier signale qu'un brouillon est prêt. */
   | { name: 'entry.review_requested'; type: string; id: string; title: string; locale?: string; url?: string; note: string; requester: string }
   /** Un lien de mot de passe vient d'être créé : un workflow peut l'envoyer par e-mail à `email`. */
@@ -28,7 +30,13 @@ export type CoreEvent = { user: { id: string; email: string }; module?: undefine
 
 export type CmsEventInput = CoreEvent | ModuleEvent
 
-export function emitCmsEvents(event: H3Event, events: CmsEventInput[]) {
+/**
+ * Émet des événements : abonnés du projet, workflows, et journal d'activité pour ceux qui portent sur un contenu
+ * (server/utils/activity.ts). `activity` précise la ligne du journal (rien n'a changé, version restaurée, copie),
+ * ou `false` pour ne rien y inscrire.
+ */
+export function emitCmsEvents(event: H3Event, events: CmsEventInput[], options: { activity?: EntryActivityHint | false } = {}) {
+  if (options.activity !== false) logEntryEvents(event, events.filter(e => e.module === undefined) as CoreEvent[], options.activity)
   const at = new Date().toISOString()
   const hooks = useNitroApp().hooks as unknown as { callHook: (name: string, payload: CmsEvent) => Promise<void> }
   const payloads = events.map(e => ({ ...e, at }) as CmsEvent)

@@ -9,5 +9,6 @@ export default defineEventHandler(async (event) => {
   const choices = Object.fromEntries(Object.entries(body?.choices && typeof body.choices === 'object' ? body.choices : {}).filter(([, v]) => typeof v === 'string')) as Record<string, string>
   // `migrateContent` purge le cache du site si des contenus publiés ont changé.
   const report = await migrateContent(event, { apply: true, confirmed, choices, by: user.name })
+  if (report.applied.length) logActivity(event, { action: 'migration.applied', actor: user, details: { count: report.applied.length }, target: { kind: 'migrations' } })
   return report
 })

@@ -28,5 +28,9 @@ export default defineEventHandler(async (event) => {
   }
   if (nameTaken(folders, parentId, name, id)) throw createError({ statusCode: 409, message: `Un dossier « ${name} » existe déjà à cet endroit.` })
   await useDb(event).update(schema.mediaFolders).set({ name, parentId }).where(eq(schema.mediaFolders.id, id))
+  logActivity(event, [
+    ...(name !== folder.name ? [{ action: 'folder.renamed' as const, actor: user, details: { from: folder.name, to: name }, target: { kind: 'folder', id } }] : []),
+    ...(parentId !== folder.parentId ? [{ action: 'folder.moved' as const, actor: user, details: { name, to: folders.find(f => f.id === parentId)?.name }, target: { kind: 'folder', id } }] : []),
+  ])
   return { id, name, parentId }
 })

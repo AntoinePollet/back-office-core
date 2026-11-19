@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { roleLabel } from '../../../../shared/access'
 
 /** Invite une personne : crée son compte sans mot de passe et renvoie le lien à lui transmettre. */
 export default defineEventHandler(async (event) => {
@@ -19,5 +20,7 @@ export default defineEventHandler(async (event) => {
   await db.insert(schema.user).values({ id, name, email, role, emailVerified: false, createdAt: now, updatedAt: now })
   const invite = await createInviteLink(event, id)
   emitCmsEvents(event, [{ name: 'user.invited', email, recipient: name, link: invite.link, reason: 'invite', user: { id: admin.id, email: admin.email } }])
+  const roleName = (await useDb(event).select({ name: schema.roles.name }).from(schema.roles).where(eq(schema.roles.id, role)))[0]?.name ?? roleLabel(role)
+  logActivity(event, { action: 'user.invited', actor: admin, details: { name, email, role: roleName }, target: { kind: 'user', id } })
   return { id, ...invite }
 })

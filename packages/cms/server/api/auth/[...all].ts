@@ -18,7 +18,12 @@ export default defineEventHandler(async (event) => {
 
   // Le corps a été lu pour en tirer l'adresse e-mail : on le remet dans une nouvelle requête.
   const response = await auth.handler(new Request(url, { method: 'POST', headers: event.headers, body: raw }))
-  if (response.status === 401) await recordLoginFailure(event, keys)
-  else if (response.ok) await clearLoginFailures(event, keys)
+  if (response.status === 401) await recordLoginFailure(event, keys, email)
+  else if (response.ok) {
+    await clearLoginFailures(event, keys)
+    // Journal d'activité : la connexion réussie (jamais le mot de passe ni le jeton de session).
+    const who = await response.clone().json().then((data: { user?: { id?: string; name?: string; email?: string } }) => data?.user, () => undefined)
+    if (who?.id) logActivity(event, { action: 'auth.login', actor: who, target: { kind: 'user', id: who.id } })
+  }
   return response
 })

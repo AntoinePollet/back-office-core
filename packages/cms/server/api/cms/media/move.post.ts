@@ -20,5 +20,8 @@ export default defineEventHandler(async (event) => {
   for (let i = 0; i < ids.length; i += 80)
     updates.push(db.update(schema.media).set({ folderId }).where(inArray(schema.media.id, ids.slice(i, i + 80))))
   await db.batch(updates as [typeof updates[number], ...typeof updates])
+  const [only] = ids.length === 1 ? await db.select({ name: schema.media.name }).from(schema.media).where(inArray(schema.media.id, ids)) : []
+  const folderName = folderId ? (await listMediaFolders(event)).find(f => f.id === folderId)?.name : undefined
+  logActivity(event, { action: 'media.moved', actor: user, details: { count: ids.length, name: only?.name, to: folderName }, target: ids.length === 1 ? { kind: 'media', id: ids[0] } : { kind: 'folder', id: folderId } })
   return { ok: true, moved: ids.length, folderId }
 })

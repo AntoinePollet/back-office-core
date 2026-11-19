@@ -31,5 +31,6 @@ export default defineEventHandler(async (event) => {
     db.update(schema.mediaFolders).set({ parentId: folder.parentId }).where(eq(schema.mediaFolders.parentId, id)),
     db.delete(schema.mediaFolders).where(eq(schema.mediaFolders.id, id)),
   ])
+  logActivity(event, { action: 'folder.deleted', actor: user, details: { name: folder.name }, target: { kind: 'folder' } })
   return { ok: true, files: files.length, folders: children.length }
 })
