@@ -24,10 +24,26 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   vérifications passent) et deux flux GitHub Actions : vérifications à chaque demande de fusion, déploiement à chaque
   fusion sur `main` (migrations de la base appliquées avant le déploiement).
 - Les versions du core ont maintenant des notes (ce fichier) et une « release » GitHub.
+- **Corbeille.** Un contenu ou un fichier supprimé reste récupérable 30 jours (écran « Corbeille »). Pour le site il
+  disparaît tout de suite ; le restaurer le remet comme avant (langues, publication, historique, redirections).
+  La suppression définitive et le vidage sont réservés à l'administrateur.
+- **Journal d'activité.** Écran « Activité » (administrateur) : qui a fait quoi et quand, avec filtres et export.
+  Conservé 180 jours ; aucun mot de passe, clé ni jeton n'y figure.
+- **Sauvegardes.** Une copie de la base chaque nuit, gardée 30 jours dans le stockage du site (jamais servie
+  publiquement, secrets chiffrés), écran « Sauvegardes » avec alerte, sauvegarde immédiate, téléchargement et
+  restauration des contenus et des réglages. Nouvelle commande `pnpm cms:export` pour remettre toutes ses données à
+  un client ou reconstruire une base. Déclencheurs de workflow « Une sauvegarde a échoué » et « est faite ».
+- **Double authentification.** Code à 6 chiffres d'une application d'authentification, codes de secours, appareil de
+  confiance 30 jours. Un administrateur peut la rendre obligatoire (pour les administrateurs ou pour tous) et
+  réinitialiser celle d'un compte depuis « Utilisateurs ».
 
 ### À faire dans votre site
 
-- Rien d'obligatoire. Pour qu'un site existant profite des mises à jour automatiques, y copier `renovate.json` et
+- **Sauvegarde de nuit** : ajouter `"triggers": { "crons": ["17 3 * * *"] }` au `wrangler.jsonc` du site, et le script
+  `"cms:export": "backoffice-export"` à son `package.json`. Sans la première ligne, la sauvegarde se fait quand un
+  administrateur ouvre le back-office, et l'écran « Sauvegardes » le signale.
+- **Garder `NUXT_AUTH_SECRET` ailleurs que chez Cloudflare** : les sauvegardes et la double authentification en dépendent.
+- Rien d'autre d'obligatoire. Pour qu'un site existant profite des mises à jour automatiques, y copier `renovate.json` et
   `.github/workflows/` depuis `packages/create-site/template/`, puis suivre « Mettre à jour le core » du README du modèle.
 
 ## 0.5.0 — 2026-11-19
