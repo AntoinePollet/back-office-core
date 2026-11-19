@@ -10,6 +10,7 @@ import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { createJiti } from 'jiti'
 import type { CmsConfig } from '../shared/format'
+import { type MediaFolder, folderKey } from '../shared/media-folders'
 import { imageSize } from './image-size'
 import { type PlannedEntry, type PlannedFile, type Status, mediaId, mediaOf, planImport, requestBody } from './import-plan'
 
@@ -232,34 +233,82 @@ export async function runImport(options: ImportOptions): Promise<number> {
       if (details.length > 1) for (const detail of details) out(`  ${''.padEnd(WIDTH)}  › ${detail}`)
     }
 
-    // 3. Médiathèque : seuls les fichiers qui n'y sont pas encore sont envoyés.
+    // 3. Dossiers de la médiathèque : ceux qui manquent sont créés, niveau par niveau. Un dossier existant est
+    //    retrouvé par son nom (sans tenir compte des majuscules) : relancer l'import ne crée pas de doublon.
+    //    Les chemins se comparent sans tenir compte des majuscules : « chantiers/charpente » est « Chantiers/Charpente ».
+    const keyOf = (names: string[]) => names.map(folderKey).join('/')
+    const folderIds = new Map<string, string | undefined>()
+    const folderFailed = new Map<string, string>()
+    /** Chaque dossier voulu, à tous les niveaux, tel qu'il est écrit la première fois dans le fichier. */
+    const wanted = new Map<string, string[]>()
+    for (const f of files) f.folder?.forEach((_, i) => { const names = f.folder!.slice(0, i + 1); if (!wanted.has(keyOf(names))) wanted.set(keyOf(names), names) })
+    if (wanted.size) {
+      out('\nDossiers de la médiathèque')
+      const folders = await call<MediaFolder[]>('/api/cms/media/folders')
+      // Du moins profond au plus profond : un parent est toujours traité avant ses sous-dossiers.
+      for (const [key, names] of [...wanted].sort(([, a], [, b]) => a.length - b.length)) {
+        const parentKey = names.length > 1 ? keyOf(names.slice(0, -1)) : null
+        if (parentKey && folderFailed.has(parentKey)) { folderFailed.set(key, folderFailed.get(parentKey)!); continue }
+        const parentId = parentKey ? folderIds.get(parentKey) : null
+        const name = names.at(-1)!
+        // Parent encore à créer (simulation) : rien n'existe dessous.
+        const found = parentId === undefined ? undefined : folders.find(f => (f.parentId ?? null) === parentId && folderKey(f.name) === folderKey(name))
+        try {
+          if (found) folderIds.set(key, found.id)
+          else if (dryRun) folderIds.set(key, undefined)
+          else {
+            const created = await call<MediaFolder>('/api/cms/media/folders', { method: 'POST', json: { name, parentId } })
+            folders.push(created)
+            folderIds.set(key, created.id)
+          }
+          out(`  ${(found ? 'déjà présent' : dryRun ? 'à créer' : 'créé').padEnd(WIDTH)}${names.join('/')}`)
+        }
+        catch (e) {
+          folderFailed.set(key, (e as Error).message)
+          counts.error++
+          out(`  ${'ERREUR'.padEnd(WIDTH)}${names.join('/')} › ${(e as Error).message}`)
+        }
+      }
+    }
+
+    // 4. Médiathèque : seuls les fichiers qui n'y sont pas encore sont envoyés.
     const ids = new Map<string, string>()
     const failed = new Map<string, string>()
     let sent = 0
+    type Known = { id: string; alt: Record<string, string>; folderId?: string | null }
     if (files.length) {
       out('\nMédiathèque')
-      const known = new Map((await call<{ id: string; alt: Record<string, string> }[]>('/api/cms/media')).map(m => [m.id, m]))
+      const known = new Map((await call<Known[]>('/api/cms/media')).map(m => [m.id, m]))
       for (const file of files) {
         const name = file.cited
         try {
+          const folderPath = file.folder?.join('/')
+          const folderKeyed = file.folder ? keyOf(file.folder) : undefined
+          if (folderKeyed && folderFailed.has(folderKeyed)) throw new Error(`dossier non créé : ${folderPath}`)
+          const folderId = folderKeyed ? folderIds.get(folderKeyed) : undefined
           let current = known.get(file.id)
           const isNew = !current
           if (isNew && !dryRun) {
             const form = new FormData()
             form.append('file', new Blob([new Uint8Array(file.content)], { type: file.mime }), basename(file.path))
             form.append('id', file.id)
+            if (folderId) form.append('folder', folderId)
             const size = file.mime === 'image/svg+xml' ? null : imageSize(file.content)
             if (size) { form.append('width', String(size.width)); form.append('height', String(size.height)) }
-            current = await call<{ id: string; alt: Record<string, string> }>('/api/cms/media', { method: 'POST', form })
+            current = await call<Known>('/api/cms/media', { method: 'POST', form })
             known.set(file.id, current)
           }
           // Le texte alternatif du fichier d'import complète celui de la médiathèque, langue par langue.
           const alt = { ...current?.alt, ...file.alt }
           const altChanged = Object.entries(file.alt).some(([locale, text]) => (current?.alt?.[locale] ?? '') !== text)
           if (altChanged && !dryRun) await call(`/api/cms/media/${file.id}`, { method: 'PATCH', json: { alt } })
+          // Un fichier déjà présent est rangé dans le dossier demandé ; sans « folder », il reste où il est.
+          const moved = !!folderPath && !isNew && (folderId === undefined || (current?.folderId ?? null) !== folderId)
+          if (moved && !dryRun) await call('/api/cms/media/move', { method: 'POST', json: { ids: [file.id], folderId } })
           if (isNew) sent++
           ids.set(file.path, file.id)
-          out(`  ${(isNew ? (dryRun ? 'à envoyer' : 'envoyé') : altChanged ? (dryRun ? 'texte à corriger' : 'texte corrigé') : 'déjà présent').padEnd(WIDTH)}${name}`)
+          const changes = [altChanged ? (dryRun ? 'texte à corriger' : 'texte corrigé') : '', moved ? (dryRun ? 'à ranger' : 'rangé') : ''].filter(Boolean).join(', ')
+          out(`  ${(isNew ? (dryRun ? 'à envoyer' : 'envoyé') : changes || 'déjà présent').padEnd(WIDTH)}${name}${folderPath ? ` › ${folderPath}` : ''}`)
         }
         catch (e) {
           failed.set(file.path, (e as Error).message)
@@ -269,7 +318,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
       }
     }
 
-    // 4. Contenus, type par type, dans l'ordre du fichier. Une erreur sur un élément n'arrête pas les autres.
+    // 5. Contenus, type par type, dans l'ordre du fichier. Une erreur sur un élément n'arrête pas les autres.
     const byType = new Map<string, PlannedEntry[]>()
     for (const entry of plan.entries) byType.set(entry.type, [...(byType.get(entry.type) ?? []), entry])
     for (const [type, entries] of byType) {
@@ -306,7 +355,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
       }
     }
 
-    // 5. Compte rendu.
+    // 6. Compte rendu.
     const total = [
       dryRun ? `${counts.created} à créer` : plural(counts.created, 'créé', 'créés'),
       dryRun ? `${counts.updated} à mettre à jour` : `${counts.updated} mis à jour`,

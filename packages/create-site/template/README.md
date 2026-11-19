@@ -96,6 +96,12 @@ variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'h
 - Image ou fichier : un chemin. `"/photos/a.jpg"` est lu dans `public/`, `"photos/a.jpg"` à côté du fichier d'import.
   Le fichier est envoyé dans la médiathèque, une seule fois même s'il est cité plusieurs fois ou si l'import est relancé.
   Texte alternatif : `{ "file": "…", "alt": "…" }`, ou `"alt": { "fr": "…", "en": "…" }`.
+- Dossier de la médiathèque : `{ "file": "photos/toit-1.jpg", "folder": "Chantiers/Toiture" }` range le fichier dans
+  le dossier « Toiture » du dossier « Chantiers » (`/` sépare les niveaux, 3 au plus). Les dossiers manquants sont créés ;
+  un dossier existant est retrouvé par son nom (majuscules comprises), donc relancer l'import ne crée pas de doublon.
+  Un fichier déjà dans la médiathèque est déplacé dans ce dossier ; sans `"folder"`, il reste où il est. Ranger un fichier
+  ne change pas son adresse : les pages qui l'affichent ne sont pas touchées. Créer des dossiers et déplacer des fichiers
+  demande un compte qui peut gérer la médiathèque (éditeur ou administrateur).
 - Galerie (champ `image` ou `file` avec `multiple: true`) : une liste, dans l'ordre d'affichage, de chemins ou d'objets ;
   la légende (`"caption"`, si le champ a `captions: true`) est propre à cette galerie, le texte alternatif au fichier :
   `"photos": ["/photos/a.jpg", { "file": "photos/b.jpg", "alt": "Vue de la salle", "caption": "Marseille (13)" }]`.

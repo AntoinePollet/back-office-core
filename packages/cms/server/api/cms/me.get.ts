@@ -1,4 +1,4 @@
-import { canDeleteMedia, canEditRestricted, roleLabel } from '../../../shared/access'
+import { canDeleteMedia, canEditRestricted, canOrganizeMedia, roleLabel } from '../../../shared/access'
 
 /** La personne connectée, avec ses droits sur chaque type de contenu. */
 export default defineEventHandler(async (event) => {
@@ -11,6 +11,8 @@ export default defineEventHandler(async (event) => {
     access: accessMap(user),
     restrictedFields: canEditRestricted(user),
     deleteMedia: canDeleteMedia(user),
+    /** Peut créer, renommer, supprimer des dossiers de la médiathèque et y déplacer des fichiers. */
+    organizeMedia: canOrganizeMedia(user),
     /** Peut créer un lien d'aperçu à partager. */
     sharePreview: canSharePreview(user),
   }

@@ -49,7 +49,7 @@ export type CustomRights = {
   types: Record<string, Partial<Rights>>
   /** Modifier les champs marqués `restricted` dans cms.config.ts. */
   restrictedFields?: boolean
-  /** Supprimer des fichiers de la médiathèque. */
+  /** Supprimer des fichiers de la médiathèque et la ranger (dossiers). */
   deleteMedia?: boolean
 }
 
@@ -97,6 +97,13 @@ export const canEditRestricted = (who: Who) => (isBuiltinRole(who.role) ? who.ro
 
 /** Peut supprimer des fichiers de la médiathèque. Rôles intégrés : tous sauf le rédacteur. */
 export const canDeleteMedia = (who: Who) => (isBuiltinRole(who.role) ? who.role !== 'writer' : !!who.custom?.deleteMedia)
+
+/**
+ * Peut ranger la médiathèque : créer, renommer, supprimer un dossier, y déplacer des fichiers. Même droit que la
+ * suppression de fichiers (« gère la médiathèque ») : un seul réglage à comprendre. Envoyer un fichier dans un dossier
+ * existant reste permis à tous.
+ */
+export const canOrganizeMedia = canDeleteMedia
 
 /** Ne garde d'un rôle personnalisé que des droits bien formés, sur des types connus. */
 export function cleanCustomRights(input: unknown, knownTypes: readonly string[]): CustomRights {

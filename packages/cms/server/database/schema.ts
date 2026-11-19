@@ -55,7 +55,21 @@ export const media = sqliteTable('cms_media', {
   /** Texte alternatif par langue : { fr: '…', en: '…' }. */
   alt: text('alt', { mode: 'json' }).$type<Record<string, string>>().notNull(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-})
+  /**
+   * Dossier où le fichier est rangé ; vide : à la racine de la médiathèque. Ranger un fichier ne change ni sa clé
+   * dans R2 ni son adresse publique. Avant de supprimer un dossier, l'API fait remonter ses fichiers dans le dossier parent.
+   */
+  folderId: text('folder_id').references(() => mediaFolders.id),
+}, t => [index('cms_media_folder').on(t.folderId)])
+
+/** Dossier de la médiathèque : une donnée du back-office seulement (règles dans shared/media-folders.ts). */
+export const mediaFolders = sqliteTable('cms_media_folders', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  /** Dossier parent ; vide : à la racine. Profondeur limitée par l'API. */
+  parentId: text('parent_id'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_media_folders_parent').on(t.parentId)])
 
 /** Ancienne adresse d'une page publiée : le site y répond par une redirection vers l'adresse actuelle. */
 export const redirects = sqliteTable('cms_redirects', {

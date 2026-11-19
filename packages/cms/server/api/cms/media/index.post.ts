@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { slugify } from '../../../../shared/content'
 
-/** Importe un fichier : il est stocké dans R2 et référencé dans la médiathèque. */
+/** Importe un fichier : il est stocké dans R2 et référencé dans la médiathèque, dans le dossier `folder` s'il est donné. */
 export default defineEventHandler(async (event) => {
   await requireUser(event)
   const parts = await readMultipartFormData(event)
@@ -22,6 +22,9 @@ export default defineEventHandler(async (event) => {
     const [known] = await useDb(event).select().from(schema.media).where(eq(schema.media.id, wanted))
     if (known) return toAdminMedia(known)
   }
+  // Dossier où ranger le fichier (le dossier affiché) : envoyer dans un dossier existant est permis à tous.
+  const folderPart = parts?.find(p => p.name === 'folder')?.data.toString() || null
+  if (folderPart && !(await listMediaFolders(event)).some(f => f.id === folderPart)) throw createError({ statusCode: 404, message: 'Dossier introuvable : il a peut-être été supprimé. Rechargez la page.' })
   const id = wanted ?? crypto.randomUUID()
   const dot = file.filename.lastIndexOf('.')
   const base = slugify(dot > 0 ? file.filename.slice(0, dot) : file.filename) || 'fichier'
@@ -29,7 +32,7 @@ export default defineEventHandler(async (event) => {
   const key = `${id}/${base}${ext ? `.${ext}` : ''}`
 
   await useBucket(event).put(key, file.data, { httpMetadata: { contentType: file.type } })
-  const row = { id, key, name: file.filename, mime: file.type, size: file.data.length, width: dimension('width'), height: dimension('height'), alt: {}, createdAt: new Date() }
+  const row = { id, key, name: file.filename, mime: file.type, size: file.data.length, width: dimension('width'), height: dimension('height'), alt: {}, createdAt: new Date(), folderId: folderPart }
   await useDb(event).insert(schema.media).values(row)
   return toAdminMedia(row)
 })

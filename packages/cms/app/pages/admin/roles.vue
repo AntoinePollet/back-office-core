@@ -152,7 +152,7 @@ const summary = (role: Role) => {
 
         <div class="space-y-2">
           <label class="flex items-center gap-3 cursor-pointer text-sm"><input v-model="editing.restrictedFields" type="checkbox" class="toggle toggle-sm">Modifier les champs réservés</label>
-          <label class="flex items-center gap-3 cursor-pointer text-sm"><input v-model="editing.deleteMedia" type="checkbox" class="toggle toggle-sm">Supprimer des fichiers de la médiathèque</label>
+          <label class="flex items-center gap-3 cursor-pointer text-sm"><input v-model="editing.deleteMedia" type="checkbox" class="toggle toggle-sm">Supprimer des fichiers de la médiathèque et la ranger en dossiers</label>
         </div>
         <p class="text-xs text-base-content/50">Ce rôle n'aura jamais accès aux utilisateurs, à l'apparence, aux workflows ni aux contenus réservés aux administrateurs.</p>
 

@@ -242,8 +242,29 @@ test('galerie : liste ordonnée de chemins ou de { file, alt, caption }, au prem
   const bad = run({ photos: '/a.jpg', docs: [{ file: 'x.pdf', caption: 'Non' }], cases: [{ photos: [{ file: '/a.jpg', caption: 3 }] }] })
   assert.deepEqual(bad.errors, [
     'collections.works[0] (« w »).photos : liste de fichiers attendue, dans l\'ordre d\'affichage : ["/photos/a.jpg", { "file": "…", "alt": "…", "caption": "…" }] (reçu un texte).',
-    'collections.works[0] (« w »).docs[0].caption : clé inconnue. Clés possibles : file, alt. (Ce champ n\'a pas de légende : captions: true dans la configuration.)',
+    'collections.works[0] (« w »).docs[0].caption : clé inconnue. Clés possibles : file, alt, folder. (Ce champ n\'a pas de légende : captions: true dans la configuration.)',
     'collections.works[0] (« w »).cases[0].photos[0].caption : texte attendu (reçu un nombre).',
   ])
   assert.match(run({ photos: ['/1.jpg', '/2.jpg', '/3.jpg', '/4.jpg'] }).errors[0]!, /photos : 3 fichiers au maximum \(4 ici\)/)
+})
+
+test('dossier de la médiathèque : « folder » à côté de « file », vérifié, le premier gardé', () => {
+  const p = service({
+    cover: { file: '/chantier.jpg', folder: ' Chantiers / Isolation ' },
+    brochure: { file: 'plaquette.pdf', folder: 'Documents' },
+    prices: [{ amount: '10', photo: { file: '/chantier.jpg', folder: 'Autre' } }],
+  })
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.files.map(x => [x.cited, x.folder]), [['/chantier.jpg', ['Chantiers', 'Isolation']], ['plaquette.pdf', ['Documents']]])
+  assert.match(p.warnings[0]!, /déjà rangé dans un autre dossier/)
+  // Même dossier écrit autrement (majuscules) : pas d'avertissement.
+  assert.deepEqual(service({ cover: { file: '/a.jpg', folder: 'Chantiers' }, prices: [{ amount: '1', photo: { file: '/a.jpg', folder: 'chantiers' } }] }).warnings, [])
+  // Sans « folder » : le fichier n'est pas rangé (il reste où il est dans la médiathèque).
+  assert.equal(service({ cover: '/a.jpg' }).files[0]!.folder, undefined)
+
+  const bad = service({ cover: { file: '/a.jpg', folder: 'a/b/c/d' }, brochure: { file: 'b.pdf', folder: 3 }, prices: [{ amount: '1', photo: { file: '/c.jpg', folder: 'ok/a\\b' } }] })
+  assert.equal(bad.errors.length, 3)
+  assert.match(bad.errors[0]!, /cover\.folder : pas plus de 3 niveaux de dossiers\./)
+  assert.match(bad.errors[1]!, /brochure\.folder : chemin de dossier attendu/)
+  assert.match(bad.errors[2]!, /photo\.folder : « a\\b » : le nom d'un dossier ne peut pas contenir/)
 })
