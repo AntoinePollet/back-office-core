@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import { canOrganizeMedia } from '../../shared/access'
 
 type MediaRow = typeof schema.media.$inferSelect
 
@@ -28,10 +29,21 @@ export function useBucket(event: H3Event) {
 
 /** Un fichier tel que le back-office le reçoit. */
 export function toAdminMedia(row: MediaRow) {
-  return { id: row.id, url: mediaUrl(row.key), name: row.name, mime: row.mime, size: row.size, width: row.width, height: row.height, alt: row.alt, createdAt: row.createdAt }
+  return { id: row.id, url: mediaUrl(row.key), name: row.name, mime: row.mime, size: row.size, width: row.width, height: row.height, alt: row.alt, createdAt: row.createdAt, folderId: row.folderId ?? null }
 }
 
 /** Un fichier tel que le site le reçoit : le texte alternatif est celui de la langue demandée. */
 export function toPublicMedia(row: MediaRow, locale: string) {
   return { id: row.id, url: mediaUrl(row.key), name: row.name, alt: row.alt[locale] || row.alt[cmsConfig.site.defaultLocale] || '', mime: row.mime, width: row.width, height: row.height }
+}
+
+/** Dossiers de la médiathèque, tels que le back-office les reçoit. */
+export async function listMediaFolders(event: H3Event) {
+  const rows = await useDb(event).select().from(schema.mediaFolders)
+  return rows.map(r => ({ id: r.id, name: r.name, parentId: r.parentId ?? null }))
+}
+
+/** Refuse l'action à qui ne peut pas ranger la médiathèque. */
+export function assertCanOrganizeMedia(user: Parameters<typeof canOrganizeMedia>[0]) {
+  if (!canOrganizeMedia(user)) throw createError({ statusCode: 403, message: 'Vous ne pouvez pas ranger la médiathèque (dossiers). Demandez à un éditeur.' })
 }

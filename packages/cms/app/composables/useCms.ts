@@ -3,6 +3,7 @@ import { adminVars, DEFAULT_ADMIN_COLOR } from '../../shared/theme'
 
 // Adresses d'images redimensionnées, utilisables dans les pages du site.
 export { cmsImageSrcset, cmsImageUrl } from '../../shared/media'
+import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
 
 type ReadOptions = { locale?: string }
@@ -249,6 +250,8 @@ export const useCmsUser = () => useState<{
   /** Peut modifier les champs réservés ; peut supprimer des fichiers. */
   restrictedFields?: boolean
   deleteMedia?: boolean
+  /** Peut ranger la médiathèque (dossiers, déplacements). */
+  organizeMedia?: boolean
   /** Peut créer un lien d'aperçu à partager. */
   sharePreview?: boolean
   /** Contenus auxquels le compte est limité (null : aucune limite). */
@@ -333,7 +336,10 @@ export async function cmsDuplicate(type: string, id: string, drafts: boolean) {
 export type CmsMedia = {
   id: string; url: string; name: string; mime: string; size: number
   width: number | null; height: number | null; alt: Record<string, string>; createdAt: string
+  /** Dossier où le fichier est rangé ; null : à la racine. */
+  folderId: string | null
 }
+export type { MediaFolder as CmsMediaFolder } from '../../shared/media-folders'
 
 export function useCmsMedia() {
   const items = useState<CmsMedia[] | null>('cms-media', () => null)
@@ -344,9 +350,11 @@ export function useCmsMedia() {
   }
   const byId = (id: unknown) => (typeof id === 'string' ? items.value?.find(m => m.id === id) : undefined)
 
-  async function upload(file: File) {
+  /** `folderId` : dossier où ranger le fichier (le dossier affiché). */
+  async function upload(file: File, folderId?: string | null) {
     const body = new FormData()
     body.append('file', file)
+    if (folderId) body.append('folder', folderId)
     if (file.type.startsWith('image/') && file.type !== 'image/svg+xml') {
       // Les dimensions sont lues dans le navigateur : le serveur n'a pas à décoder l'image.
       const bitmap = await createImageBitmap(file).catch(() => null)
@@ -357,6 +365,62 @@ export function useCmsMedia() {
     return created
   }
   return { items, load, byId, upload }
+}
+
+/**
+ * Dossiers de la médiathèque et dossier ouvert. Le dossier ouvert est partagé par la page Médiathèque et la fenêtre
+ * de choix d'une image, et retenu pendant la session de l'onglet : on retrouve le dossier où l'on rangeait.
+ */
+let folderRestored = false
+export function useCmsMediaFolders() {
+  const folders = useState<MediaFolder[] | null>('cms-media-folders', () => null)
+  const current = useState<string | null>('cms-media-folder', () => null)
+  const { items } = useCmsMedia()
+
+  /** Appelé dans le navigateur seulement (au montage). */
+  async function load(force = false) {
+    if (!folderRestored) {
+      folderRestored = true
+      try { current.value ??= sessionStorage.getItem('cms-media-folder') || null }
+      catch { /* stockage indisponible */ }
+    }
+    if (!folders.value || force) folders.value = await cmsApi<MediaFolder[]>('/api/cms/media/folders')
+    // Dossier retenu mais supprimé entre-temps : retour à la racine.
+    if (current.value && !folders.value.some(f => f.id === current.value)) open(null)
+    return folders.value
+  }
+  function open(id: string | null) {
+    current.value = id
+    try { if (id) sessionStorage.setItem('cms-media-folder', id); else sessionStorage.removeItem('cms-media-folder') }
+    catch { /* stockage indisponible : le dossier n'est retenu que pendant la navigation */ }
+  }
+
+  async function create(name: string, parentId: string | null) {
+    const folder = await cmsApi<MediaFolder>('/api/cms/media/folders', { method: 'POST', body: { name, parentId } })
+    folders.value = [...(folders.value ?? []), folder]
+    return folder
+  }
+  async function update(id: string, body: { name?: string; parentId?: string | null }) {
+    const folder = await cmsApi<MediaFolder>(`/api/cms/media/folders/${id}`, { method: 'PATCH', body })
+    folders.value = (folders.value ?? []).map(f => (f.id === id ? folder : f))
+    return folder
+  }
+  /** Supprime un dossier ; `force` : son contenu remonte dans le dossier parent. */
+  async function remove(id: string, force = false) {
+    const folder = folders.value?.find(f => f.id === id)
+    await cmsApi(`/api/cms/media/folders/${id}`, { method: 'DELETE', query: force ? { force: 1 } : {} })
+    const parentId = folder?.parentId ?? null
+    folders.value = (folders.value ?? []).filter(f => f.id !== id).map(f => (f.parentId === id ? { ...f, parentId } : f))
+    items.value = (items.value ?? []).map(m => (m.folderId === id ? { ...m, folderId: parentId } : m))
+    if (current.value === id) open(parentId)
+  }
+  /** Range des fichiers dans un dossier (null : la racine). */
+  async function moveFiles(ids: string[], folderId: string | null) {
+    await cmsApi('/api/cms/media/move', { method: 'POST', body: { ids, folderId } })
+    const moved = new Set(ids)
+    items.value = (items.value ?? []).map(m => (moved.has(m.id) ? { ...m, folderId } : m))
+  }
+  return { folders, current, load, open, create, update, remove, moveFiles }
 }
 
 /** Contenus d'une collection, pour les champs relation et lien. */

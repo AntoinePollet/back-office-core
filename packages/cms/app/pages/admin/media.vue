@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { CmsMedia } from '../../composables/useCms'
 import { adminEntryPath } from '../../../shared/admin-paths'
+import { folderLabel } from '../../../shared/media-folders'
+import { Folder, FolderInput, Images } from '@lucide/vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -8,6 +10,11 @@ type Usage = { id: string; type: string; label: string; title: string }
 
 const schema = await useCmsSchema()
 const { items } = useCmsMedia()
+const { folders, open } = useCmsMediaFolders()
+const library = ref<{ askMove: (ids: string[]) => void }>()
+const canOrganize = computed(() => useCmsUser().value?.organizeMedia !== false)
+// Fiche affichée : suit les changements de la liste (déplacement, texte alternatif).
+const current = computed(() => (selected.value && items.value?.find(m => m.id === selected.value!.id)) || selected.value)
 const toast = useCmsToast()
 const locales = schema.value.site.locales as readonly string[]
 const localeName = (l: string) => new Intl.DisplayNames(['fr'], { type: 'language' }).of(l) ?? l
@@ -68,12 +75,14 @@ async function copyUrl() {
     <CmsSiteDelayNotice />
     <div class="mb-6">
       <h1 class="text-2xl font-bold">Médiathèque</h1>
-      <p class="text-sm text-base-content/60">{{ items?.length ?? 0 }} fichier{{ (items?.length ?? 0) > 1 ? 's' : '' }} · {{ formatFileSize(totalSize) }}</p>
+      <p class="text-sm text-base-content/60">
+        {{ items?.length ?? 0 }} fichier{{ (items?.length ?? 0) > 1 ? 's' : '' }} · {{ formatFileSize(totalSize) }}<template v-if="folders?.length"> · {{ folders.length }} dossier{{ folders.length > 1 ? 's' : '' }}</template>
+      </p>
     </div>
 
     <div class="grid lg:grid-cols-[1fr_20rem] gap-6 items-start">
       <div class="card bg-base-100 border border-base-300 p-4">
-        <CmsMediaLibrary :selected-id="selected?.id" @select="select" />
+        <CmsMediaLibrary ref="library" manage :selected-id="selected?.id" @select="select" />
       </div>
 
       <aside class="card bg-base-100 border border-base-300 p-4 text-sm lg:sticky lg:top-20">
@@ -81,6 +90,11 @@ async function copyUrl() {
         <div v-else class="space-y-3">
           <img v-if="selected.mime.startsWith('image/')" :src="cmsImageUrl(selected, 640)" class="rounded-field w-full max-h-56 object-contain bg-base-200" alt="">
           <div class="font-semibold break-all">{{ selected.name }}</div>
+          <div class="flex items-center gap-2 min-w-0" data-media-folder-info>
+            <component :is="current?.folderId ? Folder : Images" :size="14" class="shrink-0 opacity-60" />
+            <button type="button" class="truncate hover:underline text-left" title="Ouvrir ce dossier" @click="open(current?.folderId ?? null)">{{ folderLabel(folders ?? [], current?.folderId) }}</button>
+            <button v-if="canOrganize" type="button" class="btn btn-xs btn-ghost ml-auto shrink-0" @click="library?.askMove([selected.id])"><FolderInput :size="14" />Déplacer vers…</button>
+          </div>
           <div class="text-base-content/60">
             <template v-if="selected.width">{{ selected.width }} × {{ selected.height }} px · </template>{{ formatFileSize(selected.size) }}
           </div>

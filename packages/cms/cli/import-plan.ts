@@ -29,7 +29,8 @@
  *   quand on relance l'import (il est alors mis à jour, pas recréé) et à le désigner dans un champ relation ou lien.
  * - `slug`, `seo`, `status` (`"published"` ou `"draft"`) : adresse de la page, référencement, publication.
  * - Image ou fichier : un chemin (`"/photos/a.jpg"` : dans `public/` ; `"photos/a.jpg"` : à côté du fichier d'import),
- *   ou `{ "file": "…", "alt": "…" }` ; `alt` peut être un objet par langue.
+ *   ou `{ "file": "…", "alt": "…", "folder": "Chantiers/Isolation" }` ; `alt` peut être un objet par langue ; `folder` range
+ *   le fichier dans ce dossier de la médiathèque (« / » sépare les niveaux ; les dossiers manquants sont créés).
  * - Galerie (image ou fichier avec `multiple`) : une liste, dans l'ordre d'affichage, de chemins ou d'objets
  *   `{ "file": "…", "alt": "…", "caption": "Marseille (13)" }` (`caption` si le champ a `captions: true`).
  * - Relation : l'`id` d'un élément de la collection visée, présent dans le même fichier (un tableau si le champ est multiple).
@@ -41,6 +42,7 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isEmpty, partition } from '../shared/content'
+import { parseFolderPath } from '../shared/media-folders'
 import { type AnyField, type CmsConfig, type CmsDefinition, isVisible } from '../shared/format'
 
 type Fields = Record<string, AnyField>
@@ -81,6 +83,8 @@ export type PlannedFile = {
   image: boolean
   /** Texte alternatif par langue, s'il est donné. */
   alt: Record<string, string>
+  /** Dossier de la médiathèque où le ranger, niveau par niveau (`"Chantiers/Isolation"` → ['Chantiers', 'Isolation']). */
+  folder?: string[]
 }
 
 export type Plan = { errors: string[]; warnings: string[]; entries: PlannedEntry[]; files: PlannedFile[] }
@@ -158,7 +162,7 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
       errors.push(`${at} : attendu le chemin d'un fichier ("/photos/a.jpg"), ou { "file": "…", "alt": "…"${extra.length ? extra.map(k => `, "${k}": "…"`).join('') : ''} } (reçu ${kindOf(value)}).`)
       return undefined
     }
-    const keys = ['file', 'alt', ...extra]
+    const keys = ['file', 'alt', 'folder', ...extra]
     if (isObject(value)) for (const k of Object.keys(value)) if (!keys.includes(k)) errors.push(`${at}.${k} : clé inconnue. Clés possibles : ${list(keys)}.${k === 'caption' ? ' (Ce champ n\'a pas de légende : captions: true dans la configuration.)' : ''}`)
     // « /photos/a.jpg » se lit dans public/, comme dans une page du site ; un chemin relatif part du fichier d'import.
     const path = cited.startsWith('/') ? join(options.publicDir, cited) : isAbsolute(cited) ? cited : resolve(options.baseDir, cited)
@@ -173,10 +177,19 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
       }
     }
     else if (given != null) errors.push(`${at}.alt : attendu un texte, ou un objet par langue { "${defaultLocale}": "…" } (reçu ${kindOf(given)}).`)
+    let folder: string[] | undefined
+    if (isObject(value) && value.folder != null) {
+      const parsed = parseFolderPath(value.folder)
+      if (parsed.error) errors.push(`${at}.folder : ${parsed.error}.`)
+      else folder = parsed.names
+    }
     const known = files.get(path)
-    if (!known) files.set(path, { path, cited, where: at, image: field.type === 'image', alt })
+    if (!known) files.set(path, { path, cited, where: at, image: field.type === 'image', alt, ...(folder ? { folder } : {}) })
     else {
       known.image ||= field.type === 'image'
+      if (folder && !known.folder) known.folder = folder
+      else if (folder && known.folder!.join('/').toLocaleLowerCase('fr') !== folder.join('/').toLocaleLowerCase('fr'))
+        warnings.push(`${at} : le fichier ${cited} est déjà rangé dans un autre dossier (${known.where}) ; c'est le premier qui est gardé.`)
       for (const [l, text] of Object.entries(alt)) {
         if (known.alt[l] !== undefined && known.alt[l] !== text) warnings.push(`${at} : le fichier ${cited} a déjà un autre texte alternatif (${known.where}) ; c'est le premier qui est gardé.`)
         else known.alt[l] = text
