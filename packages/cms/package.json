@@ -4,7 +4,8 @@
   "type": "module",
   "main": "./nuxt.config.ts",
   "bin": {
-    "backoffice-import": "./bin/import.mjs"
+    "backoffice-import": "./bin/import.mjs",
+    "backoffice-export": "./bin/export.mjs"
   },
   "exports": {
     ".": "./nuxt.config.ts",

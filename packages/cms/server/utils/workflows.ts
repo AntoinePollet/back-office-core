@@ -53,8 +53,9 @@ type Target = { key: string; label: string }
 const contentTypes = (): Target[] =>
   [...Object.entries(cmsConfig.collections ?? {}), ...Object.entries(cmsConfig.singletons ?? {})].map(([key, def]) => ({ key, label: def.label }))
 
-/** Déclencheurs apportés par les modules actifs. */
-const moduleEvents = (): ModuleWorkflowEvent[] => activeModules().flatMap(m => m.workflowEvents?.() ?? [])
+/** Déclencheurs décrits comme ceux d'un module : ceux du core (sauvegardes), puis ceux des modules actifs. */
+const coreModuleEvents = (): ModuleWorkflowEvent[] => backupWorkflowEvents()
+const moduleEvents = (): ModuleWorkflowEvent[] => [...coreModuleEvents(), ...activeModules().flatMap(m => m.workflowEvents?.() ?? [])]
 
 /**
  * Tout ce que l'éditeur de workflow propose sur ce site : les déclencheurs du core et ceux des modules actifs,
@@ -124,6 +125,8 @@ function buildContext(event: H3Event, payload: CmsEvent): { context: Context; su
 export function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user: { id: string; email: string }): CmsEvent {
   const at = new Date().toISOString()
   const who = { id: user.id, email: user.email }
+  const fromCore = coreModuleEvents().find(e => e.name === trigger.event)
+  if (fromCore) return { name: trigger.event, module: 'core', ...fromCore.sample(trigger.types[0]), at }
   const fromModule = activeModules().find(m => m.workflowEvents?.().some(e => e.name === trigger.event))
   if (fromModule) {
     const sample = fromModule.workflowEvents!().find(e => e.name === trigger.event)!.sample(trigger.types[0])

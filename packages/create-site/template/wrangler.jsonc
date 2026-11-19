@@ -19,6 +19,8 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": __BUCKET_JSON__ }],
+  // Sauvegarde automatique de la base, chaque nuit à 3 h 17 (heure universelle). Le core fait le reste : rien d'autre à écrire.
+  "triggers": { "crons": ["17 3 * * *"] },
   // Redimensionnement des images de la médiathèque. Sans cette liaison, les images sont servies dans leur taille d'origine.
   "images": { "binding": "IMAGES" },
   // Journaux consultables dans le tableau de bord Cloudflare.

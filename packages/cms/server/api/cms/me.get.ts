@@ -3,6 +3,9 @@ import { canDeleteMedia, canEditRestricted, canOrganizeMedia, roleLabel } from '
 /** La personne connectée, avec ses droits sur chaque type de contenu. */
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
+  // Repli des sauvegardes : si le déclencheur planifié n'a rien fait depuis plus d'un jour, la visite d'un
+  // administrateur lance la sauvegarde du jour, sans retarder la réponse.
+  if (user.role === 'admin') event.waitUntil(runAutoBackup(event).catch(error => console.error('[cms] sauvegarde de repli impossible', error)))
   return {
     id: user.id, name: user.name, email: user.email, role: user.role,
     /** Nom du rôle à afficher (celui du rôle personnalisé le cas échéant). */

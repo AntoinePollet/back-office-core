@@ -138,6 +138,8 @@ export function httpClient(base) {
   }
   return {
     call,
+    /** En-tête Cookie de ce visiteur, pour un appel fait à la main (téléchargement d'un fichier binaire). */
+    cookie: () => [...jar].map(([k, v]) => `${k}=${v}`).join('; '),
     get: url => call(url),
     post: (url, body) => call(url, { method: 'POST', body: body ?? {} }),
     put: (url, body) => call(url, { method: 'PUT', body }),

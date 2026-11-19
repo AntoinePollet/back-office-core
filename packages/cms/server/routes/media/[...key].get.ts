@@ -1,3 +1,4 @@
+import { isPrivateKey } from '../../../shared/backup'
 import { IMAGE_WIDTHS, RESIZABLE_TYPES, snapWidth } from '../../../shared/media'
 
 type ImagesBinding = {
@@ -14,6 +15,8 @@ type ImagesBinding = {
  */
 export default defineEventHandler(async (event) => {
   const key = getRouterParam(event, 'key')
+  // Les sauvegardes sont rangées dans le même stockage : elles ne se lisent jamais par l'adresse publique des fichiers.
+  if (key && isPrivateKey(decodeURIComponent(key))) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
   const bucket = useBucket(event)
   const object = key ? await bucket.get(decodeURIComponent(key)) : null
   if (!object) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })

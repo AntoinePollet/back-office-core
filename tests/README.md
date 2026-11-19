@@ -59,6 +59,7 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `15-audience-antirobots` | mesure d'audience (Cloudflare Web Analytics joué par le faux service) : réglages et vérification, balise sur le site mais pas dans le back-office ni l'aperçu, purge du cache, écran « Audience » et ses états, droits ; anti-robots (Turnstile) : vérification des clés, formulaire refusé sans jeton ou avec un jeton refusé, accepté avec un jeton valide, expiration, module non réglé |
 | `16-stripe` | paiement Stripe (joué par le faux service) : réglages et vérification de la clé, bouton du site, prix relu dans la version publiée, refus (brouillon, sans prix, hors vente, quantité), webhook signé, mal signé ou trop vieux, événement reçu deux fois, paiement différé, remboursement, workflow « paiement reçu », écran Paiements, droits, limite d'appels |
 | `17-dossiers` | dossiers de la médiathèque : création (imbriqués, nom déjà pris, limites), envoi dans le dossier ouvert, nombre de fichiers, déplacement par glisser-déposer (sur un dossier, sur le fil d'Ariane) et par « Déplacer vers… », renommage, dossier jamais rangé dans lui-même, suppression d'un dossier vide ou non vide (le contenu remonte), recherche dans tous les dossiers, fenêtre de choix d'une image et galerie (dernier dossier retenu, envoi dans le dossier affiché), adresse publique inchangée et toujours affichée par le site, largeur de téléphone, droits (rédactrice refusée par le serveur), import dans des dossiers puis relance sans doublon |
+| `19-sauvegardes` | sauvegardes : déclencheur planifié simulé (`/_cms/dev-scheduled`, une sauvegarde par jour, route interne fermée), échec simulé (alerte, workflow « une sauvegarde a échoué » et son e-mail), alerte au-delà de 48 h, repli à la visite d'un administrateur, écran (état, liste, largeur de téléphone), sauvegarde manuelle, conservation de 30 jours, contenu du fichier (toutes les tables, aucun secret lisible, pas de session), jamais servie par l'adresse des fichiers, droits ; restauration (mot à saisir, retour à l'état sauvegardé, comptes et fichiers récents conservés, session gardée, annulation, fichier manquant signalé) ; export complet (`backoffice-export`) et réimport dans une base neuve avec wrangler |
 
 ## Ajouter une suite
 
@@ -87,7 +88,7 @@ export default async function (t) {
 - `t.B` : adresse du serveur ; `t.admin` : le compte administrateur ; `t.fixture('Photo du Cabinet.png')` ou `'notes.txt'` :
   fichiers à importer (fabriqués par `lib/fixtures.mjs`, pas de fichier binaire dans le dépôt).
 - `t.newPage({ context, scheme })` : un onglet ; `t.newContext()` : une session séparée (autre personne, visiteur non connecté).
-- `t.http()` : client HTTP sans navigateur, qui garde ses cookies (`get`, `post`, `put`, `del`, `signIn`, `json`).
+- `t.http()` : client HTTP sans navigateur, qui garde ses cookies (`get`, `post`, `put`, `del`, `signIn`, `json`, `cookie`).
 - `lib/harness.mjs` : `login`, `clickText`, `find`, `fieldset`, `field`, `typeIn`, `says`, `api`, `send`, `json`, `until`, `check`…
 - `meta.mock: true` démarre le faux service (`t.M` son adresse, `t.calls()` les appels reçus) ; `meta.env` ajoute des
   variables d'environnement au serveur (voir `03-workflows`). Le faux Cloudflare (`lib/mock-cloudflare.mjs`) répond aux

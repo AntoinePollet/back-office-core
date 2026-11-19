@@ -28,7 +28,7 @@ export type CoreEvent = { user: { id: string; email: string }; module?: undefine
 
 export type CmsEventInput = CoreEvent | ModuleEvent
 
-export function emitCmsEvents(event: H3Event, events: CmsEventInput[]) {
+export function emitCmsEvents(event: H3Event, events: CmsEventInput[]): Promise<unknown> {
   const at = new Date().toISOString()
   const hooks = useNitroApp().hooks as unknown as { callHook: (name: string, payload: CmsEvent) => Promise<void> }
   const payloads = events.map(e => ({ ...e, at }) as CmsEvent)
@@ -40,4 +40,6 @@ export function emitCmsEvents(event: H3Event, events: CmsEventInput[]) {
   ]).catch(error => console.error('[cms] le traitement d\'un événement a échoué', error))
   // La réponse n'attend pas les abonnés ; sur Workers, waitUntil garde la requête en vie jusqu'à leur fin.
   event.waitUntil(run)
+  // Renvoyé pour qui veut attendre la fin du traitement (une tâche planifiée, par exemple).
+  return run
 }
