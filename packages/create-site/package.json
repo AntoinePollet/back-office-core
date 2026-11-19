@@ -1,6 +1,7 @@
 {
   "name": "create-site",
   "version": "0.5.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "Crée un nouveau site client qui étend backoffice-core, et ses ressources Cloudflare.",

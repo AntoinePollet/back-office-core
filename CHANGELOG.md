@@ -24,6 +24,7 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   vérifications passent) et deux flux GitHub Actions : vérifications à chaque demande de fusion, déploiement à chaque
   fusion sur `main` (migrations de la base appliquées avant le déploiement).
 - Les versions du core ont maintenant des notes (ce fichier) et une « release » GitHub.
+- **Licence MIT.** Le core est publié sous licence MIT (fichier `LICENSE`).
 - **Corbeille.** Un contenu ou un fichier supprimé reste récupérable 30 jours (écran « Corbeille »). Pour le site il
   disparaît tout de suite ; le restaurer le remet comme avant (langues, publication, historique, redirections).
   La suppression définitive et le vidage sont réservés à l'administrateur.
