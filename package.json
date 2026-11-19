@@ -8,7 +8,7 @@
     "db:generate": "pnpm --filter backoffice-core db:generate",
     "db:migrate": "pnpm --filter playground db:migrate",
     "typecheck": "pnpm --filter playground typecheck",
-    "test:unit": "pnpm --filter backoffice-core test && pnpm --filter create-site test",
+    "test:unit": "pnpm --filter backoffice-core test && pnpm --filter create-site test && node --test \"scripts/*.test.mjs\"",
     "test:e2e": "node tests/run.mjs",
     "test": "pnpm test:unit && pnpm typecheck && pnpm test:e2e",
     "create-site": "node packages/create-site/bin/create-site.mjs",

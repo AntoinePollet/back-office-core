@@ -1,0 +1,46 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Mises à jour automatiques de backoffice-core (voir « Mettre à jour le core » dans README.md).",
+    "Une demande de fusion s'ouvre à chaque nouvelle version du core, avec ses notes.",
+    "Les correctifs (x.y.Z) sont fusionnés seuls quand les vérifications passent ; les autres versions attendent une relecture.",
+    "Les autres dépendances du projet ne sont pas touchées."
+  ],
+  "timezone": "Europe/Paris",
+  "dependencyDashboard": false,
+  "separateMinorPatch": true,
+  "platformAutomerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "La dépendance git vers le core : github:<dépôt>#vX.Y.Z&path:/packages/cms",
+      "managerFilePatterns": ["/^package\\.json$/"],
+      "matchStrings": ["\"backoffice-core\"\\s*:\\s*\"github:(?<packageName>[^#\"]+)#(?<currentValue>v\\d+\\.\\d+\\.\\d+)&path:"],
+      "depNameTemplate": "backoffice-core",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Seul le core est suivi : les autres paquets restent sous la main du développeur.",
+      "matchManagers": ["npm"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["backoffice-core"],
+      "commitMessageAction": "Mise à jour :",
+      "commitMessageTopic": "backoffice-core",
+      "commitMessageExtra": "{{{currentValue}}} → {{{newValue}}}",
+      "labels": ["backoffice-core"]
+    },
+    {
+      "description": "Correctifs : fusion automatique une fois les vérifications passées.",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["backoffice-core"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    }
+  ]
+}

@@ -109,3 +109,30 @@ export function setDatabaseId(projectDir, databaseId) {
   writeFileSync(file, text.replace(pattern, `$1${JSON.stringify(databaseId)}`))
   return true
 }
+
+/** Fichiers du projet qui automatisent les mises à jour du core et la mise en ligne. */
+export const AUTOMATION_FILES = ['renovate.json', '.github/workflows/verifier.yml', '.github/workflows/deployer.yml']
+
+/**
+ * Ce qu'il reste à faire à la main, une fois par site, pour que les mises à jour du core et les mises en ligne se
+ * fassent seules. Les fichiers sont déjà dans le projet ; ces gestes se font chez GitHub et ne peuvent pas être
+ * faits par cette commande.
+ */
+export function automationSteps(answers) {
+  if (answers.core !== 'git') {
+    return [
+      'Non disponibles avec un lien local vers le core : il n\'y a pas de version à suivre, et GitHub ne peut pas',
+      'installer un dossier de cette machine. Passer à la dépendance git avant de livrer le site (voir README.md).',
+    ]
+  }
+  return [
+    '1. Pousser le projet sur GitHub, branche main, avec pnpm-lock.yaml (créé par pnpm install).',
+    '2. Autoriser Renovate sur ce dépôt : https://github.com/apps/renovate → Configure → ajouter le dépôt.',
+    '   Il ouvrira une demande de fusion à chaque version du core ; les correctifs sont fusionnés seuls.',
+    '3. Poser les deux secrets du déploiement (dépôt GitHub → Settings → Secrets and variables → Actions), ou :',
+    '     gh secret set CLOUDFLARE_ACCOUNT_ID',
+    '     gh secret set CLOUDFLARE_API_TOKEN     # jeton limité : droits à donner dans README.md',
+    '   Chaque fusion sur main construit alors le site, met la base à niveau, puis déploie.',
+    `   Tant que la base D1 n'est pas créée (database_id à zéro dans wrangler.jsonc), le déploiement automatique ne fait rien.`,
+  ]
+}

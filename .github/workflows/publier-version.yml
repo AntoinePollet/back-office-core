@@ -1,0 +1,27 @@
+# Publier la version : quand une étiquette vX.Y.Z arrive sur GitHub (git push --follow-tags après `pnpm release`),
+# crée la « release » GitHub correspondante avec les notes de CHANGELOG.md.
+# C'est cette release qui prévient les sites : demande de fusion automatique (Renovate) et avis dans le back-office.
+name: Publier la version
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Notes de la version
+        run: node scripts/release.mjs notes "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "Version ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
