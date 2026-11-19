@@ -22,6 +22,14 @@ export function useCmsPreview() {
   return computed(() => 'preview' in route.query)
 }
 
+/**
+ * Clé explicite des lectures du site. Sans elle, Nuxt déduit la clé de l'emplacement de l'appel dans le code,
+ * mais ne le fait pas pour un layer installé dans node_modules (core installé depuis git) : le serveur et le
+ * navigateur calculaient alors des clés différentes, les contenus étaient relus par le navigateur et la page
+ * ne correspondait plus au rendu du serveur. La clé dépend seulement de ce qui est lu.
+ */
+const cmsKey = (kind: string, target: string, query: Record<string, unknown>) => `cms:${kind}:${target}:${JSON.stringify(query)}`
+
 function readOptions(options: ReadOptions) {
   const preview = previewParam(useRoute().query)
   if (preview === null) return { query: options }
@@ -57,7 +65,8 @@ function whereQuery(where: Record<string, unknown> | undefined) {
 export function useCollection<K extends Key<Collections>>(type: K, options: ListOptions<K> = {}) {
   const { where, ...rest } = options
   const base = readOptions(rest)
-  return useFetch<Collections[K][]>(`/api/content/${type}`, { ...base, query: computed(() => ({ ...base.query, ...whereQuery(toValue(where)) })) })
+  const query = computed(() => ({ ...base.query, ...whereQuery(toValue(where)) }))
+  return useFetch<Collections[K][]>(`/api/content/${type}`, { ...base, query, key: computed(() => cmsKey('liste', type, query.value)) })
 }
 
 /**
@@ -74,10 +83,8 @@ export function useCollectionPage<K extends Key<Collections>>(
 ) {
   const { where, page, limit, ...rest } = options
   const base = readOptions(rest)
-  return useFetch<CmsPage<Collections[K]>>(`/api/content/${type}`, {
-    ...base,
-    query: computed(() => ({ ...base.query, ...whereQuery(toValue(where)), limit, page: Math.max(1, Math.floor(Number(toValue(page)) || 1)) })),
-  })
+  const query = computed(() => ({ ...base.query, ...whereQuery(toValue(where)), limit, page: Math.max(1, Math.floor(Number(toValue(page)) || 1)) }))
+  return useFetch<CmsPage<Collections[K]>>(`/api/content/${type}`, { ...base, query, key: computed(() => cmsKey('page', type, query.value)) })
 }
 
 /**
@@ -88,7 +95,8 @@ export async function useEntry<K extends Key<Collections>>(type: K, slug: MaybeR
   // Après une attente, Nuxt ne sait plus dans quelle page on se trouve : tout ce qui en dépend est lu avant.
   const nuxtApp = useNuxtApp()
   const preview = previewParam(useRoute().query)
-  const result = await useFetch<Collections[K]>(() => `/api/content/${type}/${encodeURIComponent(toValue(slug))}`, readOptions(options))
+  const read = readOptions(options)
+  const result = await useFetch<Collections[K]>(() => `/api/content/${type}/${encodeURIComponent(toValue(slug))}`, { ...read, key: computed(() => cmsKey('contenu', `${type}/${toValue(slug)}`, read.query)) })
   const moved = (result.data.value as { _redirect?: string } | null)?._redirect
   if (moved) await nuxtApp.runWithContext(() => navigateTo(moved + (preview ? `?preview=${encodeURIComponent(preview)}` : ''), { redirectCode: 301 }))
   return result
@@ -96,7 +104,8 @@ export async function useEntry<K extends Key<Collections>>(type: K, slug: MaybeR
 
 /** Une page unique (accueil, réglages…). `null` tant qu'elle n'est pas publiée. */
 export function useSingleton<K extends Key<Singletons>>(key: K, options: ReadOptions = {}) {
-  return useFetch<Singletons[K] | null>(`/api/content/${key}`, readOptions(options))
+  const read = readOptions(options)
+  return useFetch<Singletons[K] | null>(`/api/content/${key}`, { ...read, key: cmsKey('page-unique', key, read.query) })
 }
 
 type SeoEntry = {
