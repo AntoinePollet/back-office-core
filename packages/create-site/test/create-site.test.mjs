@@ -9,7 +9,7 @@ import {
   StepError, findJson, manualCommands, parseD1CreateOutput, parseD1List, parseDeployUrl, parseR2List, parseWhoami, plan,
   runCloudflare, saysWorkerMissing,
 } from '../src/cloudflare.mjs'
-import { coreSpec, generate, setDatabaseId, siteTs } from '../src/template.mjs'
+import { AUTOMATION_FILES, automationSteps, coreSpec, generate, setDatabaseId, siteTs } from '../src/template.mjs'
 import { checkDefaultLocale, checkId, checkLocales, checkName, checkTargetDir, checkUrl, normalizeUrl, parseLocales, slugify } from '../src/validate.mjs'
 
 const ID = '1bbb60eb-1a21-4d4b-befa-d9ee17a44d7b'
@@ -92,6 +92,57 @@ test('projet généré : plus aucun marqueur, fichiers valides', () => {
   assert.ok(patched.includes(`"database_id": "${ID}"`))
   assert.ok(patched.includes('// Identifiant de la base'), 'les commentaires sont conservés')
   assert.equal(patched.replace(ID, '00000000-0000-0000-0000-000000000000'), wrangler)
+  rmSync(dir, { recursive: true })
+})
+
+test('projet généré : mises à jour et déploiement automatiques', () => {
+  const dir = join(temp(), 'atelier')
+  const files = generate(answers(dir, { coreRef: 'v0.5.0' }))
+  for (const file of AUTOMATION_FILES) assert.ok(files.includes(file), file)
+  const pkg = readFileSync(join(dir, 'package.json'), 'utf8')
+
+  // Renovate : la règle retrouve la dépendance vers le core telle que le modèle l'écrit, et seulement une version précise.
+  const renovate = JSON.parse(readFileSync(join(dir, 'renovate.json'), 'utf8'))
+  const [manager] = renovate.customManagers
+  assert.equal(manager.datasourceTemplate, 'github-tags')
+  assert.ok(manager.managerFilePatterns.some(p => new RegExp(p.slice(1, -1)).test('package.json')))
+  const match = spec => new RegExp(manager.matchStrings[0]).exec(pkg.replace(/"backoffice-core": "[^"]+"/, `"backoffice-core": "${spec}"`))?.groups
+  assert.deepEqual({ ...new RegExp(manager.matchStrings[0]).exec(pkg).groups }, { packageName: 'AntoinePollet/back-office-core', currentValue: 'v0.5.0' })
+  assert.equal(match('github:AntoinePollet/back-office-core#main&path:/packages/cms'), undefined, 'une branche n\'est pas une version à mettre à jour')
+  assert.equal(match('link:../back-office/packages/cms'), undefined)
+  // Fusion automatique pour les correctifs seulement ; les autres paquets ne sont pas touchés.
+  const auto = renovate.packageRules.filter(r => r.automerge)
+  assert.deepEqual(auto.map(r => r.matchUpdateTypes), [['patch']])
+  assert.ok(auto.every(r => r.matchDepNames?.includes('backoffice-core')))
+  assert.ok(renovate.packageRules.some(r => r.matchManagers?.includes('npm') && r.enabled === false))
+  assert.equal(renovate.separateMinorPatch, true, 'sans ce réglage, un correctif et une version mineure sortis ensemble ne font qu\'une demande')
+
+  // Vérifications : installation stricte, types, construction ; aucun secret.
+  const verify = readFileSync(join(dir, '.github/workflows/verifier.yml'), 'utf8')
+  for (const part of ['pull_request:', 'pnpm install --frozen-lockfile', 'nuxt typecheck', 'nuxt build']) assert.ok(verify.includes(part), part)
+  assert.ok(!verify.includes('secrets.'), 'les vérifications ne lisent aucun secret')
+
+  // Déploiement : sur main, construction puis migrations puis déploiement, dans cet ordre.
+  const deploy = readFileSync(join(dir, '.github/workflows/deployer.yml'), 'utf8')
+  const order = ['branches: [main]', 'pnpm install --frozen-lockfile', 'nuxt build', 'command: d1 migrations apply DB --remote', 'command: deploy']
+  const positions = order.map(part => deploy.indexOf(part))
+  assert.ok(positions.every(p => p >= 0), `étape manquante : ${order[positions.findIndex(p => p < 0)]}`)
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'les migrations passent avant le déploiement')
+  assert.ok(deploy.includes('cancel-in-progress: false'), 'un déploiement en cours ne doit pas être interrompu')
+  assert.ok(deploy.includes('if: failure()') && deploy.includes('gh issue create') && deploy.includes('issues: write'), 'un échec doit être signalé par un ticket')
+  for (const secret of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']) assert.ok(deploy.includes(`secrets.${secret}`), secret)
+  // Le garde-fou « base pas encore créée » lit la ligne que le modèle écrit, et cesse de valoir une fois l'identifiant inscrit.
+  const guard = new RegExp(/grep -q '([^']+)' wrangler\.jsonc/.exec(deploy)[1])
+  assert.ok(guard.test(readFileSync(join(dir, 'wrangler.jsonc'), 'utf8')))
+  setDatabaseId(dir, ID)
+  assert.ok(!guard.test(readFileSync(join(dir, 'wrangler.jsonc'), 'utf8')))
+
+  // Le README et le récapitulatif disent ce qui reste à faire à la main.
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8')
+  for (const part of ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'github.com/apps/renovate', 'Revenir en arrière']) assert.ok(readme.includes(part), part)
+  const steps = automationSteps(answers(dir)).join('\n')
+  for (const part of ['github.com/apps/renovate', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'pnpm-lock.yaml']) assert.ok(steps.includes(part), part)
+  assert.match(automationSteps(answers(dir, { core: 'local', corePath: '/x/cms' })).join(' '), /Non disponibles avec un lien local/)
   rmSync(dir, { recursive: true })
 })
 

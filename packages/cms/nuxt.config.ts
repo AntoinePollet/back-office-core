@@ -39,6 +39,10 @@ export default defineNuxtConfig({
     cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */
     turnstileApiUrl: 'https://challenges.cloudflare.com/turnstile/v0',
+    /** Avis de nouvelle version du core, pour les administrateurs. Pour le désactiver : false ici, ou NUXT_CMS_UPDATE_CHECK=false. */
+    cmsUpdateCheck: true,
+    /** Adresse interrogée (une fois par jour au plus) pour connaître la dernière version du core. Ne se change que pour les tests : NUXT_CMS_UPDATE_URL. */
+    cmsUpdateUrl: 'https://api.github.com/repos/AntoinePollet/back-office-core/releases/latest',
   },
 
   nitro: {

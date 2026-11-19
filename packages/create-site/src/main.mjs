@@ -5,7 +5,7 @@ import * as p from '@clack/prompts'
 import { CORE_REPO, CORE_SUBDIR, HELP, UsageError, readArgs } from './args.mjs'
 import { StepError, manualCommands, runCloudflare } from './cloudflare.mjs'
 import { run, shellLine } from './run.mjs'
-import { coreSpec, generate, defaultCoreRef } from './template.mjs'
+import { automationSteps, coreSpec, generate, defaultCoreRef } from './template.mjs'
 import {
   checkCorePath, checkDefaultLocale, checkGitRef, checkId, checkLocales, checkName, checkTargetDir, checkUrl,
   normalizeUrl, parseLocales, slugify,
@@ -333,6 +333,7 @@ export async function main(argv) {
   else {
     sections.push(`En ligne :\n${bullet([deployed.url ?? 'adresse affichée par wrangler ci-dessus', 'Mises en ligne suivantes : pnpm run deploy'])}`)
   }
+  sections.push(`Mises à jour du core et mises en ligne automatiques (à faire une fois, à la main) :\n${bullet(automationSteps(answers))}`)
   const adminUrl = deployed?.url ? `${deployed.url}/admin` : '/admin'
   sections.push(
     `Premier compte administrateur :\n${bullet([

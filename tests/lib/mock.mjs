@@ -13,6 +13,8 @@ import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudfla
  * - GET /_calls → les appels reçus (pour déboguer à la main)
  * - Stripe, sous /stripe : POST /stripe/v1/checkout/sessions → une session (cs_test_<n>) ; GET /stripe/v1/checkout/sessions →
  *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement »
+ * - GitHub (avis de nouvelle version) : GET /github/releases/latest → la dernière version publiée du core ;
+ *   POST /github/_regler { tag, status, delay } change la suite des réponses (version, panne, lenteur en ms)
  */
 export async function startMock(port) {
   const calls = []
@@ -27,6 +29,7 @@ export async function startMock(port) {
       catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
       calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, body })
       if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
+      if (req.url.startsWith('/github/')) return github(req, res, body)
       if (req.url === '/turnstile/v0/api.js') {
         res.setHeader('content-type', 'text/javascript')
         return res.end(TURNSTILE_SCRIPT)
@@ -61,6 +64,18 @@ export async function startMock(port) {
     }
     res.statusCode = 404
     res.end('{"error":{"message":"Unrecognized request URL"}}')
+  }
+  // GitHub : la dernière version publiée du core, réglable par la suite (voir 21-mises-a-jour).
+  const release = { tag: 'v0.0.1', status: 200, delay: 0 }
+  function github(req, res, body) {
+    if (req.url === '/github/_regler') { Object.assign(release, body); return res.end('{}') }
+    // Comme le vrai GitHub : pas de réponse sans en-tête User-Agent.
+    if (!req.headers['user-agent']) { res.statusCode = 403; return res.end('{"message":"Request forbidden by administrative rules"}') }
+    setTimeout(() => {
+      res.statusCode = release.status
+      if (release.status !== 200) return res.end('{"message":"API rate limit exceeded"}')
+      res.end(JSON.stringify({ tag_name: release.tag, html_url: `https://github.com/exemple/core/releases/tag/${release.tag}`, draft: false, prerelease: false, body: 'Notes de version' }))
+    }, release.delay)
   }
   await new Promise((resolve, reject) => {
     server.once('error', e => reject(e.code === 'EADDRINUSE' ? new Error(`Le port ${port} du faux service est déjà utilisé (E2E_MOCK_PORT pour en changer).`) : e))

@@ -59,6 +59,7 @@ Exemple : `E2E_PORT=3200 E2E_HEADLESS=0 pnpm test:e2e contenus`.
 | `15-audience-antirobots` | mesure d'audience (Cloudflare Web Analytics joué par le faux service) : réglages et vérification, balise sur le site mais pas dans le back-office ni l'aperçu, purge du cache, écran « Audience » et ses états, droits ; anti-robots (Turnstile) : vérification des clés, formulaire refusé sans jeton ou avec un jeton refusé, accepté avec un jeton valide, expiration, module non réglé |
 | `16-stripe` | paiement Stripe (joué par le faux service) : réglages et vérification de la clé, bouton du site, prix relu dans la version publiée, refus (brouillon, sans prix, hors vente, quantité), webhook signé, mal signé ou trop vieux, événement reçu deux fois, paiement différé, remboursement, workflow « paiement reçu », écran Paiements, droits, limite d'appels |
 | `17-dossiers` | dossiers de la médiathèque : création (imbriqués, nom déjà pris, limites), envoi dans le dossier ouvert, nombre de fichiers, déplacement par glisser-déposer (sur un dossier, sur le fil d'Ariane) et par « Déplacer vers… », renommage, dossier jamais rangé dans lui-même, suppression d'un dossier vide ou non vide (le contenu remonte), recherche dans tous les dossiers, fenêtre de choix d'une image et galerie (dernier dossier retenu, envoi dans le dossier affiché), adresse publique inchangée et toujours affichée par le site, largeur de téléphone, droits (rédactrice refusée par le serveur), import dans des dossiers puis relance sans doublon |
+| `21-mises-a-jour`, `21b-mises-a-jour-desactivees` | avis de nouvelle version en bas du menu (GitHub joué par le faux service) : affiché à l'administrateur seulement, lien vers les notes, une interrogation par jour au plus, GitHub en panne ou lent sans effet, site à jour, avis désactivé (`NUXT_CMS_UPDATE_CHECK=false`) |
 
 ## Ajouter une suite
 
@@ -93,6 +94,7 @@ export default async function (t) {
   variables d'environnement au serveur (voir `03-workflows`). Le faux Cloudflare (`lib/mock-cloudflare.mjs`) répond aux
   statistiques (`NUXT_CLOUDFLARE_API_URL`), à Siteverify (`NUXT_TURNSTILE_API_URL`) et sert un faux script Turnstile
   (`NUXT_PUBLIC_TURNSTILE_SCRIPT_URL`) : aucun appel ne part vers le vrai Cloudflare.
+  Le faux GitHub (`NUXT_CMS_UPDATE_URL`, `POST /github/_regler` pour changer la version annoncée) joue la dernière version du core.
 
 Chaque suite part d'une base vide : elle crée elle-même ce dont elle a besoin et ne dépend d'aucune autre.
 

@@ -11,6 +11,7 @@ Site vitrine avec son back-office. Le projet étend `backoffice-core` : le core 
 | `app/app.config.ts` | Nom du site affiché dans les pages |
 | `wrangler.jsonc` | Ressources Cloudflare : Worker `__ID__`, base D1 `__ID__`, bucket R2 `__BUCKET__` |
 | `.npmrc` | Réglage de pnpm indispensable avec la dépendance git vers le core (voir le commentaire du fichier) |
+| `renovate.json`, `.github/workflows/` | Mises à jour du core et mises en ligne automatiques (voir « Mettre à jour le core ») |
 
 ## Lancer en local
 
@@ -150,6 +151,8 @@ pnpm run deploy
 ```
 
 La commande construit le site, applique les migrations manquantes à la base en ligne, puis déploie.
+Une fois les secrets du déploiement posés sur GitHub (voir « Mettre à jour le core »), c'est inutile : chaque fusion
+sur `main` fait la même chose toute seule.
 Attention : `pnpm deploy` (sans `run`) est une autre commande, propre à pnpm.
 
 ### Nom de domaine
@@ -395,14 +398,106 @@ Le core n'est pas publié sur npm. Ce projet le référence ainsi dans `package.
 "backoffice-core": "__CORE_SPEC__"
 ```
 
-Après une mise à jour, toujours dans cet ordre :
+La version installée est affichée en bas du menu du back-office. Un administrateur y voit aussi, quand il y en a une,
+« la x.y.z est disponible » avec un lien vers les notes de version (le serveur pose la question à GitHub une fois par
+jour au plus ; pour retirer cet avis : `runtimeConfig: { cmsUpdateCheck: false }` dans `nuxt.config.ts`).
 
-```sh
-pnpm db:migrate     # nouvelles tables en local, s'il y en a
-pnpm typecheck
-pnpm dev            # vérifier le site et le back-office
-pnpm run deploy     # applique aussi les migrations en ligne
-```
+### Ce qui est automatique
+
+Avec la dépendance git et les trois fichiers fournis (`renovate.json`, `.github/workflows/verifier.yml`,
+`.github/workflows/deployer.yml`), une fois les réglages ci-dessous faits :
+
+1. **Une demande de fusion s'ouvre** dans ce dépôt quand une version du core sort : « Mise à jour : backoffice-core
+   v0.5.0 → v0.5.1 », avec les notes de la version. Renovate passe toutes les quelques heures. Il ne touche qu'au
+   core : les autres dépendances restent sous votre main.
+2. **Le site est vérifié** sur cette demande, comme sur toutes les autres : installation stricte
+   (`pnpm install --frozen-lockfile`), migrations sur une base vide, types, construction.
+3. **Un correctif (`x.y.Z`) est fusionné tout seul** si les vérifications passent. Une version mineure ou majeure
+   attend votre relecture : lisez la rubrique « À faire dans votre site » de ses notes, puis fusionnez.
+4. **Chaque fusion sur `main` met le site en ligne** : construction, migrations de la base en ligne, puis déploiement.
+
+### À faire une fois, à la main
+
+1. Pousser le projet sur GitHub (branche `main`), **avec `pnpm-lock.yaml`**.
+2. Autoriser Renovate sur le dépôt : <https://github.com/apps/renovate> → *Configure* → ajouter ce dépôt (rien à faire
+   si l'application est déjà autorisée sur tous vos dépôts). `renovate.json` étant déjà là, il n'y a pas d'autre
+   réglage. Tant que le dépôt du core est privé, Renovate doit aussi être autorisé sur lui pour y lire les versions.
+3. Poser deux secrets : dépôt GitHub → *Settings → Secrets and variables → Actions → New repository secret*
+   (ou `gh secret set <NOM>`).
+
+   | Secret | Valeur |
+   | --- | --- |
+   | `CLOUDFLARE_ACCOUNT_ID` | Identifiant du compte Cloudflare qui héberge le site (tableau de bord, menu « ⋯ » du compte → « Copier l'ID du compte ») |
+   | `CLOUDFLARE_API_TOKEN` | Un jeton d'API limité à ce compte, créé pour ce site |
+
+   Le jeton : de préférence un **jeton du compte** (*Gérer le compte → Jetons d'API du compte*), qui ne dépend pas d'une
+   personne ; à défaut un jeton personnel (*Mon profil → Jetons d'API*). Droits, limités à ce seul compte :
+
+   - *Compte → Workers Scripts → Modifier* : déployer le Worker ;
+   - *Compte → D1 → Modifier* : appliquer les migrations ;
+   - *Compte → Paramètres du compte → Lecture* ;
+   - *Zone → Workers Routes → Modifier*, seulement si `wrangler.jsonc` déclare le nom de domaine (`routes`).
+
+   Le modèle de jeton « Modifier Cloudflare Workers » proposé par Cloudflare ne contient **pas** D1 : sans ce droit,
+   l'étape des migrations échoue. Si un déploiement est refusé pour une question de droits, partir de ce modèle et y
+   ajouter *D1 → Modifier*.
+
+Le secret `NUXT_AUTH_SECRET` et les réglages faits dans le back-office restent chez Cloudflare : le déploiement
+automatique ne les touche pas. Tant que la base n'est pas créée (`database_id` à zéro dans `wrangler.jsonc`), le flux
+de déploiement ne fait rien ; une fois la base créée, il **échoue** tant que les deux secrets manquent, pour qu'une
+fusion non déployée ne passe pas inaperçue.
+
+### Ce qui reste manuel
+
+- La première mise en ligne (ci-dessus, « Mettre en ligne »).
+- Relire et fusionner les versions mineures et majeures, et faire ce que leurs notes demandent dans le site.
+- En local, après une mise à jour : `git pull`, `pnpm install`, `pnpm db:migrate`.
+- Mettre à jour les autres dépendances (Nuxt, Tailwind…), quand vous le décidez.
+- Mettre à jour sans attendre Renovate : remplacer le numéro dans `package.json`
+  (`…#v0.5.0&path:/packages/cms` → `…#v0.5.1&path:/packages/cms`), `pnpm install`, vérifier, pousser.
+
+### Si une mise en ligne échoue
+
+Le flux « Déployer » apparaît en rouge dans l'onglet *Actions* et **ouvre un ticket** (« issue ») « La mise en ligne a
+échoué » dans ce dépôt : GitHub prévient par e-mail les personnes qui suivent le dépôt (son propriétaire, par défaut).
+Tant que le site n'est pas à jour, son back-office continue aussi d'afficher « la x.y.z est disponible ».
+
+| Étape en échec | État du site | Que faire |
+| --- | --- | --- |
+| Installation ou construction | Inchangé : ancien code, ancienne base | Corriger, pousser |
+| Migrations | Ancien code. La migration en échec est annulée par Cloudflare ; celles qui la précédaient dans la même mise à jour restent appliquées | Lire l'erreur dans le journal du flux, corriger, puis relancer le flux (*Re-run jobs*) |
+| Déploiement | Ancien code sur une base déjà à niveau | Relancer le flux |
+
+Le nouveau code n'est jamais en ligne avant sa base. L'inverse (ancien code sur une base plus récente) ne dure que le
+temps de relancer le flux, et les migrations du core sont faites pour que l'ancien code continue de marcher : elles
+ajoutent des tables et des colonnes, elles n'en retirent pas.
+
+### Revenir en arrière
+
+- **Tout de suite** : `pnpm exec wrangler rollback` (ou tableau de bord Cloudflare → le Worker → *Déploiements* →
+  *Rollback*) remet en ligne le code précédent. La base n'est pas modifiée.
+- **Durablement** : sur GitHub, ouvrir la demande de fusion de la mise à jour et cliquer *Revert*, puis fusionner : le
+  site est redéployé avec l'ancienne version du core. Sinon la prochaine mise en ligne ramènerait la nouvelle.
+- **Refuser une version** : fermer sa demande de fusion sans la fusionner. Renovate ne la reproposera pas ; il
+  proposera la suivante.
+- **La base** : une migration appliquée n'est pas défaite par un retour en arrière du code. En dernier recours,
+  Cloudflare garde l'état de la base minute par minute (7 jours sur l'offre gratuite, 30 sur l'offre payante) :
+  `pnpm exec wrangler d1 time-travel restore __ID__ --timestamp=<date>`. Attention : tout ce qui a été saisi dans le
+  back-office depuis cette date est perdu.
+
+### Autre voie pour le déploiement : Workers Builds
+
+Cloudflare peut construire et déployer lui-même à chaque fusion, sans jeton dans GitHub : tableau de bord → le Worker →
+*Réglages → Builds → Connecter* (le nom du Worker doit être celui de `wrangler.jsonc`). Régler alors :
+
+- commande de construction : `pnpm exec nuxt build` ;
+- commande de déploiement : `pnpm exec wrangler d1 migrations apply DB --remote && pnpm exec wrangler deploy` ;
+- jeton d'API : un jeton **personnel** auquel on a ajouté *D1 → Modifier* (le jeton que Cloudflare crée tout seul n'a
+  pas ce droit, et les jetons de compte ne sont pas acceptés ici).
+
+Puis **supprimer `.github/workflows/deployer.yml`**, pour ne pas déployer deux fois. Cette voie n'est pas celle du
+modèle : elle demande plus de clics par site, lie le déploiement au compte d'une personne, et un échec n'est signalé
+que sur GitHub (pastille sur le commit), pas par e-mail.
 
 ### Dépendance git
 
@@ -411,20 +506,11 @@ pnpm run deploy     # applique aussi les migrations en ligne
 ```
 
 La partie après `#` est le numéro de version du core (une étiquette git, par exemple `v0.1.0`) ; `path:` désigne le
-dossier du core dans le dépôt. Le site reste sur cette version tant qu'on ne change pas ce numéro. La version installée
-est affichée en bas du menu du back-office.
+dossier du core dans le dépôt. Le site reste sur cette version tant que ce numéro ne change pas. Les versions et
+leurs notes sont sur la page « Releases » du dépôt du core.
 
-Pour passer à une version plus récente, remplacer le numéro puis installer :
-
-```sh
-# dans package.json : …#v0.1.0&path:/packages/cms  →  …#v0.2.0&path:/packages/cms
-pnpm install
-```
-
-Les versions disponibles sont les étiquettes du dépôt du core (`git ls-remote --tags` ou la page « Tags » sur GitHub).
 On peut aussi suivre une branche (`#main&path:/packages/cms`, mise à jour par `pnpm update backoffice-core`), mais le
-site change alors à chaque mise à jour des dépendances : à réserver aux essais.
-Le dépôt étant privé, la machine doit y avoir accès (clé SSH ou identifiants git).
+site change alors à chaque mise à jour des dépendances, et Renovate ne propose plus rien : à réserver aux essais.
 
 ### Lien local
 
@@ -432,10 +518,11 @@ Le dépôt étant privé, la machine doit y avoir accès (clé SSH ou identifian
 "backoffice-core": "link:../back-office/packages/cms"
 ```
 
-Le projet utilise directement le dossier du core présent sur la machine (chemin relatif à ce projet) : pratique tant que
-le dépôt du core n'est pas poussé, ou pour corriger le core et voir le résultat tout de suite. Les dépendances du core
-doivent être installées dans son propre dépôt (`pnpm install` là-bas). Il n'y a rien à mettre à jour : le site suit
-l'état du dossier, y compris au moment du déploiement.
+Le projet utilise directement le dossier du core présent sur la machine (chemin relatif à ce projet) : pratique pour
+corriger le core et voir le résultat tout de suite. Les dépendances du core doivent être installées dans son propre
+dépôt (`pnpm install` là-bas). Il n'y a rien à mettre à jour : le site suit l'état du dossier, y compris au moment du
+déploiement. Les vérifications et le déploiement automatiques ne fonctionnent pas avec un lien local (GitHub n'a pas
+ce dossier) : la mise en ligne se fait alors par `pnpm run deploy`.
 
 ### Passer de l'un à l'autre
 

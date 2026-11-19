@@ -1,0 +1,87 @@
+# Mise en ligne à chaque fusion sur main : construction, migrations de la base, puis déploiement.
+#
+# L'ordre compte : la base est mise à niveau AVANT le nouveau code. Si une étape échoue, les suivantes ne sont pas
+# lancées, le site en ligne garde l'ancien code, et un ticket (« issue ») est ouvert dans ce dépôt pour le signaler.
+# Voir « Mettre à jour le core » dans README.md : secrets à poser, retour en arrière.
+#
+# Secrets du dépôt (Settings → Secrets and variables → Actions) : CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
+name: Déployer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Pour ouvrir un ticket dans ce dépôt quand une mise en ligne échoue.
+  issues: write
+
+# Un seul déploiement à la fois ; un déploiement en cours n'est jamais interrompu (il pourrait être au milieu des migrations).
+concurrency:
+  group: deployer
+  cancel-in-progress: false
+
+jobs:
+  deployer:
+    name: Construction, migrations, déploiement
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Le site peut-il être déployé ?
+        id: site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if grep -q '"database_id": *"00000000-0000-0000-0000-000000000000"' wrangler.jsonc; then
+            echo "::notice::La base D1 n'est pas encore créée (database_id à zéro dans wrangler.jsonc) : rien à déployer."
+            echo "pret=non" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Secrets CLOUDFLARE_API_TOKEN et CLOUDFLARE_ACCOUNT_ID absents : le site n'a PAS été déployé. Voir « Mettre à jour le core » dans README.md."
+            exit 1
+          fi
+          echo "pret=oui" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        if: steps.site.outputs.pret == 'oui'
+      - uses: actions/setup-node@v4
+        if: steps.site.outputs.pret == 'oui'
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Installation
+        if: steps.site.outputs.pret == 'oui'
+        run: pnpm install --frozen-lockfile
+      - name: Construction
+        if: steps.site.outputs.pret == 'oui'
+        run: pnpm exec nuxt build
+      # Une migration en échec est annulée par D1 ; celles qui la précèdent restent appliquées. Le déploiement n'a pas lieu.
+      - name: Migrations de la base en ligne
+        if: steps.site.outputs.pret == 'oui'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: d1 migrations apply DB --remote
+      - name: Déploiement
+        if: steps.site.outputs.pret == 'oui'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+      # Une fusion faite par Renovate n'envoie d'e-mail à personne quand le flux échoue : le ticket, lui, prévient
+      # les personnes qui suivent le dépôt.
+      - name: Signaler l'échec
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "La mise en ligne a échoué ($(date -u +%F))" \
+            --body "Le flux « Déployer » a échoué pour le commit $GITHUB_SHA : le site en ligne n'a pas reçu ce changement. Journal : $RUN_URL — que faire : README.md, « Si une mise en ligne échoue »." \
+            || echo "::warning::Impossible d'ouvrir un ticket pour signaler l'échec (les tickets sont-ils activés sur ce dépôt ?)."
