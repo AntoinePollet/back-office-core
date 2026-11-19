@@ -35,6 +35,8 @@ async function changePassword() {
       <div class="flex justify-between"><span class="text-base-content/60">Rôle</span><span>{{ user?.roleName ?? roleLabel(user?.role) }}</span></div>
     </div>
 
+    <CmsTwoFactor class="mb-4" />
+
     <form class="card bg-base-100 border border-base-300 p-5 space-y-3" @submit.prevent="changePassword">
       <div class="font-semibold">Changer de mot de passe</div>
       <div v-if="error" class="alert alert-error alert-soft text-sm">{{ error }}</div>

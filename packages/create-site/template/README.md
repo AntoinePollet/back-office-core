@@ -142,7 +142,8 @@ Puis ouvrir `/admin` sur l'adresse affichée par wrangler et **créer tout de su
 tant qu'aucun compte n'existe, n'importe quel visiteur peut le créer.
 
 Le secret `NUXT_AUTH_SECRET` reste enregistré chez Cloudflare : inutile de le fournir aux déploiements suivants.
-Le changer (`pnpm exec wrangler secret put NUXT_AUTH_SECRET`) déconnecte tous les utilisateurs.
+Le changer (`pnpm exec wrangler secret put NUXT_AUTH_SECRET`) déconnecte tous les utilisateurs, rend illisibles les
+clés d'API des modules et **invalide la double authentification de tous les comptes** (voir « Double authentification »).
 
 ### Les fois suivantes
 
@@ -485,6 +486,42 @@ l'engagement pris avec le client, régler chez Cloudflare :
 
 Offre Cloudflare : la sauvegarde demande l'offre payante de Workers dès que le site a un peu de contenu
 (l'offre gratuite limite chaque exécution à 10 ms de calcul).
+
+## Double authentification
+
+En plus du mot de passe, un code à 6 chiffres donné par une application d'authentification (Google Authenticator,
+Microsoft Authenticator, 2FAS, Aegis… : norme TOTP) est demandé à la connexion. Rien à installer ni à régler côté site.
+
+- **Activer** (chacun, pour son compte) : « Mon compte » → « Activer la double authentification » → mot de passe →
+  scanner le code QR (ou recopier la clé) → saisir un premier code. Dix **codes de secours** sont alors affichés une
+  seule fois : les ranger ailleurs que sur le téléphone. Chacun remplace une fois le code de l'application ; on peut en
+  créer de nouveaux (les anciens ne valent alors plus rien). À la connexion, « Se souvenir de cet appareil pendant
+  30 jours » évite de ressaisir le code sur son propre ordinateur ; le mot de passe reste demandé.
+- **Exiger** (administrateur) : « Utilisateurs » → « Double authentification » → obligatoire pour les administrateurs,
+  ou pour tous les comptes. Il faut d'abord l'avoir activée sur son propre compte. Les comptes concernés sont conduits
+  à l'activer à leur prochaine connexion et ne peuvent rien faire d'autre avant (le serveur refuse tout le reste).
+- **Dépanner un compte** (téléphone perdu, codes de secours égarés) : un administrateur ouvre « Utilisateurs » →
+  « Réinitialiser la double authentification » sur la ligne du compte. La personne se reconnecte avec son mot de passe
+  et la réactive. Vérifier d'abord que la demande vient bien d'elle (un appel, pas un simple e-mail).
+- « Mot de passe oublié » et « Nouveau mot de passe » changent le mot de passe, **pas** la double authentification :
+  le code reste demandé.
+
+### Procédure de secours : le dernier administrateur n'a plus ni téléphone ni codes
+
+Il n'existe volontairement aucun moyen de passer outre depuis le site. C'est au développeur, qui a accès au compte
+Cloudflare, de retirer la double authentification du compte directement dans la base (remplacer l'adresse, quatre fois) :
+
+```sh
+pnpm exec wrangler d1 execute DB --remote --command "DELETE FROM two_factor WHERE user_id IN (SELECT id FROM user WHERE email = 'vous@exemple.fr'); UPDATE user SET two_factor_enabled = 0 WHERE email = 'vous@exemple.fr'; DELETE FROM verification WHERE identifier LIKE 'trust-device-%' AND value IN (SELECT id FROM user WHERE email = 'vous@exemple.fr'); DELETE FROM cms_rate_limits WHERE key = 'login:email:vous@exemple.fr';"
+```
+
+L'adresse s'écrit en minuscules, telle qu'elle apparaît dans « Utilisateurs ». Le mot de passe n'est pas touché : la
+personne se connecte avec lui, puis réactive la double authentification (aussitôt si le site l'exige). Pour essayer la
+commande sur la base locale, remplacer `--remote` par `--local`.
+
+La même commande sert, compte par compte, après un changement de `NUXT_AUTH_SECRET` : les clés des applications sont
+chiffrées avec ce secret et les codes de secours hachés avec lui, ils ne sont donc plus vérifiables ensuite.
+Pour tous les comptes d'un coup : `DELETE FROM two_factor; UPDATE user SET two_factor_enabled = 0;`.
 
 ## Mettre à jour le core
 

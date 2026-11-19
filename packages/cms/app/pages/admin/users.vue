@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { UserPlus } from '@lucide/vue'
+import { ShieldCheck, UserPlus } from '@lucide/vue'
 import { type CustomRights, CMS_ROLES, ROLE_HELP, ROLE_LABELS } from '../../../shared/access'
+import { type TwoFactorPolicy, TWO_FACTOR_POLICIES, TWO_FACTOR_POLICY_LABELS, twoFactorRequired } from '../../../shared/two-factor'
 
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-admin'] })
 
 /** Rôle intégré ou identifiant d'un rôle personnalisé. */
 type Role = string
-type User = { id: string; name: string; email: string; role: Role; types: string[] | null; status: 'active' | 'invited' | 'expired'; createdAt: string }
+type User = { id: string; name: string; email: string; role: Role; types: string[] | null; status: 'active' | 'invited' | 'expired'; createdAt: string; /** Double authentification activée. */ twoFactor: boolean }
 
 const me = useCmsUser()
 const toast = useCmsToast()
@@ -111,6 +112,44 @@ async function remove(user: User) {
   await refresh()
 }
 
+// Double authentification : règle du site, et remise à zéro pour quelqu'un qui a perdu son téléphone.
+const policy = ref<TwoFactorPolicy>((await cmsApi<{ policy: TwoFactorPolicy }>('/api/cms/two-factor/policy')).policy)
+const protectedCount = computed(() => users.value.filter(u => u.twoFactor).length)
+/** Comptes actifs tenus d'activer la double authentification et qui ne l'ont pas encore fait. */
+const mustEnable = (u: User) => !u.twoFactor && twoFactorRequired(policy.value, u.role)
+async function setPolicy(next: TwoFactorPolicy) {
+  const previous = policy.value
+  const waiting = users.value.filter(u => u.status === 'active' && !u.twoFactor && twoFactorRequired(next, u.role)).length
+  if (next !== 'off' && waiting && !confirm(`${waiting} compte${waiting > 1 ? 's devront' : ' devra'} activer la double authentification à la prochaine connexion, avant de pouvoir faire quoi que ce soit d'autre. Continuer ?`)) {
+    policy.value = next
+    await nextTick()
+    policy.value = previous
+    return
+  }
+  try {
+    policy.value = (await cmsApi<{ policy: TwoFactorPolicy }>('/api/cms/two-factor/policy', { method: 'PUT', body: { policy: next } })).policy
+    toast.success(next === 'off' ? 'La double authentification est au choix de chacun' : 'Règle enregistrée')
+  }
+  catch (e) {
+    // Le menu déroulant revient à la règle en vigueur.
+    policy.value = next
+    await nextTick()
+    policy.value = previous
+    toast.error(cmsErrorMessage(e))
+  }
+}
+async function resetTwoFactor(user: User) {
+  if (!confirm(`Réinitialiser la double authentification de ${user.name} ? À faire si la personne a perdu son téléphone et ses codes de secours : assurez-vous que la demande vient bien d'elle. Elle se connectera avec son seul mot de passe et ses sessions en cours seront fermées.`)) return
+  try {
+    await cmsApi(`/api/cms/users/${user.id}/two-factor`, { method: 'DELETE' })
+    toast.success(`Double authentification de ${user.name} réinitialisée`)
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+  await refresh()
+}
+
 const copy = () => navigator.clipboard.writeText(link.value!.url).then(() => toast.success('Lien copié'), () => toast.error('Copie impossible : sélectionnez le lien à la main.'))
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 </script>
@@ -120,7 +159,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div>
         <h1 class="text-2xl font-bold">Utilisateurs</h1>
-        <p class="text-sm text-base-content/60">{{ users.length }} compte{{ users.length > 1 ? 's' : '' }}</p>
+        <p class="text-sm text-base-content/60">{{ users.length }} compte{{ users.length > 1 ? 's' : '' }}, dont {{ protectedCount }} avec la double authentification</p>
       </div>
       <NuxtLink to="/admin/roles" class="btn ml-auto">Gérer les rôles<span v-if="customRoles.length" class="badge badge-sm">{{ customRoles.length }}</span></NuxtLink>
       <button class="btn btn-primary" @click="openInvite"><UserPlus :size="18" />Inviter</button>
@@ -129,7 +168,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
     <div class="card bg-base-100 border border-base-300 overflow-x-auto">
       <table class="table">
         <thead>
-          <tr><th>Nom</th><th>Rôle</th><th>Contenus</th><th>État</th><th>Créé le</th><th /></tr>
+          <tr><th>Nom</th><th>Rôle</th><th>Contenus</th><th>État</th><th>Double authentification</th><th>Créé le</th><th /></tr>
         </thead>
         <tbody>
           <tr v-for="u in users" :key="u.id">
@@ -154,6 +193,17 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
               </button>
             </td>
             <td><span class="badge badge-sm badge-soft" :class="statusMeta[u.status].cls">{{ statusMeta[u.status].label }}</span></td>
+            <td data-two-factor-cell>
+              <span v-if="u.twoFactor" class="whitespace-nowrap">
+                <span class="badge badge-sm badge-soft badge-success"><ShieldCheck :size="12" />Activée</span>
+                <button
+                  v-if="u.id !== me?.id" class="btn btn-ghost btn-xs" :aria-label="`Réinitialiser la double authentification de ${u.name}`"
+                  title="Téléphone perdu : retirer la double authentification de ce compte" @click="resetTwoFactor(u)"
+                >Réinitialiser</button>
+              </span>
+              <span v-else-if="mustEnable(u)" class="badge badge-sm badge-soft badge-warning" title="Ce compte devra l'activer à sa prochaine connexion">À activer</span>
+              <span v-else class="text-sm text-base-content/50">Non activée</span>
+            </td>
             <td class="text-sm text-base-content/60 whitespace-nowrap">{{ formatDate(u.createdAt) }}</td>
             <td class="text-right whitespace-nowrap">
               <button class="btn btn-ghost btn-xs" @click="newLink(u)">{{ u.status === 'active' ? 'Nouveau mot de passe' : 'Nouveau lien' }}</button>
@@ -162,6 +212,22 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Règle du site sur la double authentification -->
+    <div class="card bg-base-100 border border-base-300 p-4 mt-4" data-two-factor-policy>
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div class="min-w-0 flex-1 basis-72">
+          <div class="font-semibold text-sm flex items-center gap-2"><ShieldCheck :size="16" />Double authentification</div>
+          <p class="text-sm text-base-content/60">
+            Un code donné par le téléphone est demandé en plus du mot de passe. Chacun peut l'activer dans « Mon compte » ;
+            vous pouvez la rendre obligatoire : les comptes concernés devront l'activer à leur prochaine connexion.
+          </p>
+        </div>
+        <select class="select select-sm w-full sm:w-80" :value="policy" aria-label="Règle de double authentification" @change="setPolicy(($event.target as HTMLSelectElement).value as TwoFactorPolicy)">
+          <option v-for="p in TWO_FACTOR_POLICIES" :key="p" :value="p">{{ TWO_FACTOR_POLICY_LABELS[p] }}</option>
+        </select>
+      </div>
     </div>
 
     <div class="grid sm:grid-cols-3 gap-3 mt-4 text-sm">

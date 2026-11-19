@@ -86,7 +86,7 @@ export async function findInvite(event: H3Event, token: string) {
   return user ?? null
 }
 
-/** Définit le mot de passe d'une personne, ferme ses sessions et annule ses liens en attente. */
+/** Définit le mot de passe d'une personne, ferme ses sessions et annule ses liens en attente. Ne touche pas à sa double authentification. */
 export async function setUserPassword(event: H3Event, userId: string, password: string) {
   const db = useDb(event)
   const { account, session, invites, user } = schema
@@ -101,6 +101,9 @@ export async function setUserPassword(event: H3Event, userId: string, password: 
     db.update(user).set({ emailVerified: true, updatedAt: now }).where(eq(user.id, userId)),
     db.delete(session).where(eq(session.userId, userId)),
     db.delete(invites).where(eq(invites.userId, userId)),
+    // Un nouveau mot de passe ne remplace pas le second facteur : la double authentification reste en place, et le code
+    // sera redemandé même sur un appareil « de confiance ».
+    forgetTrustedDevices(event, userId),
   ])
 }
 
