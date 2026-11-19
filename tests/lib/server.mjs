@@ -103,9 +103,30 @@ export async function startServer({ persistDir, env = {}, logFile }) {
   return server
 }
 
+/**
+ * Tous les descendants d'un processus. Le moteur local de Cloudflare (workerd), lancé par le serveur de
+ * développement, quitte son groupe de processus : arrêter le groupe ne suffit pas, il faut le viser lui aussi,
+ * sinon il reste en mémoire après chaque suite (des centaines au fil des lancements).
+ */
+function descendants(root) {
+  const r = spawnSync('ps', ['-Ao', 'pid=,ppid='], { encoding: 'utf8' })
+  const children = new Map()
+  for (const line of (r.stdout ?? '').split('\n')) {
+    const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+    if (pid && ppid) children.set(ppid, [...(children.get(ppid) ?? []), pid])
+  }
+  const out = []
+  const visit = (pid) => { for (const c of children.get(pid) ?? []) { out.push(c); visit(c) } }
+  visit(root)
+  return out
+}
+const killPid = (pid, signal) => { try { process.kill(pid, signal) } catch { /* déjà terminé */ } }
+
 async function stopServer(child, exited) {
   const pid = child.pid
   if (!pid || !started.has(pid)) return
+  // Relevés avant l'arrêt : une fois le serveur parti, ses descendants n'ont plus de parent connu.
+  const family = descendants(pid)
   signalGroup(pid, 'SIGTERM')
   for (let i = 0; i < 50 && groupAlive(pid); i++) await wait(100)
   if (groupAlive(pid)) {
@@ -113,6 +134,7 @@ async function stopServer(child, exited) {
     for (let i = 0; i < 30 && groupAlive(pid); i++) await wait(100)
   }
   if (!exited()) await new Promise(resolve => child.once('exit', resolve))
+  for (const p of family) killPid(p, 'SIGKILL')
   started.delete(pid)
   // Le port doit être rendu avant de lancer la suite suivante.
   for (let i = 0; i < 50 && await portBusy(config.port); i++) await wait(100)
@@ -120,7 +142,7 @@ async function stopServer(child, exited) {
 
 /** Dernier recours (interruption, erreur inattendue) : arrêt immédiat de tout ce que ce lanceur a démarré. */
 export function killStarted() {
-  for (const pid of started) signalGroup(pid, 'SIGKILL')
+  for (const pid of started) { for (const p of descendants(pid)) killPid(p, 'SIGKILL'); signalGroup(pid, 'SIGKILL') }
   started.clear()
 }
 
