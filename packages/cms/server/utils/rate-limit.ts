@@ -1,4 +1,4 @@
-import { inArray, lt, sql } from 'drizzle-orm'
+import { eq, inArray, lt, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 
 // ───────────── Compteurs génériques (table cms_rate_limits, clé libre) ─────────────
@@ -24,24 +24,27 @@ export async function assertRateLimit(event: H3Event, limits: RateLimit[], messa
   }
 }
 
-/** Ajoute une occurrence à chaque compteur. Un compteur repart de 1 quand sa fenêtre précédente est terminée. */
+/** Ajoute une occurrence à chaque compteur et renvoie leur nouvelle valeur. Un compteur repart de 1 quand sa fenêtre précédente est terminée. */
 export async function hitRateLimit(event: H3Event, keys: string[], windowMs: number) {
+  const counts = new Map<string, number>()
   const db = useDb(event)
   const { rateLimits } = schema
   const now = Date.now()
   const expired = sql`${rateLimits.resetAt} <= ${now}`
   for (const key of keys) {
     // Une seule requête, pour que deux occurrences simultanées soient comptées toutes les deux.
-    await db.insert(rateLimits).values({ key, count: 1, resetAt: new Date(now + windowMs) }).onConflictDoUpdate({
+    const [row] = await db.insert(rateLimits).values({ key, count: 1, resetAt: new Date(now + windowMs) }).onConflictDoUpdate({
       target: rateLimits.key,
       set: {
         count: sql`case when ${expired} then 1 else ${rateLimits.count} + 1 end`,
         resetAt: sql`case when ${expired} then ${now + windowMs} else ${rateLimits.resetAt} end`,
       },
-    })
+    }).returning({ count: rateLimits.count })
+    if (row) counts.set(key, row.count)
   }
   // Ménage des compteurs terminés depuis plus d'un jour.
   await db.delete(rateLimits).where(lt(rateLimits.resetAt, new Date(now - 86_400_000)))
+  return counts
 }
 
 export async function clearRateLimit(event: H3Event, keys: string[]) {
@@ -74,9 +77,24 @@ export async function assertLoginAllowed(event: H3Event, keys: LoginKeys) {
   )
 }
 
-/** Enregistre un échec de connexion. */
-export async function recordLoginFailure(event: H3Event, keys: LoginKeys) {
-  await hitRateLimit(event, loginList(keys), LOGIN_WINDOW_MS)
+/** Nombre d'échecs de suite, pour un même compte, à partir duquel le journal d'activité le signale (une seule ligne). */
+const FAILURES_NOTED = 3
+
+/**
+ * Enregistre un échec de connexion. Le journal d'activité n'en garde que les répétitions, avec retenue : une ligne au
+ * 3ᵉ échec de suite d'un compte existant, une quand le compte est bloqué, une quand une adresse IP est bloquée.
+ * L'adresse saisie n'est inscrite que si un compte la porte (on ne recopie pas ce que quelqu'un a tapé par erreur
+ * dans le champ e-mail) ; le mot de passe essayé n'est jamais lu ici.
+ */
+export async function recordLoginFailure(event: H3Event, keys: LoginKeys, email = '') {
+  const counts = await hitRateLimit(event, loginList(keys), LOGIN_WINDOW_MS)
+  const ip = clientIp(event)
+  const forEmail = keys.email ? counts.get(keys.email) : undefined
+  if (forEmail === FAILURES_NOTED || forEmail === MAX_FAILURES.email) {
+    const [account] = await useDb(event).select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.email, email))
+    if (account) logActivity(event, { action: forEmail === FAILURES_NOTED ? 'auth.failures' : 'auth.blocked', actor: null, details: { email, count: forEmail }, target: { kind: 'user', id: account.id }, ip })
+  }
+  if (counts.get(keys.ip) === MAX_FAILURES.ip) logActivity(event, { action: 'auth.blocked', actor: null, details: { count: MAX_FAILURES.ip }, ip })
 }
 
 /** Une connexion réussie efface le compteur du compte. Celui de l'adresse IP reste : il protège les autres comptes. */

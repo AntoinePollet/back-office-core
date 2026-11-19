@@ -1,4 +1,5 @@
 import { IMAGE_WIDTHS, RESIZABLE_TYPES, snapWidth } from '../../../shared/media'
+import { canSeeTrashItem } from '../../../shared/trash'
 
 type ImagesBinding = {
   input: (stream: ReadableStream) => {
@@ -15,12 +16,17 @@ type ImagesBinding = {
 export default defineEventHandler(async (event) => {
   const key = getRouterParam(event, 'key')
   const bucket = useBucket(event)
+  // Un fichier à la corbeille n'est plus servi au public. Seul l'écran « Corbeille » l'affiche encore (`?corbeille=1`),
+  // à une personne connectée qui a le droit de l'y voir, et sans mise en cache.
+  const trashed = key ? await trashedMedia(event, decodeURIComponent(key)) : false
+  if (trashed && !(getQuery(event).corbeille && await requireUser(event).then(user => canSeeTrashItem(user, { kind: 'media' }), () => false)))
+    throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
   const object = key ? await bucket.get(decodeURIComponent(key)) : null
   if (!object) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
 
   const type = object.httpMetadata?.contentType ?? 'application/octet-stream'
   const common = {
-    'cache-control': 'public, max-age=31536000, immutable',
+    'cache-control': trashed ? NO_CACHE : 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
   }
   const requested = Number(getQuery(event).w)
@@ -47,7 +53,7 @@ export default defineEventHandler(async (event) => {
         console.error('[cms] redimensionnement impossible, image d\'origine servie', error)
         const original = await bucket.get(decodeURIComponent(key!))
         if (!original) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
-        setResponseHeaders(event, { ...common, 'content-type': type, 'cache-control': 'public, max-age=300' })
+        setResponseHeaders(event, { ...common, 'content-type': type, 'cache-control': trashed ? NO_CACHE : 'public, max-age=300' })
         return original.body
       }
     }

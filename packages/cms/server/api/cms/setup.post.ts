@@ -17,5 +17,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: (error as Error).message || 'Création du compte impossible.' })
   }
   await db.update(schema.user).set({ role: 'admin' }).where(eq(schema.user.email, email.toLowerCase()))
+  logActivity(event, { action: 'user.setup', actor: { name, email: email.toLowerCase() } })
   return { ok: true }
 })

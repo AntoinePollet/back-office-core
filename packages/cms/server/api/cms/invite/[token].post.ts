@@ -9,5 +9,6 @@ export default defineEventHandler(async (event) => {
   // La personne vient de prouver qu'elle reçoit les e-mails du compte : les échecs de connexion comptés jusque-là
   // ne doivent pas l'empêcher de se connecter avec son nouveau mot de passe.
   await clearLoginFailures(event, loginKeys(event, user.email))
+  logActivity(event, { action: 'user.password_set', actor: user, target: { kind: 'user', id: user.id } })
   return { email: user.email }
 })

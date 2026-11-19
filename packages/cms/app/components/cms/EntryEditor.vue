@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ArrowLeft, Copy, Eye, EyeOff, History, Trash2, Send } from '@lucide/vue'
 import { applyDefaults, copyValues, isEmpty, partition, pick } from '../../../shared/content'
+import { TRASH_DAYS } from '../../../shared/trash'
 
 /**
  * Formulaire d'un contenu : élément de collection (/admin/<type>/<id> ou /new) ou page unique (/admin/<type>).
@@ -203,11 +204,11 @@ function unpublish() {
   return send({ unpublish: [...locales] }, 'Contenu retiré du site')
 }
 async function remove() {
-  if (!confirm('Supprimer définitivement ce contenu, dans toutes les langues ?')) return
+  if (!confirm(`Supprimer ce contenu, dans toutes les langues ? Il ira dans la corbeille, où il reste récupérable ${TRASH_DAYS} jours.`)) return
   try {
     cmsSiteUpdated(await cmsApi(`/api/cms/entries/${type}/${doc.value.id}`, { method: 'DELETE' }))
     dirty.value = false
-    toast.success('Contenu supprimé')
+    toast.success('Contenu mis à la corbeille')
     await navigateTo(`/admin/${type}`)
   }
   catch (e) {

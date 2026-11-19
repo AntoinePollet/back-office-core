@@ -12,5 +12,6 @@ export default defineEventHandler(async (event) => {
   if (refusal) throw createError({ statusCode: refusal.includes('introuvable') ? 404 : 409, message: refusal })
   const row = { id: crypto.randomUUID(), name: clean.name!, parentId, createdAt: new Date() }
   await useDb(event).insert(schema.mediaFolders).values(row)
+  logActivity(event, { action: 'folder.created', actor: user, details: { name: row.name }, target: { kind: 'folder', id: row.id } })
   return { id: row.id, name: row.name, parentId }
 })

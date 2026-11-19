@@ -19,5 +19,6 @@ export default defineEventHandler(async (event) => {
   const updates = (ids as string[]).map((id, i) => db.update(schema.entries).set({ position: i + 1 }).where(eq(schema.entries.id, id)))
   // D1 limite la taille d'un lot : on envoie par paquets.
   for (let i = 0; i < updates.length; i += 50) await db.batch(updates.slice(i, i + 50) as [any, ...any[]])
+  logActivity(event, { action: 'entry.reordered', actor: user, details: { typeLabel: def.label }, target: { kind: 'collection', type } })
   return { ok: true, purgeFailed: !(await purgeSiteCache(event)) }
 })

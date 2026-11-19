@@ -2,6 +2,7 @@
 import type { CmsMedia } from '../../composables/useCms'
 import { adminEntryPath } from '../../../shared/admin-paths'
 import { folderLabel } from '../../../shared/media-folders'
+import { TRASH_DAYS } from '../../../shared/trash'
 import { Folder, FolderInput, Images } from '@lucide/vue'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
@@ -51,14 +52,14 @@ async function remove() {
   if (!media) return
   const used = usage.value?.length ?? 0
   const question = used
-    ? `Ce fichier est utilisé par ${used} contenu${used > 1 ? 's' : ''}. Il disparaîtra de ces pages. Supprimer quand même ?`
-    : 'Supprimer définitivement ce fichier ?'
+    ? `Ce fichier est utilisé par ${used} contenu${used > 1 ? 's' : ''}. Il disparaîtra de ces pages et ira dans la corbeille, où il reste récupérable ${TRASH_DAYS} jours. Supprimer quand même ?`
+    : `Supprimer ce fichier ? Il ira dans la corbeille, où il reste récupérable ${TRASH_DAYS} jours.`
   if (!confirm(question)) return
   try {
     cmsSiteUpdated(await cmsApi(`/api/cms/media/${media.id}`, { method: 'DELETE', query: used ? { force: 1 } : {} }))
     items.value = (items.value ?? []).filter(m => m.id !== media.id)
     selected.value = null
-    toast.success('Fichier supprimé')
+    toast.success('Fichier mis à la corbeille')
   }
   catch (e) {
     toast.error(cmsErrorMessage(e))

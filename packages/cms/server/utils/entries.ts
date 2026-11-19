@@ -208,6 +208,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
     if (typeof body.id !== 'string' || !UUID.test(body.id)) throw createError({ statusCode: 400, message: 'id : un identifiant au format UUID est attendu (ou aucun : le back-office en choisit un).' })
     const [taken] = await db.select({ id: entries.id }).from(entries).where(eq(entries.id, body.id))
     if (taken) throw createError({ statusCode: 409, message: 'Un contenu porte déjà cet identifiant.' })
+    // Un contenu à la corbeille garde son identifiant : il doit pouvoir être restauré sans en écraser un autre.
+    if (await isInTrash(event, 'entry', body.id)) throw createError({ statusCode: 409, message: 'Un contenu supprimé porte cet identifiant : restaurez-le depuis la corbeille, ou supprimez-le définitivement.' })
   }
   const entryId = id ?? (strict && body.id ? body.id : crypto.randomUUID())
   const byLocale = new Map(rows.map(r => [r.locale, r]))
@@ -467,7 +469,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
   // Le site a changé si quelque chose a été publié, retiré, ou si une adresse en ligne a bougé.
   const purged = publish.length || moved.length || unpublish.some(l => byLocale.get(l)?.published) ? await purgeSiteCache(event) : null
 
-  const who = { id: user.id, email: user.email }
+  const who = { id: user.id, email: user.email, name: user.name }
   const mainDraft = upserts.find(u => u.locale === config.site.defaultLocale)?.draft ?? byLocale.get(config.site.defaultLocale)?.draft ?? upserts[0]?.draft
   const title = def.kind === 'collection' ? String(({ ...shared, ...mainDraft } as Values)[def.titleField] ?? '') || 'Sans titre' : def.label
   const urlFor = (locale: string) => {
@@ -478,7 +480,9 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
   const events: CmsEventInput[] = [{ name: existing ? 'entry.updated' : 'entry.created', type, id: entryId, title, user: who }]
   for (const locale of publish) events.push({ name: 'entry.published', type, id: entryId, title, locale, url: urlFor(locale), user: who })
   for (const locale of unpublish) if (byLocale.get(locale)?.published) events.push({ name: 'entry.unpublished', type, id: entryId, title, locale, user: who })
-  emitCmsEvents(event, events)
+  // Journal d'activité : rien si l'enregistrement n'a rien changé ; une restauration de version et une copie sont dites telles.
+  const touched = changed.length || publish.length || events.some(e => e.name === 'entry.unpublished')
+  emitCmsEvents(event, events, { activity: !touched ? 'unchanged' : origin === 'restore' ? 'revision' : origin === 'duplicate' ? 'duplicate' : undefined })
 
   const doc = (await loadDoc(event, type, entryId))!
   // `purgeFailed` n'est présent que si le site devait être mis à jour : vrai quand le cache n'a pas pu être vidé.

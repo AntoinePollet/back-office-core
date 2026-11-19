@@ -3,7 +3,7 @@ import { slugify } from '../../../../shared/content'
 
 /** Importe un fichier : il est stocké dans R2 et référencé dans la médiathèque, dans le dossier `folder` s'il est donné. */
 export default defineEventHandler(async (event) => {
-  await requireUser(event)
+  const user = await requireUser(event)
   const parts = await readMultipartFormData(event)
   const file = parts?.find(p => p.name === 'file')
   if (!file?.filename || !file.type) throw createError({ statusCode: 400, message: 'Aucun fichier reçu.' })
@@ -21,6 +21,9 @@ export default defineEventHandler(async (event) => {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(wanted)) throw createError({ statusCode: 400, message: 'id : un identifiant au format UUID est attendu.' })
     const [known] = await useDb(event).select().from(schema.media).where(eq(schema.media.id, wanted))
     if (known) return toAdminMedia(known)
+    // Le même fichier, supprimé depuis : il sort de la corbeille au lieu d'être envoyé une seconde fois sous la même clé.
+    const restored = await restoreTrashedMedia(event, user, wanted)
+    if (restored) return restored.media
   }
   // Dossier où ranger le fichier (le dossier affiché) : envoyer dans un dossier existant est permis à tous.
   const folderPart = parts?.find(p => p.name === 'folder')?.data.toString() || null
@@ -34,5 +37,6 @@ export default defineEventHandler(async (event) => {
   await useBucket(event).put(key, file.data, { httpMetadata: { contentType: file.type } })
   const row = { id, key, name: file.filename, mime: file.type, size: file.data.length, width: dimension('width'), height: dimension('height'), alt: {}, createdAt: new Date(), folderId: folderPart }
   await useDb(event).insert(schema.media).values(row)
+  logActivity(event, { action: 'media.uploaded', actor: user, details: { name: row.name }, target: { kind: 'media', id } })
   return toAdminMedia(row)
 })

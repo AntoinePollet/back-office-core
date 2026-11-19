@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ChartLine, CreditCard, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, CreditCard, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { adminEntryPath } from '../../shared/admin-paths'
+import { canOpenTrash } from '../../shared/trash'
 import '../assets/css/admin.css'
 
 const schema = await useCmsSchema()
@@ -35,6 +36,8 @@ const groups = computed(() => {
   // La médiathèque est une page du back-office, pas un contenu du fichier de configuration.
   if (!out.has('Site')) out.set('Site', [])
   out.get('Site')!.push({ key: 'media', label: 'Médiathèque', icon: Images, to: '/admin/media' })
+  // Corbeille : pour qui peut supprimer quelque chose (il n'y verra que cela).
+  if (canOpenTrash(user.value)) out.get('Site')!.push({ key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' })
   if (hasForms.value) out.get('Site')!.push({ key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value })
   // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
   if (schema.value.modules?.some(m => m.id === 'stripe') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' })
@@ -46,6 +49,7 @@ const groups = computed(() => {
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
     if (schema.value.modules?.length) out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
     out.get('Site')!.push({ key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' })
+    out.get('Site')!.push({ key: 'activity', label: 'Activité', icon: ScrollText, to: '/admin/activity' })
   }
   return [...out]
 })
