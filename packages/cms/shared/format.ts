@@ -292,7 +292,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []

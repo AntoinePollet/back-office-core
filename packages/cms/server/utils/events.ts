@@ -35,7 +35,7 @@ export type CmsEventInput = CoreEvent | ModuleEvent
  * (server/utils/activity.ts). `activity` précise la ligne du journal (rien n'a changé, version restaurée, copie),
  * ou `false` pour ne rien y inscrire.
  */
-export function emitCmsEvents(event: H3Event, events: CmsEventInput[], options: { activity?: EntryActivityHint | false } = {}) {
+export function emitCmsEvents(event: H3Event, events: CmsEventInput[], options: { activity?: EntryActivityHint | false } = {}): Promise<unknown> {
   if (options.activity !== false) logEntryEvents(event, events.filter(e => e.module === undefined) as CoreEvent[], options.activity)
   const at = new Date().toISOString()
   const hooks = useNitroApp().hooks as unknown as { callHook: (name: string, payload: CmsEvent) => Promise<void> }
@@ -48,4 +48,6 @@ export function emitCmsEvents(event: H3Event, events: CmsEventInput[], options: 
   ]).catch(error => console.error('[cms] le traitement d\'un événement a échoué', error))
   // La réponse n'attend pas les abonnés ; sur Workers, waitUntil garde la requête en vie jusqu'à leur fin.
   event.waitUntil(run)
+  // Renvoyé pour qui veut attendre la fin du traitement (une tâche planifiée, par exemple).
+  return run
 }

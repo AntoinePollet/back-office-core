@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ChartLine, CreditCard, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { adminEntryPath } from '../../shared/admin-paths'
@@ -48,6 +48,7 @@ const groups = computed(() => {
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
     if (schema.value.modules?.length) out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
+    out.get('Site')!.push({ key: 'backups', label: 'Sauvegardes', icon: DatabaseBackup, to: '/admin/backups' })
     out.get('Site')!.push({ key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' })
     out.get('Site')!.push({ key: 'activity', label: 'Activité', icon: ScrollText, to: '/admin/activity' })
   }

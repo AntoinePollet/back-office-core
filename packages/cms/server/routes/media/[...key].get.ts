@@ -1,3 +1,4 @@
+import { isPrivateKey } from '../../../shared/backup'
 import { IMAGE_WIDTHS, RESIZABLE_TYPES, snapWidth } from '../../../shared/media'
 import { canSeeTrashItem } from '../../../shared/trash'
 
@@ -15,6 +16,8 @@ type ImagesBinding = {
  */
 export default defineEventHandler(async (event) => {
   const key = getRouterParam(event, 'key')
+  // Les sauvegardes sont rangées dans le même stockage : elles ne se lisent jamais par l'adresse publique des fichiers.
+  if (key && isPrivateKey(decodeURIComponent(key))) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
   const bucket = useBucket(event)
   // Un fichier à la corbeille n'est plus servi au public. Seul l'écran « Corbeille » l'affiche encore (`?corbeille=1`),
   // à une personne connectée qui a le droit de l'y voir, et sans mise en cache.

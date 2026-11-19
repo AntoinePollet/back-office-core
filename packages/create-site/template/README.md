@@ -390,6 +390,102 @@ le back-office. Cartes de test (date future, code quelconque) : `4242 4242 4242 
 part dans l'écran « Paiements ». Passer en production : remplacer la clé et le secret du webhook par ceux du mode
 production.
 
+## Sauvegardes
+
+### Ce qui est fait tout seul
+
+Chaque nuit, le back-office écrit une **copie de la base** dans le stockage du site (bucket `__BUCKET__`, dossier
+`_sauvegardes/`). Ce dossier n'est jamais servi par le site : seul un administrateur peut télécharger une sauvegarde,
+depuis l'écran **Sauvegardes** du back-office. On y voit la liste, l'état de la dernière sauvegarde automatique
+(une alerte s'affiche si elle a échoué ou date de plus de 48 heures), le bouton « Sauvegarder maintenant » et « Restaurer ».
+
+| | |
+| --- | --- |
+| Contenu | Toutes les tables de la base : contenus, historique, médiathèque (fiches et dossiers), comptes, rôles, réglages, workflows et leur journal, messages reçus, paiements. Les tables ajoutées par une mise à jour du core y entrent sans rien changer. |
+| Laissé de côté | Les connexions en cours (`session`), les liens à usage unique (`verification`, `cms_invites`), les compteurs de tentatives de connexion. |
+| Secrets | Les mots de passe (déjà hachés) et tout jeton sont **chiffrés avec `NUXT_AUTH_SECRET`** ; les clés d'API des modules le sont déjà dans la base. Un fichier de sauvegarde seul ne permet donc ni de se connecter ni de lire une clé. |
+| Durée | 30 jours (`NUXT_BACKUP_RETENTION_DAYS` pour en changer, dans `vars` de `wrangler.jsonc`) ; les trois plus récentes sont toujours gardées. |
+| Format | Un fichier `.ndjson.gz` : du texte compressé, une valeur JSON par ligne (`gunzip -c fichier | less`). |
+| Fichiers (images, PDF) | **Pas dans la sauvegarde** : ils sont dans le même stockage R2. Voir « Les fichiers » plus bas. |
+
+Le déclenchement vient de la ligne `"triggers": { "crons": ["17 3 * * *"] }` de `wrangler.jsonc` (3 h 17, heure universelle) :
+rien à écrire dans le site. L'heure se change librement ; le core ne fait de toute façon qu'une sauvegarde par jour.
+Sans cette ligne, une sauvegarde se fait quand un administrateur ouvre le back-office, au plus une fois par jour, et
+l'écran « Sauvegardes » signale que la sauvegarde de nuit n'est pas activée.
+
+Pour être prévenu par e-mail : créer un workflow avec le déclencheur **« Une sauvegarde a échoué »** (variables
+`{{ backup.error }}`, `{{ backup.date }}`, `{{ backup.adminUrl }}`). « Une sauvegarde est faite » existe aussi.
+
+En local : `curl -X POST localhost:3000/_cms/dev-scheduled` joue le déclencheur planifié (`pnpm dev` seulement).
+
+### Revenir en arrière
+
+**Depuis le back-office** (écran Sauvegardes, « Restaurer », en écrivant le mot demandé) : les **contenus et les réglages**
+reviennent à l'état de la sauvegarde, en une seule opération qui réussit en entier ou ne change rien. L'état d'avant est
+sauvegardé juste avant (« Avant restauration ») : une restauration se défait en restaurant celle-là. Les **comptes ne sont
+pas touchés** (chacun garde son accès et son mot de passe, personne n'est déconnecté, les comptes créés depuis restent),
+et les fichiers ajoutés à la médiathèque depuis restent visibles. Limite : une sauvegarde de plus de 25 Mo une fois
+décompressée ne se restaure pas d'ici, il faut passer par l'une des deux méthodes suivantes.
+
+**Avec Cloudflare (D1 Time Travel)** : la base entière, comptes compris, à la minute près, sur les 30 derniers jours
+(7 jours avec l'offre gratuite de Workers). À utiliser après une erreur récente, ou quand la base est trop grosse.
+La base est remplacée sur place, connexions comprises.
+
+```sh
+pnpm exec wrangler d1 time-travel info __ID__ --timestamp 2026-11-20T08:30:00Z     # le repère de cet instant
+pnpm exec wrangler d1 time-travel restore __ID__ --timestamp 2026-11-20T08:30:00Z  # noter le repère affiché : il permet d'annuler
+```
+
+Time Travel ne remonte pas au-delà de sa durée, ne fait pas de copie à emporter et ne concerne pas les fichiers :
+c'est pour cela que les sauvegardes ci-dessus existent en plus.
+
+**Avec un fichier de sauvegarde** (tout, comptes compris, même après la perte de la base) : télécharger la sauvegarde
+depuis le back-office, ou la prendre dans le bucket (`pnpm exec wrangler r2 object get __BUCKET__/_sauvegardes/<nom> --remote --file sauvegarde.ndjson.gz`), puis :
+
+```sh
+NUXT_AUTH_SECRET=<le secret du site> pnpm cms:export --from sauvegarde.ndjson.gz --out restauration
+pnpm exec wrangler d1 migrations apply DB --remote                      # seulement si la base vient d'être recréée
+pnpm exec wrangler d1 execute DB --remote --file restauration/restauration.sql
+```
+
+Le fichier SQL **remplace** le contenu de la base. Sans `NUXT_AUTH_SECRET`, les mots de passe ne sont pas repris :
+chacun en choisit un nouveau (« Mot de passe oublié » ou nouvelle invitation). Essayer d'abord avec `--local`.
+**Garder `NUXT_AUTH_SECRET` ailleurs que chez Cloudflare** (gestionnaire de mots de passe) : sans lui, ni les mots de
+passe ni les clés des modules d'une sauvegarde ne sont récupérables.
+
+### Remettre ses données à un client
+
+```sh
+CMS_EMAIL=admin@exemple.fr NUXT_AUTH_SECRET=<le secret du site> pnpm cms:export --url https://monsite.fr --out export-client
+```
+
+La commande se connecte avec un compte administrateur, fait une sauvegarde fraîche, la télécharge avec tous les fichiers
+de la médiathèque, et écrit un dossier à remettre tel quel : `sauvegarde.ndjson.gz`, `restauration.sql`, `fichiers/`,
+`fichiers.json` (nom, type et adresse de chaque fichier), `envoyer-fichiers.sh` et `LISEZMOI.txt`, qui donne les trois
+commandes de réimport dans un site neuf (`wrangler d1 migrations apply`, `wrangler d1 execute --file`, envoi des fichiers
+dans R2). Les clés d'API des modules ne sont pas lisibles ailleurs : le client saisit les siennes dans « Modules ».
+
+### Les fichiers (ce qui relève de l'hébergement)
+
+Ce que R2 garantit déjà : chaque fichier est conservé en plusieurs exemplaires (durabilité annoncée : 99,999999999 % par an).
+Ce qu'il ne fait pas : **R2 n'a pas de versions d'objets ni de corbeille** ; un fichier supprimé ou écrasé l'est pour de
+bon. Le back-office ne réécrit jamais un fichier (chaque envoi a sa propre adresse) ; reste la suppression. Selon
+l'engagement pris avec le client, régler chez Cloudflare :
+
+- **Ne jamais ouvrir le bucket au public** (adresse `r2.dev` ou domaine personnalisé) : c'est le site qui sert les
+  fichiers, et le dossier `_sauvegardes/` deviendrait lisible par tous.
+- **Sauvegardes dans un bucket à part** : déclarer un second bucket avec la liaison `BACKUPS` dans `r2_buckets`
+  (`{ "binding": "BACKUPS", "bucket_name": "__BUCKET__-sauvegardes" }`) ; le core l'utilise dès qu'elle existe.
+- **Empêcher l'effacement des sauvegardes récentes** (erreur de manipulation, compte compromis) :
+  `pnpm exec wrangler r2 bucket lock add __BUCKET__ --name sauvegardes --prefix _sauvegardes/ --retention-days 7`.
+  Garder ce délai inférieur à la durée de conservation. Ne pas verrouiller tout le bucket : le back-office ne pourrait
+  plus supprimer un fichier de la médiathèque.
+- **Copie des fichiers ailleurs** : `pnpm cms:export` de temps en temps (il télécharge tout), ou une synchronisation
+  du bucket vers un autre stockage avec un outil comme `rclone`.
+
+Offre Cloudflare : la sauvegarde demande l'offre payante de Workers dès que le site a un peu de contenu
+(l'offre gratuite limite chaque exécution à 10 ms de calcul).
+
 ## Mettre à jour le core
 
 Le core n'est pas publié sur npm. Ce projet le référence ainsi dans `package.json` :

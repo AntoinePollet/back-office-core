@@ -37,6 +37,8 @@ export default defineNuxtConfig({
     emailFrom: '',
     /** Adresse de l'API Cloudflare (statistiques du module « analytics »). Ne se change que pour les tests : NUXT_CLOUDFLARE_API_URL. */
     cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
+    /** Nombre de jours pendant lesquels une sauvegarde est conservée : variable NUXT_BACKUP_RETENTION_DAYS. */
+    backupRetentionDays: 30,
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */
     turnstileApiUrl: 'https://challenges.cloudflare.com/turnstile/v0',
     /** Avis de nouvelle version du core, pour les administrateurs. Pour le désactiver : false ici, ou NUXT_CMS_UPDATE_CHECK=false. */
