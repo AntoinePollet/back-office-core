@@ -246,8 +246,8 @@ export default async function (t) {
     // Une page sans rien à signaler : description propre, assez de texte, image par défaut du site.
     await claire.json(`/api/cms/entries/services/${ids.b}`, { method: 'PUT', body: { values: { body: `<p>${words(60)}</p>`, seo: { description: 'Contrats de travail, ruptures, prud\'hommes : nous défendons salariés et employeurs.' } }, publish: ['fr'] } })
     await page.goto(B + '/admin', { waitUntil: 'networkidle0' })
-    check((await menuLabels(page)).includes('Référencement'), 'entrée de menu absente : ' + await menuLabels(page))
-    await clickText(page, 'aside .menu a', 'Référencement')
+    check((await menuLabels(page)).includes('Pages et titres'), 'entrée de menu absente : ' + await menuLabels(page))
+    await clickText(page, 'aside .menu a', 'Pages et titres')
     await page.waitForSelector('[data-seo-overview] [data-seo-row]')
     const rows = () => page.$$eval('[data-seo-row]', els => els.map(tr => ({
       name: tr.querySelector('td a').textContent.trim(), locale: tr.querySelector('td .uppercase')?.textContent.trim(), state: tr.querySelector('[data-seo-cell=state]').textContent.trim(),
@@ -322,7 +322,7 @@ export default async function (t) {
     check((await lina.json('/api/cms/seo')).length === 0, 'liste non vide sans contenu référencé')
     const other = await t.newPage({ context: await t.newContext() })
     await login(other, B, LINA)
-    check(!(await menuLabels(other)).includes('Référencement'), 'menu de la rédactrice limitée : ' + await menuLabels(other))
+    check(!(await menuLabels(other)).includes('Pages et titres'), 'menu de la rédactrice limitée : ' + await menuLabels(other))
     await other.goto(B + '/admin/seo', { waitUntil: 'networkidle0' })
     await says(other, 'Aucune page à afficher')
     await other.close()

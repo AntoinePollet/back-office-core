@@ -13,6 +13,17 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Menu du back-office en arbre.** Les contenus sont rangés dans des dossiers repliables, un par groupe de
+  `cms.config.ts` (`group`, sinon « Pages » et « Collections »). Les outils du quotidien (médiathèque, messages reçus,
+  audience, paiements) forment la section « Outils » ; les autres écrans sont regroupés dans trois dossiers repliés
+  par défaut : **Référencement** (« Pages et titres », Redirections), **Réglages** (Apparence, Disponibilité, Modules,
+  Workflows) et **Administration** (Utilisateurs, Activité, Sauvegardes, Corbeille, Structure des contenus). Le
+  dossier de l'écran ouvert s'ouvre tout seul ; un dossier ouvert ou replié à la main le reste dans ce navigateur. La
+  recherche (⌘K) donne le nom du dossier de chaque écran. L'écran « Référencement » s'appelle « Pages et titres »
+  dans le menu.
+
 ## 0.8.0 — 2026-11-20
 
 ### Nouveautés
