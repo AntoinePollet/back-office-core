@@ -22,6 +22,8 @@ export default defineNuxtConfig({
     public: {
       /** Version du core installée dans ce projet. */
       cmsVersion: version,
+      /** Réglages de référencement du site (`site.name`, `site.titleSuffix`, `site.shareImage` de cms.config.ts), remplis par le module. */
+      cmsSeo: { siteName: '', titleSuffix: '', shareImage: '' },
       /** Script de Cloudflare Turnstile (module « turnstile »). Ne se change que pour les tests : NUXT_PUBLIC_TURNSTILE_SCRIPT_URL. */
       turnstileScriptUrl: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
     },

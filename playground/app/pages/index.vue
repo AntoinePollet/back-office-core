@@ -2,7 +2,8 @@
 // Page d'exemple : elle lit les contenus publiés depuis le back-office.
 const { data: home } = await useSingleton('home')
 const { data: services } = await useCollection('services')
-useCmsSeo(home, { titleSuffix: 'Cabinet Durand' })
+// Le suffixe du titre (« — Cabinet Durand ») et l'image de partage par défaut viennent de cms.config.ts.
+useCmsSeo(home)
 </script>
 
 <template>

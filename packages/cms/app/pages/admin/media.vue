@@ -38,6 +38,12 @@ function applyUpdate(updated: CmsMedia) {
   items.value = (items.value ?? []).map(m => (m.id === updated.id ? updated : m))
   if (selected.value?.id === updated.id) selected.value = updated
 }
+// `/admin/media?file=<identifiant>` (lien d'un conseil de référencement) ouvre directement la fiche du fichier.
+onMounted(async () => {
+  const wanted = useRoute().query.file
+  const file = typeof wanted === 'string' ? (await useCmsMedia().load().catch(() => [])).find(m => m.id === wanted) : undefined
+  if (file) await select(file)
+})
 
 async function saveAlt() {
   const media = selected.value

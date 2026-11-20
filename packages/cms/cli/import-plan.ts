@@ -349,7 +349,8 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
   function seoValues(value: unknown, at: string, translated: boolean): Values | undefined {
     if (!isObject(value)) { errors.push(`${at} : objet attendu, comme { "title": "…", "description": "…" } (reçu ${kindOf(value)}).`); return undefined }
     const out: Values = {}
-    const allowed = translated ? ['title', 'description'] : ['title', 'description', 'image', 'noindex']
+    const texts = ['title', 'description', 'shareTitle', 'shareDescription']
+    const allowed = translated ? texts : [...texts, 'image', 'noindex']
     for (const [k, v] of Object.entries(value)) {
       const where = `${at}.${k}`
       if (!allowed.includes(k)) errors.push(['image', 'noindex'].includes(k) ? `${where} : commun à toutes les langues, à écrire dans le seo de l'élément.` : `${where} : clé inconnue. Clés possibles : ${list(allowed)}.`)

@@ -84,8 +84,8 @@ test('projet généré : plus aucun marqueur, fichiers valides', () => {
   const wrangler = readFileSync(join(dir, 'wrangler.jsonc'), 'utf8')
   for (const part of ['"name": "atelier-emilie"', '"nodejs_compat"', '"cache": { "enabled": true }', '"binding": "DB"', '"binding": "MEDIA"', '"bucket_name": "atelier-emilie-media"', '"images"', 'node_modules/backoffice-core/server/database/migrations'])
     assert.ok(wrangler.includes(part), part)
-  assert.match(readFileSync(join(dir, 'cms.config.ts'), 'utf8'), /site: \{ name: 'L\\'Atelier d\\'Émilie', url: 'https:\/\/atelier-emilie.fr', locales: \['fr', 'en'\], defaultLocale: 'fr' \}/)
-  assert.equal(siteTs(answers(dir, { url: undefined, locales: ['fr'] })), '{ name: \'L\\\'Atelier d\\\'Émilie\', locales: [\'fr\'], defaultLocale: \'fr\' }')
+  assert.match(readFileSync(join(dir, 'cms.config.ts'), 'utf8'), /site: \{ name: 'L\\'Atelier d\\'Émilie', url: 'https:\/\/atelier-emilie.fr', locales: \['fr', 'en'\], defaultLocale: 'fr', titleSuffix: 'L\\'Atelier d\\'Émilie' \}/)
+  assert.equal(siteTs(answers(dir, { url: undefined, locales: ['fr'] })), '{ name: \'L\\\'Atelier d\\\'Émilie\', locales: [\'fr\'], defaultLocale: \'fr\', titleSuffix: \'L\\\'Atelier d\\\'Émilie\' }')
 
   assert.equal(setDatabaseId(dir, ID), true)
   const patched = readFileSync(join(dir, 'wrangler.jsonc'), 'utf8')

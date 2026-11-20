@@ -12,14 +12,15 @@ type Values = Record<string, unknown>
 
 /** Dans le bloc `seo` : ce qui est commun aux langues, et ce qui se traduit. */
 const SEO_SHARED = ['image', 'noindex']
-const SEO_LOCALIZED = ['title', 'description']
+const SEO_LOCALIZED = ['title', 'description', 'shareTitle', 'shareDescription']
 
 const isObject = (v: unknown): v is Values => !!v && typeof v === 'object' && !Array.isArray(v)
 
 /**
  * Range des valeurs données « à plat » (par nom de champ, sans se soucier de ce qui est traduit).
  * - `shared` : champs communs aux langues ; `localized` : champs traduits ;
- * - `seo` (si le contenu a l'onglet Référencement) : `title` et `description` sont traduits, `image` et `noindex` communs ;
+ * - `seo` (si le contenu a l'onglet Référencement) : `title`, `description`, `shareTitle` et `shareDescription` sont traduits,
+ *   `image` et `noindex` communs ;
  * - `unknown` : noms qui ne correspondent à aucun champ, y compris dans un répéteur (`faq.0.reponse`) ou dans un
  *   élément de galerie (`photos.0.legende` : seules `media` et `caption` existent).
  */

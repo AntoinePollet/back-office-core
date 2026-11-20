@@ -4,7 +4,8 @@
 const { siteName } = useAppConfig()
 const { data: home } = await useSingleton('home')
 const { data: latest } = await useCollectionPage('articles', { limit: 3 })
-useCmsSeo(home, { titleSuffix: siteName })
+// Le titre est complété par `site.titleSuffix` (cms.config.ts), comme dans l'aperçu de l'onglet Référencement.
+useCmsSeo(home)
 </script>
 
 <template>

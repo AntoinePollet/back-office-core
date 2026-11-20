@@ -39,7 +39,7 @@ const { data: home } = await useSingleton('home')                          // un
 const { data: articles } = await useCollection('articles')                 // toute une collection
 const { data: page } = await useCollectionPage('articles', { limit: 10 })  // une page de résultats
 const { data: article } = await useEntry('articles', () => route.params.slug as string)
-useCmsSeo(article, { titleSuffix: useAppConfig().siteName })               // titre, description, image de partage
+useCmsSeo(article)                                                         // titre, description, carte de partage
 </script>
 
 <template>
@@ -71,6 +71,33 @@ sans cette option, c'est la langue par défaut.
 
 Pour ajouter un type de contenu : le déclarer dans `cms.config.ts` (le serveur de développement redémarre, le back-office
 affiche le nouveau menu), puis créer la page dans `app/pages/`. Il n'y a pas de migration de base à écrire.
+
+## Référencement
+
+Un contenu déclaré avec `seo: true` (et un `path`) a un onglet « Référencement » dans le back-office : titre et
+description pour les moteurs de recherche, titre et description propres au partage (facultatifs), image de partage,
+« masquer des moteurs de recherche ». L'onglet montre l'aperçu du résultat Google et de la carte de partage, et une
+liste de conseils ; l'écran « Référencement » du menu récapitule toutes les pages (état, points à voir, doublons).
+
+Dans la page, une ligne suffit : `useCmsSeo(entry)` écrit le titre, la description, les balises de partage (`og:`,
+`twitter:`), l'adresse canonique, les liens entre langues et, sur l'accueil, le nom du site pour Google.
+
+Deux réglages du site, dans `cms.config.ts`, valent pour toutes les pages et sont repris par l'aperçu du back-office :
+
+```ts
+site: {
+  name: 'Mon site', url: 'https://mon-site.fr', locales: ['fr'], defaultLocale: 'fr',
+  titleSuffix: 'Mon site',        // « Titre de la page — Mon site » ; pas répété si le titre le contient déjà
+  shareImage: '/partage.jpg',     // image de partage des pages qui n'en ont pas : fichier de public/, 1200 × 630 px
+},
+```
+
+- Titre de référencement vide : le titre du contenu est utilisé (collections) ; pour une page unique, le suffixe seul.
+- Titre et description de partage vides : ceux du référencement sont repris. Remplis, ils ne reçoivent pas le suffixe.
+- Une page sans suffixe : `useCmsSeo(entry, { titleSuffix: false })`. Sans le bloc de données structurées de
+  l'accueil (le site écrit déjà le sien) : `useCmsSeo(home, { structuredData: false })`.
+- Les valeurs sont aussi dans `entry.seo` (`title`, `description`, `shareTitle`, `shareDescription`, `image`, `noindex`).
+- Les seuils des conseils (longueurs, taille d'image…) sont regroupés et expliqués dans `shared/seo.ts` du core.
 
 ## Reprendre des contenus existants
 
@@ -132,7 +159,8 @@ variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'h
 - Lien : `"https://…"`, `"/contact"`, `{ "url": "…", "label": "…", "newTab": true }`, ou une page du site :
   `{ "page": "articles", "id": "ouverture" }` (`{ "page": "home" }` pour une page unique).
 - Liste d'éléments (répéteur) : un tableau d'objets. Texte mis en forme : du HTML. Date : `"2026-09-01"`.
-- `"slug"` fixe l'adresse de la page, `"seo": { "title", "description", "image", "noindex" }` le référencement.
+- `"slug"` fixe l'adresse de la page, `"seo": { "title", "description", "shareTitle", "shareDescription", "image", "noindex" }`
+  le référencement (`shareTitle` et `shareDescription` : titre et description propres au partage, facultatifs).
 - Les éléments sont **publiés** ; `"status": "draft"` sur un élément (ou à la racine du fichier), ou l'option `--draft`,
   les laisse en brouillon.
 

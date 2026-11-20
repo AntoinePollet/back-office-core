@@ -37,6 +37,31 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 - L'objet d'une image lu par le site (type `Media`) contient `focus` (`{ x, y }` de 0 à 1, ou `null`).
 - Outil d'import : `"focus": { "x": 0.3, "y": 0.2 }` à côté de `"file"` et `"alt"`.
 - Le réglage du point d'intérêt figure au journal d'activité.
+- **Référencement assisté.** L'onglet Référencement d'un contenu montre, pendant la saisie, l'aperçu du résultat
+  Google (ordinateur et téléphone, titre coupé comme le fait Google) et celui de la carte de partage (réseaux sociaux,
+  messageries), tels que le site les affichera : titre du contenu quand le titre de référencement est vide, suffixe du
+  site, image par défaut. À côté, une courte liste de conseils en clair : titre ou description absent, trop long, trop
+  court ou identique à celui d'une autre page (nommée), image de partage absente, trop petite ou mal proportionnée,
+  images du contenu sans texte alternatif (avec un lien vers la médiathèque), page publiée mais masquée, adresse peu
+  lisible, texte très court. Ce sont des repères : rien n'empêche de publier.
+- **Titre et description de partage distincts** (facultatifs) : vides, ils reprennent ceux du référencement. Le site
+  les reçoit dans `entry.seo.shareTitle` et `entry.seo.shareDescription` ; `useCmsSeo` les applique aux balises `og:`
+  et `twitter:`. Aucune migration : un contenu existant les a simplement vides. L'API d'écriture et l'outil d'import
+  acceptent `"seo": { "shareTitle": "…", "shareDescription": "…" }`.
+- **Écran « Référencement »** (menu Site, pour qui peut modifier des contenus) : toutes les pages du site avec leur
+  titre, leur description, leur état (complet, à améliorer, masqué) et leurs points à voir ; filtres, recherche, tri,
+  et chaque ligne ouvre l'onglet Référencement du contenu dans la bonne langue. Pratique après une refonte.
+- **Réglages du site pour le référencement**, dans `cms.config.ts` : `site.titleSuffix` (fin du titre de chaque page)
+  et `site.shareImage` (image de partage des pages qui n'en ont pas). `useCmsSeo(entry)` les applique sans option.
+- `useCmsSeo` écrit aussi les balises `twitter:title`, `twitter:description` et `twitter:image` (mêmes valeurs que les
+  balises `og:`), et, sur la page d'accueil seulement, un bloc de données structurées `WebSite` qui donne à Google le
+  nom du site (`site.name`). Pour s'en passer : `useCmsSeo(home, { structuredData: false })`.
+- `/admin/media?file=<identifiant>` ouvre directement la fiche d'un fichier de la médiathèque.
+
+### Correctifs
+
+- Le suffixe du titre n'est plus répété quand le titre le contient déjà (« Cabinet Durand, avocats — Cabinet Durand »).
+- Sur téléphone, l'image de partage choisie ne fait plus déborder l'onglet Référencement.
 
 ### À faire dans votre site
 
@@ -49,6 +74,18 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 - À savoir : un `<CmsImage>` qui recevait à la fois `width` et `height` est maintenant recadré
   par le serveur à ces proportions (avant, l'image entière était servie et le navigateur la déformait ou la recadrait
   selon le CSS du site).
+Rien d'obligatoire : un site qui ne change rien garde ses balises (les balises `twitter:` et, sur l'accueil, le bloc
+`WebSite` s'y ajoutent). Pour profiter des nouveautés :
+- **Suffixe du titre** : déclarer `titleSuffix: 'Nom du site'` dans `site` (`cms.config.ts`) et retirer l'option des
+  pages (`useCmsSeo(entry, { titleSuffix: … })` devient `useCmsSeo(entry)`). Tant que l'option reste dans les pages,
+  tout marche comme avant, mais l'aperçu du back-office ne connaît pas ce suffixe. Si les titres saisis contiennent
+  déjà le nom du site, il n'est pas ajouté une seconde fois : ils peuvent être raccourcis ensuite, page par page.
+  Une page unique sans titre de référencement a désormais ce texte pour titre. Pour une page sans suffixe :
+  `useCmsSeo(entry, { titleSuffix: false })`.
+- **Image de partage par défaut** : placer une image de 1200 × 630 px dans `public/` et déclarer
+  `shareImage: '/partage.jpg'` dans `site`.
+- Un site qui écrit déjà ses propres données structurées `WebSite` sur l'accueil : passer `structuredData: false`.
+- `seo` devient un identifiant réservé (écran `/admin/seo`) : une collection ou une page unique ne peut plus s'appeler ainsi.
 
 ## 0.6.0 — 2026-11-19
 

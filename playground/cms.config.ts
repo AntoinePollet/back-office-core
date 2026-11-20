@@ -2,7 +2,12 @@ import { defineCms, collection, section, singleton, f, type InferEntry } from 'b
 import { analytics, brevo, forms, stripe, turnstile } from 'backoffice-core/modules'
 
 const config = defineCms({
-  site: { name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr' },
+  site: {
+    name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr',
+    // Référencement : fin du titre de chaque page, et image de partage des pages qui n'en ont pas (fichier de public/).
+    titleSuffix: 'Cabinet Durand',
+    shareImage: '/partage.png',
+  },
 
   // Fonctions ajoutées au site. Les clés d'API se saisissent dans le back-office, écran « Modules ».
   modules: [

@@ -3,7 +3,7 @@ const route = useRoute()
 // Une ancienne adresse redirige d'elle-même vers la nouvelle.
 const { data: service, error } = await useEntry('services', () => route.params.slug as string)
 if (error.value || !service.value) throw createError({ statusCode: 404, statusMessage: 'Service introuvable', fatal: true })
-useCmsSeo(service, { titleSuffix: 'Cabinet Durand' })
+useCmsSeo(service)
 </script>
 
 <template>

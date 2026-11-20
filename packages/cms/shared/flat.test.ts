@@ -47,6 +47,9 @@ test('écriture à plat : seo se partage entre le commun (image, noindex) et le 
   assert.deepEqual(out.localized, { seo: { title: 'T', description: 'D' } })
   assert.deepEqual(out.shared, { seo: { image: 'm1', noindex: true } })
   assert.deepEqual(out.unknown, ['seo.robots'])
+  // Titre et description de partage : traduits, comme le titre et la description.
+  const share = splitFlat(fields, { seo: { shareTitle: 'P', shareDescription: 'Q', noindex: false } }, true)
+  assert.deepEqual([share.localized, share.shared, share.unknown], [{ seo: { shareTitle: 'P', shareDescription: 'Q' } }, { seo: { noindex: false } }, []])
   // Sans l'onglet Référencement, « seo » n'est pas un champ.
   assert.deepEqual(splitFlat(fields, { seo: { title: 'T' } }).unknown, ['seo'])
 })

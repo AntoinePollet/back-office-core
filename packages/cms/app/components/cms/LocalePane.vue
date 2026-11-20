@@ -22,7 +22,6 @@ const hasSlug = computed(() => props.def.kind === 'collection' && !!props.def.pa
 const autoSlug = computed(() => slugify(String(state.value.values[props.def.slugFrom ?? props.def.titleField] ?? '')))
 const untranslated = computed(() => props.loc !== props.defaultLocale && Object.values(state.value.values).every(isEmpty))
 const localeName = (l: string) => new Intl.DisplayNames(['fr'], { type: 'language' }).of(l) ?? l
-const seoTitle = computed(() => state.value.values.seo?.title || String(state.value.values[props.def.titleField] ?? ''))
 
 function copyFromDefault() {
   state.value.values = JSON.parse(JSON.stringify(props.doc.locales[props.defaultLocale]!.values))
@@ -58,25 +57,7 @@ function copyFromDefault() {
       </fieldset>
     </div>
 
-    <div v-if="def.seo" v-show="tab === 'seo'" class="space-y-4">
-      <div class="rounded-box border border-base-300 p-4 bg-base-200/50">
-        <div class="text-xs text-base-content/50 mb-2">Aperçu dans Google</div>
-        <div class="text-lg text-info leading-snug truncate">{{ seoTitle || 'Titre de la page' }}</div>
-        <div class="text-sm text-base-content/70 line-clamp-2">{{ state.values.seo.description || 'Ajoutez une description pour contrôler ce texte.' }}</div>
-      </div>
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">Titre pour les moteurs de recherche</legend>
-        <input v-model="state.values.seo.title" class="input w-full">
-        <p class="label flex justify-between gap-2">
-          <span>Laissé vide, le titre de la page est utilisé.</span>
-          <span :class="{ 'text-error': seoTitle.length > 60 }">{{ seoTitle.length }} / 60</span>
-        </p>
-      </fieldset>
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">Description</legend>
-        <textarea v-model="state.values.seo.description" class="textarea w-full" rows="3" />
-        <p class="label flex justify-end" :class="{ 'text-error': (state.values.seo.description?.length ?? 0) > 160 }">{{ state.values.seo.description?.length ?? 0 }} / 160</p>
-      </fieldset>
-    </div>
+    <!-- Référencement : champs, aperçus et conseils de cette langue. -->
+    <CmsSeoPanel v-if="def.seo" v-show="tab === 'seo'" :def="def" :doc="doc" :loc="loc" :default-locale="defaultLocale" :active="tab === 'seo'" />
   </div>
 </template>

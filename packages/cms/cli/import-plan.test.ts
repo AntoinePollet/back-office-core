@@ -189,6 +189,14 @@ test('id : obligatoire et unique dans une collection, refusé pour une page uniq
   assert.match(errors, /singletons\.contact\.id : champ inconnu/)
 })
 
+test('seo : titre et description de partage, dans la langue par défaut et dans une traduction', () => {
+  const p = service({ seo: { shareTitle: 'Partage', shareDescription: null }, en: { title: 'One', seo: { shareTitle: 'Share' } } })
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(entry(p, 's1').values.seo, { shareTitle: 'Partage', shareDescription: '' })
+  assert.deepEqual(entry(p, 's1').translations.en!.values.seo, { shareTitle: 'Share' })
+  assert.match(service({ seo: { ogTitle: 'x' } }).errors.join('\n'), /seo\.ogTitle : clé inconnue\. Clés possibles : .*shareTitle/)
+})
+
 test('slug et seo ne sont acceptés que si le contenu en a', () => {
   const errors = plan({ collections: { categories: [{ id: 'a', name: 'A', slug: 'a', seo: { title: 'T' } }] } }).errors.join('\n')
   assert.match(errors, /slug : « categories » n'a pas d'adresse de page/)

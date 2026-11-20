@@ -45,6 +45,8 @@ export function siteTs(answers) {
     ...(answers.url ? [`url: ${tsString(answers.url)}`] : []),
     `locales: [${answers.locales.map(tsString).join(', ')}]`,
     `defaultLocale: ${tsString(answers.defaultLocale)}`,
+    // Fin du titre de chaque page (« Actualité — Nom du site »), montrée dans l'aperçu de l'onglet Référencement.
+    `titleSuffix: ${tsString(answers.name)}`,
   ]
   return `{ ${parts.join(', ')} }`
 }
