@@ -200,6 +200,27 @@ envoi ; ensuite, une erreur sur un élément n'empêche pas d'importer les autre
   (ni adresse IP, ni navigateur). Les balayages de robots (`/wp-login.php`, `/.env`…) ne sont pas comptés ; 500 adresses
   au plus sont conservées, et une adresse qui n'est plus demandée disparaît après 90 jours.
 
+## Site en construction ou en maintenance
+
+Écran **Disponibilité** du back-office (administrateurs) : le site passe **en construction** (site pas encore lancé)
+ou **en maintenance** (« de retour bientôt »), puis revient **en ligne**, sans déploiement.
+
+- Toutes les pages du site sont alors remplacées par une **page d'attente**, au choix parmi trois modèles (« Sobre »,
+  « Image plein écran », « Couleur vive ») qui reprennent les couleurs de l'écran Apparence. On règle le titre et le
+  message dans chaque langue (vides : un texte proposé), un contact (une adresse e-mail ou un numéro devient un bouton)
+  et, pour le modèle image, une photo de la médiathèque. Un aperçu en direct montre la page pendant la saisie.
+- **En construction** : réponse 200 marquée `noindex`, et `robots.txt` interdit l'exploration (sauf si le site a son
+  propre `public/robots.txt`). **Maintenance** : réponse 503 avec `Retry-After` ; les moteurs de recherche
+  comprennent que la coupure est temporaire et gardent les pages du site.
+- **Ce qui reste servi** : le back-office, l'API (`/api/…`), les médias, les fichiers internes (`/_nuxt/…`) et toute
+  adresse qui finit par une extension (`/robots.txt`, `/sitemap.xml`, `/favicon.ico`). Une route serveur du site qui
+  sert une page HTML sans extension est remplacée comme les autres.
+- **Voir le vrai site pendant la fermeture** : le mode aperçu (`/?preview=1` une fois connecté, ou un lien d'aperçu
+  partagé, pour montrer le site à un client avant l'ouverture). Le back-office le rappelle par un bandeau « Site fermé ».
+- La page d'attente est un document HTML autonome : elle n'utilise ni les pages ni les composants du site, et
+  s'affiche même si une page du site est en erreur. Le changement d'état vide le cache du site et figure au journal
+  d'activité.
+
 ## Mettre en ligne
 
 ### La première fois

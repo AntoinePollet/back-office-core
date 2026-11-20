@@ -13,6 +13,18 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Site en construction ou en maintenance.** Nouvel écran « Disponibilité » (menu Site, administrateurs) : un clic
+  ferme le site au public le temps d'une construction (réponse 200 `noindex`, `robots.txt` qui interdit l'exploration)
+  ou d'une maintenance (réponse 503 avec `Retry-After`, les pages gardent leur référencement), puis le remet en ligne.
+  Les visiteurs voient une page d'attente au choix parmi trois modèles (« Sobre », « Image plein écran », « Couleur
+  vive ») aux couleurs de l'écran Apparence, avec titre et message par langue, contact et image de la médiathèque, et
+  un aperçu en direct dans l'écran. Le back-office, l'API, les médias et les fichiers restent servis ; le mode aperçu
+  (connecté ou lien d'aperçu partagé) montre le vrai site, et un bandeau « Site fermé » le rappelle dans le
+  back-office. Changement d'état : cache du site vidé, ligne au journal d'activité. Aucune migration (le réglage est
+  rangé dans `cms_settings`).
+
 ## 0.7.0 — 2026-11-20
 
 ### Nouveautés

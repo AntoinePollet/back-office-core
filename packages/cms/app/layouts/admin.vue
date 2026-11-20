@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, SearchCheck, Signpost, Trash2, Users, Workflow, ClipboardCheck, CalendarClock } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, Construction, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, SearchCheck, Signpost, Trash2, Users, Workflow, ClipboardCheck, CalendarClock } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
+import { type AvailabilityMode, MODE_LABELS } from '../../shared/availability'
 import { adminEntryPath } from '../../shared/admin-paths'
 import { canOpenTrash } from '../../shared/trash'
 import '../assets/css/admin.css'
@@ -22,6 +23,10 @@ onMounted(() => cmsApi<{ items: unknown[] }>('/api/cms/schedules').then((r) => {
 const hasForms = computed(() => !!schema.value.modules?.some(m => m.id === 'forms') && ['admin', 'editor'].includes(user.value?.role ?? ''))
 const unreadMessages = useCmsUnreadMessages()
 watch(() => route.fullPath, () => { if (hasForms.value) refreshCmsUnreadMessages() }, { immediate: true })
+// Site fermé au public (écran « Disponibilité ») : rappelé dans l'en-tête, et « Voir le site » ouvre l'aperçu.
+const siteMode = useState<AvailabilityMode | null>('cms-site-mode', () => null)
+onMounted(() => cmsApi<{ mode: AvailabilityMode }>('/api/cms/availability').then((r) => { siteMode.value = r.mode }, () => {}))
+const siteClosed = computed(() => !!siteMode.value && siteMode.value !== 'online')
 const { toasts } = useCmsToast()
 
 const groups = computed(() => {
@@ -53,6 +58,7 @@ const groups = computed(() => {
   if (schema.value.modules?.some(m => m.id === 'analytics') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' })
   if (user.value?.role === 'admin') {
     out.get('Site')!.push({ key: 'appearance', label: 'Apparence', icon: Palette, to: '/admin/appearance' })
+    out.get('Site')!.push({ key: 'availability', label: 'Disponibilité', icon: Construction, to: '/admin/availability' })
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
     if (schema.value.modules?.length) out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
@@ -82,8 +88,16 @@ async function logout() {
         <!-- Recherche et navigation rapide (⌘K) : le bouton et sa fenêtre. -->
         <CmsCommandPalette :schema="schema" :groups="groups" @logout="logout" />
         <div class="ml-auto">
+          <template v-if="siteClosed">
+            <NuxtLink v-if="user?.role === 'admin'" to="/admin/availability" data-cms-site-closed class="badge badge-warning gap-1 mr-1" title="Les visiteurs voient la page d'attente. Cliquer pour changer.">
+              <Construction :size="14" />Site fermé<span class="hidden sm:inline"> · {{ MODE_LABELS[siteMode!] }}</span>
+            </NuxtLink>
+            <span v-else data-cms-site-closed class="badge badge-warning gap-1 mr-1" title="Les visiteurs voient la page d'attente.">
+              <Construction :size="14" />Site fermé<span class="hidden sm:inline"> · {{ MODE_LABELS[siteMode!] }}</span>
+            </span>
+          </template>
           <CmsPreviewShare />
-          <a href="/" target="_blank" class="btn btn-ghost btn-sm"><ExternalLink :size="16" />Voir le site</a>
+          <a :href="siteClosed ? '/?preview=1' : '/'" target="_blank" class="btn btn-ghost btn-sm"><ExternalLink :size="16" />{{ siteClosed ? 'Voir le site (aperçu)' : 'Voir le site' }}</a>
         </div>
       </header>
       <main class="p-4 lg:p-8 w-full mx-auto flex-1 max-w-[104rem]">

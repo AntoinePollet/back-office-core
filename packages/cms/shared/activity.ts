@@ -111,6 +111,10 @@ export const ACTIVITY_ACTIONS = {
   'module.updated': action('settings', 'Réglages d\'un module modifiés', d => `a modifié les réglages du module ${quote(d.name)}`),
   'theme.updated': action('settings', 'Apparence modifiée', () => 'a modifié l\'apparence du site'),
   'theme.reset': action('settings', 'Apparence modifiée', () => 'a rétabli l\'apparence d\'origine du site'),
+  'availability.changed': action('settings', 'Disponibilité du site modifiée', d => (d.to === 'En ligne'
+    ? `a remis le site en ligne (il était « ${d.from} »)`
+    : `a passé le site en « ${d.to} » : les visiteurs voient la page d'attente`)),
+  'availability.pages_updated': action('settings', 'Pages d\'attente modifiées', () => 'a modifié les pages d\'attente du site (construction, maintenance)'),
   'admin_color.updated': action('settings', 'Apparence modifiée', () => 'a changé la couleur du back-office'),
   'workflow.created': action('settings', 'Workflow créé', d => `a créé le workflow ${quote(d.name)}`),
   'workflow.updated': action('settings', 'Workflow modifié', d => `a modifié le workflow ${quote(d.name)}`),
