@@ -185,6 +185,7 @@ export async function activityLinks(event: H3Event, rows: ActivityRow[]): Promis
       case 'theme': return '/admin/appearance'
       case 'migrations': return '/admin/migrations'
       case 'trash': return '/admin/trash'
+      case 'redirects': return '/admin/redirections'
       default: return null
     }
   }

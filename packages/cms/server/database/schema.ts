@@ -80,6 +80,38 @@ export const redirects = sqliteTable('cms_redirects', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [primaryKey({ columns: [t.type, t.locale, t.slug] })])
 
+/**
+ * Redirection ajoutée à la main (écran « Redirections ») : une ancienne adresse du site vers une page ou une adresse libre.
+ * Elle ne s'applique que si aucune page ne répond à l'ancienne adresse (voir server/utils/redirects.ts).
+ */
+export const redirectRules = sqliteTable('cms_redirect_rules', {
+  id: text('id').primaryKey(),
+  /** Ancienne adresse, sous sa forme de comparaison (shared/redirects.ts, `canonicalPath`). */
+  source: text('source').notNull(),
+  targetKind: text('target_kind').$type<'page' | 'url'>().notNull(),
+  /** Destination « page du site » : type, identifiant du contenu et langue. Pas de clé étrangère : la redirection survit à un passage par la corbeille. */
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  targetLocale: text('target_locale'),
+  /** Destination libre : chemin du site (« /contact ») ou adresse complète (« https://… »). */
+  targetUrl: text('target_url'),
+  /** 301 (définitive) ou 302 (provisoire). */
+  status: integer('status').notNull().default(301),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [uniqueIndex('cms_redirect_rules_source').on(t.source), index('cms_redirect_rules_target').on(t.targetId)])
+
+/** Adresses demandées par des visiteurs et introuvables (404) : un compteur par adresse, sans donnée personnelle. Un journal, pas un contenu. */
+export const notFound = sqliteTable('cms_not_found', {
+  /** Adresse demandée, sous sa forme de comparaison. */
+  path: text('path').primaryKey(),
+  hits: integer('hits').notNull().default(0),
+  firstAt: integer('first_at', { mode: 'timestamp_ms' }).notNull(),
+  lastAt: integer('last_at', { mode: 'timestamp_ms' }).notNull(),
+  /** D'où venait le dernier visiteur, si connu : chemin du site ou « domaine/chemin », sans paramètres. */
+  referrer: text('referrer'),
+}, t => [index('cms_not_found_last').on(t.lastAt)])
+
 /** Réglages du back-office qui ne sont pas des contenus (ex. le thème du site). */
 export const settings = sqliteTable('cms_settings', {
   key: text('key').primaryKey(),

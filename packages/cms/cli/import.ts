@@ -207,7 +207,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
       return 1
     }
     for (const warning of plan.warnings) out(`  attention : ${warning}`)
-    if (!plan.entries.length) { out('Le fichier ne contient aucun élément : rien à faire.'); return 0 }
+    if (!plan.entries.length && !plan.redirects.length) { out('Le fichier ne contient aucun élément : rien à faire.'); return 0 }
 
     // 2. Connexion.
     const ask = async (name: string, question: string, hidden: boolean) => {
@@ -318,6 +318,8 @@ export async function runImport(options: ImportOptions): Promise<number> {
       }
     }
 
+    /** Contenus qu'une simulation créerait : ils n'existent pas encore pour le serveur. */
+    const planned = new Set<string>()
     // 5. Contenus, type par type, dans l'ordre du fichier. Une erreur sur un élément n'arrête pas les autres.
     const byType = new Map<string, PlannedEntry[]>()
     for (const entry of plan.entries) byType.set(entry.type, [...(byType.get(entry.type) ?? []), entry])
@@ -347,6 +349,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
           const check = await call<{ created: boolean; changed: string[] }>(url, { method, json: requestBody(entry, ids, { create, dryRun: true }) })
           const outcome: Outcome = check.created ? 'created' : check.changed.length ? 'updated' : 'unchanged'
           if (outcome !== 'unchanged' && !dryRun) await call(url, { method, json: requestBody(entry, ids, { create, dryRun: false }) })
+          if (outcome === 'created' && dryRun) planned.add(entry.id)
           line(outcome, name)
         }
         catch (e) {
@@ -355,7 +358,26 @@ export async function runImport(options: ImportOptions): Promise<number> {
       }
     }
 
-    // 6. Compte rendu.
+    // 6. Redirections des anciennes adresses : après les contenus, pour que leurs pages de destination existent.
+    //    Le serveur vérifie chaque ligne (boucle, page en ligne, adresse réservée…) et aplatit les chaînes.
+    if (plan.redirects.length) {
+      out('\nRedirections')
+      // En simulation, une page que l'import créerait n'existe pas encore : sa redirection ne peut être vérifiée qu'à l'import.
+      const later = dryRun ? plan.redirects.filter(r => typeof r.to !== 'string' && r.to.kind === 'page' && planned.has(r.to.id)) : []
+      for (const r of later) line('created', r.from, ['sera vérifiée à l\'import : sa page de destination n\'existe pas encore'])
+      const rules = plan.redirects.filter(r => !later.includes(r))
+      try {
+        const report = rules.length
+          ? await call<{ lines: { line: number; source: string; result: Outcome; message: string }[] }>('/api/cms/redirects/import', { method: 'POST', json: { rules, replace: true, dryRun } })
+          : { lines: [] }
+        for (const row of report.lines) line(row.result, rules[row.line - 1]?.from ?? row.source, row.result === 'unchanged' ? [] : [row.message])
+      }
+      catch (e) {
+        for (const r of rules) line('error', r.from, describe(e as ApiError))
+      }
+    }
+
+    // 7. Compte rendu.
     const total = [
       dryRun ? `${counts.created} à créer` : plural(counts.created, 'créé', 'créés'),
       dryRun ? `${counts.updated} à mettre à jour` : `${counts.updated} mis à jour`,

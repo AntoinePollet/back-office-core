@@ -114,10 +114,42 @@ variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'h
 - `"slug"` fixe l'adresse de la page, `"seo": { "title", "description", "image", "noindex" }` le référencement.
 - Les éléments sont **publiés** ; `"status": "draft"` sur un élément (ou à la racine du fichier), ou l'option `--draft`,
   les laisse en brouillon.
+- **Anciennes adresses** (refonte d'un site) : une rubrique `"redirections"` à la racine du fichier, pour que les adresses
+  de l'ancien site mènent aux nouvelles pages :
+  `"redirections": [{ "from": "/nos-services.html", "to": "/services" }, { "from": "/droit-affaires.php", "to": { "page": "services", "id": "droit-des-affaires" } }]`.
+  `to` est une adresse (`"/…"` ou `"https://…"`) ou une page du site (elle suit alors la page si son adresse change ;
+  `"locale": "en"` pour une autre langue) ; `"status": 302` pour une redirection provisoire. Relancer l'import met à jour
+  les redirections déjà présentes. Compte éditeur ou administrateur. Voir « Redirections » plus bas.
 
 Le fichier peut aussi être un module (`cms.import.mjs` ou `.ts`) dont l'export par défaut est cet objet, ou une fonction
 qui le renvoie : pratique pour le calculer à partir d'autres données. Le fichier est vérifié en entier avant le premier
 envoi ; ensuite, une erreur sur un élément n'empêche pas d'importer les autres, et la commande se termine en erreur.
+
+## Redirections et pages introuvables
+
+Écran « Redirections » du back-office (administrateur et éditeur). Rien à écrire dans le site.
+
+- **Quand l'adresse d'une page publiée change**, sa redirection se crée toute seule (elle figure dans la liste comme
+  « Automatique »). **Pour une ancienne adresse d'un précédent site**, on l'ajoute à la main (« Ajouter »), en lot
+  (« Importer une liste » : `ancienne adresse ; nouvelle adresse` par ligne, ou un fichier CSV à deux colonnes), ou par
+  la rubrique `redirections` du fichier d'import ci-dessus.
+- La destination est une **page du site** (la redirection suit la page si son adresse change) ou une **adresse libre**
+  (`/chemin` ou `https://…`). Définitive (301, le cas habituel) ou provisoire (302).
+- **Une redirection ne s'applique que si aucune page ne répond** à l'ancienne adresse : une page en ligne (ou une page
+  `.vue` du site) passe toujours avant. Elle vaut pour toute adresse du site, y compris celles qu'aucune page ne gère.
+- **Adresses exactes seulement** : pas de motif avec « * ». Pour comparer, le nom de domaine, les majuscules, la barre
+  finale, les paramètres (`?…`) et l'encodage des accents ne comptent pas : `https://ancien.fr/Caf%C3%A9/?x=1` et `/café`
+  sont la même ancienne adresse. Les paramètres de la demande sont recopiés sur la destination (`?utm_source=…`).
+- Refusé, avec un message clair : une adresse du back-office ou technique (`/admin`, `/api`, `/media`, `/_…`,
+  `sitemap.xml`, `robots.txt`), la page d'accueil, une redirection vers elle-même, une boucle, un doublon, l'adresse
+  d'une page en ligne. Une **chaîne** (A → B alors que B → C) est signalée et aplatie sur demande (A → C) ; l'import
+  en lot l'aplatit de lui-même et le dit.
+- Si la page visée est supprimée ou retirée du site, la redirection attend (le visiteur voit la page 404, la liste le
+  signale) et reprend à la restauration ou à la republication.
+- **Pages introuvables** (second onglet) : les adresses demandées par des visiteurs sans rien trouver, avec le nombre de
+  demandes et la page d'où ils venaient, et un bouton « Créer une redirection ». Aucune donnée personnelle n'est gardée
+  (ni adresse IP, ni navigateur). Les balayages de robots (`/wp-login.php`, `/.env`…) ne sont pas comptés ; 500 adresses
+  au plus sont conservées, et une adresse qui n'est plus demandée disparaît après 90 jours.
 
 ## Mettre en ligne
 

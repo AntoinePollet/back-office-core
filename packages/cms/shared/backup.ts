@@ -90,7 +90,7 @@ export function isSealedColumn(table: string, column: string) {
  * - Ce qui s'est réellement passé et ne doit pas être effacé en revenant en arrière : le journal d'activité,
  *   le journal des workflows, les paiements reçus (pièces comptables) et les messages envoyés par les visiteurs.
  */
-const KEPT_ON_RESTORE = ['cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_form_submissions']
+const KEPT_ON_RESTORE = ['cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_form_submissions', 'cms_not_found']
 export const isKeptOnRestore = (table: string) => !table.startsWith('cms_') || KEPT_ON_RESTORE.includes(table)
 
 /**

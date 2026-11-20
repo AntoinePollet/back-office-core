@@ -6,7 +6,7 @@ import type { CmsConfig } from '../../../shared/format'
  * Champ lien : vers une page du site ou une adresse libre.
  * Tant que la cible n'est pas choisie, la valeur est null ; le texte saisi reste affiché.
  */
-const props = defineProps<{ modelValue?: LinkValue | null; invalid?: boolean }>()
+const props = defineProps<{ modelValue?: LinkValue | null; invalid?: boolean; /** Seulement la cible : ni texte du lien, ni « nouvel onglet » (destination d'une redirection). */ targetOnly?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: LinkValue | null] }>()
 
 // Le schéma est déjà chargé par la mise en page : lecture directe, sans attente.
@@ -68,7 +68,7 @@ watch(() => draft.type, async (type) => {
     </div>
     <input v-else v-model="draft.url" class="input input-sm w-full" placeholder="https://… , mailto:… , tel:… ou /chemin">
 
-    <div class="grid sm:grid-cols-[1fr_auto] gap-3 items-center">
+    <div v-if="!targetOnly" class="grid sm:grid-cols-[1fr_auto] gap-3 items-center">
       <input v-model="draft.label" class="input input-sm w-full" placeholder="Texte du lien (facultatif)">
       <label class="flex items-center gap-2 cursor-pointer text-sm"><input v-model="draft.newTab" type="checkbox" class="checkbox checkbox-sm">Nouvel onglet</label>
     </div>

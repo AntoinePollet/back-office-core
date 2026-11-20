@@ -13,6 +13,31 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Redirections.** Nouvel écran « Redirections » (administrateur et éditeur) : la liste de toutes les redirections,
+  celles créées toutes seules quand l'adresse d'un contenu change et celles ajoutées à la main. Une ancienne adresse
+  d'un précédent site se redirige vers une page du site (la redirection suit la page si son adresse change) ou vers une
+  adresse libre, de façon définitive (301) ou provisoire (302) ; ajout une par une, ou en lot (liste collée ou fichier
+  CSV, avec un compte rendu ligne par ligne). Les erreurs sont refusées avec une explication : boucle, adresse réservée,
+  doublon, adresse d'une page en ligne ; une chaîne (A → B → C) est signalée et aplatie. Les redirections manuelles
+  valent pour toute adresse du site à laquelle aucune page ne répond, à une visite directe comme en navigation interne.
+  Adresses exactes seulement (pas de motif avec « * »).
+- **Pages introuvables.** Le même écran liste les adresses que des visiteurs ont demandées sans rien trouver (nombre de
+  demandes, dernière fois, provenance), avec « Créer une redirection » en un clic. Aucune donnée personnelle n'est
+  conservée ; les balayages de robots sont écartés ; 500 adresses au plus, oubliées après 90 jours sans demande.
+- L'outil d'import (`pnpm cms:import`) accepte une rubrique `redirections` (voir le README du site).
+
+### Correctifs
+
+- La page « introuvable » (404) du site n'est plus gardée une heure par le cache du réseau : elle était mise en cache
+  comme une page ordinaire.
+
+### À faire dans votre site
+
+- Rien d'obligatoire. La mise à jour ajoute deux tables (`cms_redirect_rules`, `cms_not_found`), créées par les
+  migrations au déploiement.
+
 ## 0.6.0 — 2026-11-19
 
 ### Nouveautés
