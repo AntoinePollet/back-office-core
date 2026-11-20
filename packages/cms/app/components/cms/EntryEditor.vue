@@ -402,6 +402,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <div class="font-semibold">Publication</div>
           <div v-if="def.drafts" class="flex justify-between"><span class="text-base-content/60">Statut</span><span>{{ statusMeta[status]?.label }}</span></div>
           <button v-if="def.path" class="btn btn-sm btn-block" :disabled="saving" @click="preview"><Eye :size="16" />Aperçu du brouillon</button>
+          <!-- Aperçu en direct : la page à côté du formulaire. Avec le droit « seulement ses contenus », le site ne montre pas de brouillon. -->
+          <CmsLivePreview v-if="def.path && !access.own" :type="type" :doc="doc" :locale="locale" :default-locale="defaultLocale" />
           <p v-if="def.drafts && !access.publish" class="text-xs text-base-content/60">Vous préparez le brouillon. La mise en ligne est faite par un éditeur.</p>
           <div v-if="review" class="rounded-field bg-info/10 p-3 space-y-2">
             <div class="font-medium">Publication demandée</div>

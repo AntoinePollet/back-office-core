@@ -5,6 +5,7 @@ import { adminVars, DEFAULT_ADMIN_COLOR } from '../../shared/theme'
 export { cmsImageSrcset, cmsImageUrl } from '../../shared/media'
 import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
+import { cmsLiveRead } from './useCmsLive'
 
 type ReadOptions = { locale?: string }
 
@@ -28,6 +29,7 @@ export function useCmsPreview() {
  * mais ne le fait pas pour un layer installé dans node_modules (core installé depuis git) : le serveur et le
  * navigateur calculaient alors des clés différentes, les contenus étaient relus par le navigateur et la page
  * ne correspondait plus au rendu du serveur. La clé dépend seulement de ce qui est lu.
+ * L'aperçu en direct relit cette clé pour savoir ce qu'une lecture contient (`parseReadKey`, shared/live-preview.ts).
  */
 const cmsKey = (kind: string, target: string, query: Record<string, unknown>) => `cms:${kind}:${target}:${JSON.stringify(query)}`
 
@@ -67,7 +69,8 @@ export function useCollection<K extends Key<Collections>>(type: K, options: List
   const { where, ...rest } = options
   const base = readOptions(rest)
   const query = computed(() => ({ ...base.query, ...whereQuery(toValue(where)) }))
-  return useFetch<Collections[K][]>(`/api/content/${type}`, { ...base, query, key: computed(() => cmsKey('liste', type, query.value)) })
+  const key = computed(() => cmsKey('liste', type, query.value))
+  return useFetch<Collections[K][]>(`/api/content/${type}`, { ...base, query, key, ...cmsLiveRead(key) })
 }
 
 /**
@@ -85,7 +88,8 @@ export function useCollectionPage<K extends Key<Collections>>(
   const { where, page, limit, ...rest } = options
   const base = readOptions(rest)
   const query = computed(() => ({ ...base.query, ...whereQuery(toValue(where)), limit, page: Math.max(1, Math.floor(Number(toValue(page)) || 1)) }))
-  return useFetch<CmsPage<Collections[K]>>(`/api/content/${type}`, { ...base, query, key: computed(() => cmsKey('page', type, query.value)) })
+  const key = computed(() => cmsKey('page', type, query.value))
+  return useFetch<CmsPage<Collections[K]>>(`/api/content/${type}`, { ...base, query, key, ...cmsLiveRead(key) })
 }
 
 /**
@@ -97,7 +101,8 @@ export async function useEntry<K extends Key<Collections>>(type: K, slug: MaybeR
   const nuxtApp = useNuxtApp()
   const preview = previewParam(useRoute().query)
   const read = readOptions(options)
-  const result = await useFetch<Collections[K]>(() => `/api/content/${type}/${encodeURIComponent(toValue(slug))}`, { ...read, key: computed(() => cmsKey('contenu', `${type}/${toValue(slug)}`, read.query)) })
+  const key = computed(() => cmsKey('contenu', `${type}/${toValue(slug)}`, read.query))
+  const result = await useFetch<Collections[K]>(() => `/api/content/${type}/${encodeURIComponent(toValue(slug))}`, { ...read, key, ...cmsLiveRead(key) })
   const moved = (result.data.value as { _redirect?: string } | null)?._redirect
   if (moved) await nuxtApp.runWithContext(() => navigateTo(moved + (preview ? `?preview=${encodeURIComponent(preview)}` : ''), { redirectCode: 301 }))
   return result
@@ -106,7 +111,8 @@ export async function useEntry<K extends Key<Collections>>(type: K, slug: MaybeR
 /** Une page unique (accueil, réglages…). `null` tant qu'elle n'est pas publiée. */
 export function useSingleton<K extends Key<Singletons>>(key: K, options: ReadOptions = {}) {
   const read = readOptions(options)
-  return useFetch<Singletons[K] | null>(`/api/content/${key}`, { ...read, key: cmsKey('page-unique', key, read.query) })
+  const readKey = cmsKey('page-unique', key, read.query)
+  return useFetch<Singletons[K] | null>(`/api/content/${key}`, { ...read, key: readKey, ...cmsLiveRead(readKey) })
 }
 
 type SeoEntry = {

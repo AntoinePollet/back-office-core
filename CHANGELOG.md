@@ -13,6 +13,20 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Aperçu en direct.** Dans le formulaire d'un contenu qui a une page, le bouton « Aperçu en direct » affiche la page
+  du site à côté du formulaire : elle suit la saisie au bout d'un court délai, sans rien enregistrer ni publier (texte,
+  images, galeries, relations, liens, champs masqués par une condition, langue en cours d'édition). Largeurs ordinateur,
+  tablette et téléphone, séparation réglable, bascule Formulaire / Aperçu sur petit écran. Il n'y a **rien à écrire dans
+  le site** : les pages qui lisent leurs contenus avec `useSingleton`, `useEntry`, `useCollection` ou
+  `useCollectionPage` fonctionnent telles quelles, y compris les listes qui contiennent le contenu en cours de saisie.
+  Limites : une page qui lit l'API par ses propres moyens (`$fetch`, `useAsyncData` avec sa propre clé) montre ce qui est
+  enregistré ; l'adresse de la page, l'ordre et les filtres des listes ne changent qu'à l'enregistrement ; un contenu
+  jamais enregistré n'a pas d'aperçu avant son premier enregistrement. Si votre hébergement ajoute un en-tête
+  `X-Frame-Options: DENY` ou `Content-Security-Policy: frame-ancestors 'none'`, remplacez-le par `SAMEORIGIN` /
+  `frame-ancestors 'self'` : le core, lui, n'en pose aucun.
+
 ## 0.6.0 — 2026-11-19
 
 ### Nouveautés

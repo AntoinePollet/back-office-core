@@ -34,6 +34,7 @@ export default defineNuxtPlugin(() => {
     if (value === null) return
     banner = document.createElement('div')
     banner.setAttribute('role', 'status')
+    banner.dataset.cmsPreviewBanner = '' // l'aperçu en direct le masque dans son cadre
     banner.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483000;background:#111827;color:#fff;font:14px/1.4 system-ui,sans-serif;padding:8px 16px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;gap:12px;align-items:center;max-width:calc(100vw - 32px)'
     const text = document.createElement('span')
     // « 1 » : la personne est passée par le back-office. Sinon : lien d'aperçu partagé, elle n'a pas de compte.

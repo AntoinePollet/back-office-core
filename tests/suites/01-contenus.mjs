@@ -49,6 +49,7 @@ export default async function (t) {
     await page.waitForFunction(() => !document.querySelector('.modal-open') && document.body.innerText.includes('Remplacer'))
     const category = await field(page, 'Catégorie', 'select')
     // Première catégorie proposée, après l'option vide.
+    await page.waitForFunction(select => select.options.length > 1, {}, category) // la liste arrive après l'affichage du formulaire
     await category.select(await category.$eval('option:nth-child(2)', o => o.value))
     await (await (await find(page, 'label', 'Tarif sur devis')).$('input')).evaluate(el => el.click())
     await clickText(page, 'button', 'Publier'); await page.waitForFunction(() => /\/admin\/services\/[0-9a-f-]{36}$/.test(location.pathname))
