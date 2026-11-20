@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
     db.delete(invites).where(eq(invites.userId, id)),
     db.delete(schema.userAccess).where(eq(schema.userAccess.userId, id)),
     db.delete(user).where(eq(user.id, id)),
+    forgetFavorites(event, id),
   ])
   logActivity(event, { action: 'user.deleted', actor: admin, details: { name: target.name, email: target.email }, target: { kind: 'user', id } })
   return { ok: true }
