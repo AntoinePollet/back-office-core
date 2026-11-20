@@ -24,9 +24,6 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   (connecté ou lien d'aperçu partagé) montre le vrai site, et un bandeau « Site fermé » le rappelle dans le
   back-office. Changement d'état : cache du site vidé, ligne au journal d'activité. Aucune migration (le réglage est
   rangé dans `cms_settings`).
-
-### Nouveautés
-
 - **Module Resend** : `resend()` dans `cms.config.ts` envoie les e-mails du site (workflows, lien de nouveau mot de
   passe, notifications des formulaires) par Resend, à la place de Brevo. Clé d'API et expéditeur dans l'écran Modules
   (ou `NUXT_RESEND_API_KEY` et `NUXT_EMAIL_FROM`). « Vérifier la connexion » contrôle la clé et, avec une clé « Full
