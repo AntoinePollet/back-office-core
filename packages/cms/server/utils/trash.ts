@@ -13,13 +13,15 @@
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { TRASH_DAYS, canPurgeTrash, canSeeTrashItem, freeSlug, restoresPublished, trashDaysLeft } from '../../shared/trash'
+import { cmsObjectPosition } from '../../shared/media'
 import type { ActivityInput } from './activity'
 
 type EntryRow = typeof schema.entries.$inferSelect
 type LocaleRow = typeof schema.entryLocales.$inferSelect
 type RedirectRow = typeof schema.redirects.$inferSelect
 type ReviewRow = typeof schema.reviewRequests.$inferSelect
-type MediaRow = typeof schema.media.$inferSelect
+/** `focus` est facultatif : un fichier mis à la corbeille avant l'arrivée du point d'intérêt n'en a pas. */
+type MediaRow = Omit<typeof schema.media.$inferSelect, 'focus'> & { focus?: { x: number; y: number } | null }
 type TrashRow = typeof schema.trash.$inferSelect
 type User = Awaited<ReturnType<typeof requireUser>>
 
@@ -135,7 +137,7 @@ export async function listTrash(event: H3Event, user: User) {
     if (row.kind === 'media') {
       const { media } = row.snapshot as unknown as MediaSnapshot
       // Vignette : servie seulement à qui voit la corbeille (paramètre `corbeille`, voir la route /media).
-      return { ...common, kind: 'media' as const, mime: media.mime, size: media.size, thumbnail: media.mime.startsWith('image/') ? `${thumbUrl(media.key)}&corbeille=1` : null }
+      return { ...common, kind: 'media' as const, mime: media.mime, size: media.size, thumbnail: media.mime.startsWith('image/') ? `${thumbUrl(media.key)}&corbeille=1` : null, thumbnailPosition: cmsObjectPosition(media) ?? null }
     }
     const { locales } = row.snapshot as unknown as EntrySnapshot
     const def = row.type ? findDef(row.type) : undefined

@@ -24,6 +24,19 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   Statut « Programmé » dans les listes, écran « Programmé » pour tout voir. Les contenus sans brouillons ne se
   programment pas.
 - Les pages du site ne sont plus gardées en cache au-delà de la prochaine mise en ligne ou du prochain retrait programmés.
+- **Point d'intérêt des images.** Dans la médiathèque, on clique sur une image pour dire où est le sujet (un visage, un
+  produit) ; le point se déplace à la souris, au doigt ou au clavier, et des aperçus montrent le résultat en carré, en
+  paysage, en portrait et en bandeau. Le réglage vaut partout où l'image est utilisée. `<CmsImage>` le transmet au
+  navigateur : une image recadrée en CSS (`object-cover`) ne coupe plus son sujet, sans rien changer au site. Les
+  vignettes du back-office en profitent aussi. Avec une balise `<img>` écrite à la main : `cmsObjectPosition(photo)`.
+- **Recadrage par le serveur.** `<CmsImage :media="photo" ratio="1/1" />` (ou `:width` et `:height` ensemble) sert une
+  image recadrée à ces proportions autour du point d'intérêt, dans toutes les largeurs du `srcset` : le navigateur ne
+  télécharge que la partie affichée. Aussi : `cmsImageUrl(photo, 640, '16/9')`. Les proportions servies forment une
+  liste fermée (voir le README du site) ; l'adresse d'une image recadrée contient le point d'intérêt, donc un nouveau
+  réglage se voit tout de suite, sans attendre l'expiration d'un cache.
+- L'objet d'une image lu par le site (type `Media`) contient `focus` (`{ x, y }` de 0 à 1, ou `null`).
+- Outil d'import : `"focus": { "x": 0.3, "y": 0.2 }` à côté de `"file"` et `"alt"`.
+- Le réglage du point d'intérêt figure au journal d'activité.
 
 ### À faire dans votre site
 
@@ -33,6 +46,9 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   le signale). La sauvegarde reste celle de la nuit : le déclencheur fréquent n'en fait pas d'autre.
 - Si une collection ou une page unique de votre `cms.config.ts` s'appelle `scheduled`, renommez-la : ce nom est
   désormais celui d'un écran du back-office.
+- À savoir : un `<CmsImage>` qui recevait à la fois `width` et `height` est maintenant recadré
+  par le serveur à ces proportions (avant, l'image entière était servie et le navigateur la déformait ou la recadrait
+  selon le CSS du site).
 
 ## 0.6.0 — 2026-11-19
 

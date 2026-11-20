@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CmsMedia } from '../../composables/useCms'
 import { adminEntryPath } from '../../../shared/admin-paths'
+import { canHaveFocus } from '../../../shared/media'
 import { folderLabel } from '../../../shared/media-folders'
 import { TRASH_DAYS } from '../../../shared/trash'
 import { Folder, FolderInput, Images } from '@lucide/vue'
@@ -32,14 +33,19 @@ async function select(media: CmsMedia) {
   usage.value = await cmsApi<Usage[]>(`/api/cms/media/${media.id}/usage`).catch(() => [])
 }
 
+/** Fichier modifié (texte alternatif, point d'intérêt) : la liste et la fiche suivent. */
+function applyUpdate(updated: CmsMedia) {
+  items.value = (items.value ?? []).map(m => (m.id === updated.id ? updated : m))
+  if (selected.value?.id === updated.id) selected.value = updated
+}
+
 async function saveAlt() {
   const media = selected.value
   if (!media || locales.every(l => (alt.value[l] ?? '') === (media.alt[l] ?? ''))) return
   try {
     const { purgeFailed, ...updated } = await cmsApi<CmsMedia & { purgeFailed: boolean }>(`/api/cms/media/${media.id}`, { method: 'PATCH', body: { alt: alt.value } })
     cmsSiteUpdated({ purgeFailed })
-    items.value = (items.value ?? []).map(m => (m.id === updated.id ? updated : m))
-    if (selected.value?.id === updated.id) selected.value = updated
+    applyUpdate(updated)
     toast.success('Texte alternatif enregistré')
   }
   catch (e) {
@@ -86,10 +92,11 @@ async function copyUrl() {
         <CmsMediaLibrary ref="library" manage :selected-id="selected?.id" @select="select" />
       </div>
 
-      <aside class="card bg-base-100 border border-base-300 p-4 text-sm lg:sticky lg:top-20">
+      <aside class="card bg-base-100 border border-base-300 p-4 text-sm min-w-0 lg:sticky lg:top-20">
         <div v-if="!selected" class="text-base-content/50 py-10 text-center">Sélectionnez un fichier pour voir ses détails.</div>
         <div v-else class="space-y-3">
-          <img v-if="selected.mime.startsWith('image/')" :src="cmsImageUrl(selected, 640)" class="rounded-field w-full max-h-56 object-contain bg-base-200" alt="">
+          <CmsMediaFocus v-if="canHaveFocus(selected.mime)" :media="selected" @saved="applyUpdate" />
+          <img v-else-if="selected.mime.startsWith('image/')" :src="cmsImageUrl(selected, 640)" class="rounded-field w-full max-h-56 object-contain bg-base-200" alt="">
           <div class="font-semibold break-all">{{ selected.name }}</div>
           <div class="flex items-center gap-2 min-w-0" data-media-folder-info>
             <component :is="current?.folderId ? Folder : Images" :size="14" class="shrink-0 opacity-60" />

@@ -4,7 +4,7 @@ import { DEFAULT_TIME_ZONE, scheduleBadge } from '../../../../shared/schedule'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
-type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; values: Record<string, unknown>; statuses: Record<string, string>; review?: boolean; scheduled?: { action: 'publish' | 'unpublish'; at: string; failed: boolean }[]; updatedAt: string }
+type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; thumbnailPosition?: string | null; values: Record<string, unknown>; statuses: Record<string, string>; review?: boolean; scheduled?: { action: 'publish' | 'unpublish'; at: string; failed: boolean }[]; updatedAt: string }
 
 const route = useRoute()
 const type = route.params.type as string
@@ -150,7 +150,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
             <td>
               <div class="flex items-center gap-3">
                 <div v-if="def.list?.thumbnail" class="w-12 h-9 rounded-field bg-base-300 overflow-hidden shrink-0">
-                  <img v-if="item.thumbnail" :src="item.thumbnail" class="w-full h-full object-cover" alt="">
+                  <img v-if="item.thumbnail" :src="item.thumbnail" class="w-full h-full object-cover" :style="{ objectPosition: item.thumbnailPosition ?? undefined }" alt="">
                 </div>
                 <div class="min-w-0">
                   <div class="font-medium truncate">{{ item.title || 'Sans titre' }}</div>

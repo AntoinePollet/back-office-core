@@ -84,6 +84,7 @@ export const ACTIVITY_ACTIONS = {
   'media.restored': action('media', 'Fichier restauré', d => `a restauré le fichier ${quote(d.name)} depuis la corbeille`),
   'media.purged': action('media', 'Fichier supprimé définitivement', d => `a supprimé définitivement le fichier ${quote(d.name)}`),
   'media.moved': action('media', 'Fichiers déplacés', d => `a déplacé ${d.count === 1 && d.name ? `le fichier ${quote(d.name)}` : plural(d.count ?? 0, 'fichier')} ${d.to ? `dans le dossier ${quote(d.to)}` : 'à la racine de la médiathèque'}`),
+  'media.focus_changed': action('media', 'Point d\'intérêt réglé', d => (d.to ? `a réglé le point d'intérêt de l'image ${quote(d.name)} (${d.to})` : `a remis au centre le point d'intérêt de l'image ${quote(d.name)}`)),
   'folder.created': action('media', 'Dossier créé', d => `a créé le dossier ${quote(d.name)}`),
   'folder.renamed': action('media', 'Dossier renommé', d => `a renommé le dossier ${quote(d.from)} en ${quote(d.to)}`),
   'folder.moved': action('media', 'Dossier déplacé', d => `a déplacé le dossier ${quote(d.name)} ${d.to ? `dans ${quote(d.to)}` : 'à la racine de la médiathèque'}`),

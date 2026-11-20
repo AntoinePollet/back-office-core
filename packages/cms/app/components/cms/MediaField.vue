@@ -24,7 +24,7 @@ function pick(media: CmsMedia) {
   <div>
     <div v-if="current" class="flex items-center gap-3 border rounded-field p-2" :class="invalid ? 'border-error' : 'border-base-300'">
       <div class="w-24 h-16 rounded-field bg-base-300 overflow-hidden shrink-0 grid place-items-center">
-        <img v-if="current.mime.startsWith('image/')" :src="cmsImageUrl(current, 320)" class="w-full h-full object-cover" alt="">
+        <img v-if="current.mime.startsWith('image/')" :src="cmsImageUrl(current, 320)" :style="{ objectPosition: cmsObjectPosition(current) }" class="w-full h-full object-cover" alt="">
         <span v-else class="text-xs font-semibold text-base-content/60">{{ current.name.split('.').pop()?.toUpperCase() }}</span>
       </div>
       <div class="min-w-0 grow text-sm">

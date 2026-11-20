@@ -356,7 +356,7 @@ async function removeFolder() {
             :title="m.name" :aria-pressed="multiple ? !!rank(m) : undefined" :aria-disabled="multiple && isTaken(m) ? true : undefined"
             @click="choose(m)" @dragstart="dragFile(m, $event)"
           >
-            <img v-if="isImage(m)" :src="cmsImageUrl(m, 320)" class="w-full h-full object-cover pointer-events-none" :alt="m.alt.fr ?? ''" loading="lazy">
+            <img v-if="isImage(m)" :src="cmsImageUrl(m, 320)" :style="{ objectPosition: cmsObjectPosition(m) }" class="w-full h-full object-cover pointer-events-none" :alt="m.alt.fr ?? ''" loading="lazy">
             <span v-else class="w-full h-full grid place-items-center text-sm font-semibold text-base-content/60">{{ extension(m) }}</span>
             <span v-if="isImage(m) && !Object.values(m.alt).some(Boolean)" class="absolute top-1.5 left-1.5 badge badge-xs badge-warning" title="Texte alternatif manquant">alt</span>
             <span v-if="rank(m)" class="absolute top-1.5 right-1.5 badge badge-sm badge-primary font-semibold" :aria-label="`Sélectionné en position ${rank(m)}`">{{ rank(m) }}</span>

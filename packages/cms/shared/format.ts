@@ -124,6 +124,13 @@ interface OptsOf {
  * </figure>
  * ```
  *
+ * Pour des vignettes toutes de mêmes proportions, `ratio` fait recadrer l'image par le serveur, autour du point
+ * d'intérêt réglé dans la médiathèque (proportions servies : `IMAGE_RATIOS` dans shared/media.ts) :
+ *
+ * ```vue
+ * <CmsImage :media="photo" ratio="1/1" sizes="12rem" />
+ * ```
+ *
  * La légende est propre à cet usage de l'image (« Marseille (13) ») ; le texte alternatif (`alt`), lui, appartient
  * au fichier et se règle une fois dans la médiathèque. Comme toute valeur d'un champ, les légendes sont traduites si
  * le champ l'est : une galerie est commune aux langues par défaut (`localized: true` pour des légendes par langue) ;
@@ -464,7 +471,12 @@ export function isVisible(field: { showIf?: Condition }, values: Record<string, 
 
 // ───────────────────────── Types des contenus lus par le site ─────────────────────────
 
-export type Media = { id: string; url: string; name: string; alt: string; mime: string; width: number | null; height: number | null }
+/**
+ * Fichier de la médiathèque tel que le site le reçoit. `focus` : point d'intérêt de l'image réglé dans la médiathèque
+ * (`{ x, y }` entre 0 et 1 depuis la gauche et le haut ; `null` : le centre). `<CmsImage>` s'en sert tout seul pour ne pas
+ * couper le sujet ; avec une balise `<img>` écrite à la main : `:style="{ objectPosition: cmsObjectPosition(photo) }"`.
+ */
+export type Media = { id: string; url: string; name: string; alt: string; mime: string; width: number | null; height: number | null; focus: { x: number; y: number } | null }
 /** Image (ou fichier) d'une liste avec `captions` : le fichier, plus la légende propre à cet usage. */
 export type CaptionedMedia = Media & { caption: string | null }
 export type Link = { label: string; href: string; newTab: boolean }

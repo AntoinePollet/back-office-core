@@ -10,6 +10,7 @@ import { basename, dirname, extname, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { createJiti } from 'jiti'
 import type { CmsConfig } from '../shared/format'
+import { canHaveFocus, normalizeFocus } from '../shared/media'
 import { type MediaFolder, folderKey } from '../shared/media-folders'
 import { imageSize } from './image-size'
 import { type PlannedEntry, type PlannedFile, type Status, mediaId, mediaOf, planImport, requestBody } from './import-plan'
@@ -275,7 +276,7 @@ export async function runImport(options: ImportOptions): Promise<number> {
     const ids = new Map<string, string>()
     const failed = new Map<string, string>()
     let sent = 0
-    type Known = { id: string; alt: Record<string, string>; folderId?: string | null }
+    type Known = { id: string; mime?: string; alt: Record<string, string>; folderId?: string | null; focus?: { x: number; y: number } | null }
     if (files.length) {
       out('\nMédiathèque')
       const known = new Map((await call<Known[]>('/api/cms/media')).map(m => [m.id, m]))
@@ -302,12 +303,16 @@ export async function runImport(options: ImportOptions): Promise<number> {
           const alt = { ...current?.alt, ...file.alt }
           const altChanged = Object.entries(file.alt).some(([locale, text]) => (current?.alt?.[locale] ?? '') !== text)
           if (altChanged && !dryRun) await call(`/api/cms/media/${file.id}`, { method: 'PATCH', json: { alt } })
+          // Point d'intérêt : celui du fichier d'import, s'il en donne un (sans effet sur un SVG, un GIF ou un PDF).
+          const wanted = canHaveFocus(file.mime) ? normalizeFocus(file.focus) : null
+          const focusChanged = !!file.focus && canHaveFocus(file.mime) && (wanted?.x !== current?.focus?.x || wanted?.y !== current?.focus?.y)
+          if (focusChanged && !dryRun) await call(`/api/cms/media/${file.id}`, { method: 'PATCH', json: { focus: wanted } })
           // Un fichier déjà présent est rangé dans le dossier demandé ; sans « folder », il reste où il est.
           const moved = !!folderPath && !isNew && (folderId === undefined || (current?.folderId ?? null) !== folderId)
           if (moved && !dryRun) await call('/api/cms/media/move', { method: 'POST', json: { ids: [file.id], folderId } })
           if (isNew) sent++
           ids.set(file.path, file.id)
-          const changes = [altChanged ? (dryRun ? 'texte à corriger' : 'texte corrigé') : '', moved ? (dryRun ? 'à ranger' : 'rangé') : ''].filter(Boolean).join(', ')
+          const changes = [altChanged ? (dryRun ? 'texte à corriger' : 'texte corrigé') : '', focusChanged ? (dryRun ? 'point à régler' : 'point réglé') : '', moved ? (dryRun ? 'à ranger' : 'rangé') : ''].filter(Boolean).join(', ')
           out(`  ${(isNew ? (dryRun ? 'à envoyer' : 'envoyé') : changes || 'déjà présent').padEnd(WIDTH)}${name}${folderPath ? ` › ${folderPath}` : ''}`)
         }
         catch (e) {

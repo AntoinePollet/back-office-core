@@ -1,7 +1,9 @@
 import type { H3Event } from 'h3'
 import { canOrganizeMedia } from '../../shared/access'
+import { normalizeFocus } from '../../shared/media'
 
-type MediaRow = typeof schema.media.$inferSelect
+/** `focus` est facultatif : un fichier sorti d'une corbeille plus ancienne que le point d'intérêt n'en a pas. */
+type MediaRow = Omit<typeof schema.media.$inferSelect, 'focus'> & { focus?: { x: number; y: number } | null }
 
 export const MEDIA_MAX_SIZE = 20 * 1024 * 1024
 /** Types de fichiers acceptés par la médiathèque. */
@@ -29,12 +31,12 @@ export function useBucket(event: H3Event) {
 
 /** Un fichier tel que le back-office le reçoit. */
 export function toAdminMedia(row: MediaRow) {
-  return { id: row.id, url: mediaUrl(row.key), name: row.name, mime: row.mime, size: row.size, width: row.width, height: row.height, alt: row.alt, createdAt: row.createdAt, folderId: row.folderId ?? null }
+  return { id: row.id, url: mediaUrl(row.key), name: row.name, mime: row.mime, size: row.size, width: row.width, height: row.height, alt: row.alt, focus: normalizeFocus(row.focus), createdAt: row.createdAt, folderId: row.folderId ?? null }
 }
 
 /** Un fichier tel que le site le reçoit : le texte alternatif est celui de la langue demandée. */
 export function toPublicMedia(row: MediaRow, locale: string) {
-  return { id: row.id, url: mediaUrl(row.key), name: row.name, alt: row.alt[locale] || row.alt[cmsConfig.site.defaultLocale] || '', mime: row.mime, width: row.width, height: row.height }
+  return { id: row.id, url: mediaUrl(row.key), name: row.name, alt: row.alt[locale] || row.alt[cmsConfig.site.defaultLocale] || '', mime: row.mime, width: row.width, height: row.height, focus: normalizeFocus(row.focus) }
 }
 
 /** Dossiers de la médiathèque, tels que le back-office les reçoit. */

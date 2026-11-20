@@ -133,7 +133,7 @@ const summary = computed(() => {
           :title="mediaOf(item)?.name" @dragstart="dragStart(i, $event)" @dragend="dragIndex = null"
         >
           <template v-if="mediaOf(item)">
-            <img v-if="mediaOf(item)!.mime.startsWith('image/')" :src="cmsImageUrl(mediaOf(item)!, 320)" class="w-full h-full object-cover pointer-events-none" alt="">
+            <img v-if="mediaOf(item)!.mime.startsWith('image/')" :src="cmsImageUrl(mediaOf(item)!, 320)" :style="{ objectPosition: cmsObjectPosition(mediaOf(item)) }" class="w-full h-full object-cover pointer-events-none" alt="">
             <div v-else class="w-full h-full grid place-items-center p-2 text-center">
               <span class="text-sm font-semibold text-base-content/60">{{ extension(mediaOf(item)!) }}</span>
             </div>

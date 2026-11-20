@@ -51,6 +51,10 @@ const FILES = {
   'atelier.png': () => png(240, 180),
   'chantier.png': () => png(200, 150),
   'reunion.png': () => png(160, 120),
+  // Recadrage (suite 26) : grande image en dégradé. Le rouge d'un pixel dit sa position horizontale dans l'image
+  // d'origine, le vert sa position verticale : la couleur des bords d'une version recadrée dit quel rectangle a été gardé.
+  'paysage.png': () => png(1200, 800),
+  'portrait.png': () => png(600, 900),
   // Type de fichier refusé par la médiathèque.
   'notes.txt': () => Buffer.from('texte'),
 }

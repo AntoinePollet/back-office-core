@@ -1,4 +1,5 @@
 import { eq, inArray } from 'drizzle-orm'
+import { cmsObjectPosition } from '../../../../../shared/media'
 
 /** Vignette : l'image, ou la première image d'une galerie. */
 function thumbOf(value: unknown): string | null {
@@ -56,6 +57,8 @@ export default defineEventHandler(async (event) => {
   const thumbIds = [...new Set(items.flatMap(i => i.thumbnail ?? []))].slice(0, 80)
   const thumbs = thumbIds.length ? await db.select().from(schema.media).where(inArray(schema.media.id, thumbIds)) : []
   const urlById = new Map(thumbs.map(m => [m.id, thumbUrl(m.key)]))
+  // Point d'intérêt du fichier : la vignette, recadrée par le navigateur, garde le sujet visible.
+  const positionById = new Map(thumbs.map(m => [m.id, cmsObjectPosition(m) ?? null]))
 
   if (!full) return sortEntries(def, items, (item, key) => (key in item ? (item as Record<string, unknown>)[key] : item.sortValue)).map(({ id, title }) => ({ id, title }))
 
@@ -69,5 +72,5 @@ export default defineEventHandler(async (event) => {
   }
 
   return sortEntries(def, items, (item, key) => (key in item ? (item as Record<string, unknown>)[key] : item.sortValue))
-    .map(({ sortValue: _s, ...item }) => ({ ...item, thumbnail: item.thumbnail ? urlById.get(item.thumbnail) ?? null : null }))
+    .map(({ sortValue: _s, ...item }) => ({ ...item, thumbnail: item.thumbnail ? urlById.get(item.thumbnail) ?? null : null, thumbnailPosition: item.thumbnail ? positionById.get(item.thumbnail) ?? null : null }))
 })

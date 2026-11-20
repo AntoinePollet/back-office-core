@@ -54,6 +54,8 @@ export const media = sqliteTable('cms_media', {
   height: integer('height'),
   /** Texte alternatif par langue : { fr: '…', en: '…' }. */
   alt: text('alt', { mode: 'json' }).$type<Record<string, string>>().notNull(),
+  /** Point d'intérêt de l'image : { x, y } entre 0 et 1 (voir shared/media.ts). Vide : le centre. */
+  focus: text('focus', { mode: 'json' }).$type<{ x: number; y: number } | null>(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   /**
    * Dossier où le fichier est rangé ; vide : à la racine de la médiathèque. Ranger un fichier ne change ni sa clé
