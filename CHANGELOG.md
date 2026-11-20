@@ -13,6 +13,8 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+## 0.9.0 — 2026-11-20
+
 ### Nouveautés
 
 - **Menu du back-office en arbre.** Les contenus sont rangés dans des dossiers repliables, un par groupe de
