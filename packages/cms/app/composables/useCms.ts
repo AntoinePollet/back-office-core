@@ -2,7 +2,7 @@ import type { InjectionKey, MaybeRefOrGetter } from 'vue'
 import { adminVars, DEFAULT_ADMIN_COLOR } from '../../shared/theme'
 
 // Adresses d'images redimensionnées, utilisables dans les pages du site.
-export { cmsImageSrcset, cmsImageUrl } from '../../shared/media'
+export { cmsImageSrcset, cmsImageUrl, cmsObjectPosition } from '../../shared/media'
 import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
 
@@ -341,6 +341,8 @@ export async function cmsDuplicate(type: string, id: string, drafts: boolean) {
 export type CmsMedia = {
   id: string; url: string; name: string; mime: string; size: number
   width: number | null; height: number | null; alt: Record<string, string>; createdAt: string
+  /** Point d'intérêt de l'image ({ x, y } entre 0 et 1) ; null : le centre. */
+  focus: { x: number; y: number } | null
   /** Dossier où le fichier est rangé ; null : à la racine. */
   folderId: string | null
 }

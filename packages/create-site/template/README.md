@@ -47,6 +47,25 @@ useCmsSeo(article, { titleSuffix: useAppConfig().siteName })               // ti
 </template>
 ```
 
+### Cadrage des images
+
+Dans la médiathèque, la personne qui gère le site clique sur une image pour dire où est le sujet (son **point
+d'intérêt**). `<CmsImage>` s'en sert tout seul :
+
+```vue
+<!-- Recadrée par le navigateur (object-cover) : le sujet reste visible, rien à écrire de plus. -->
+<CmsImage :media="article.cover" sizes="20rem" class="w-full aspect-[16/10] object-cover" />
+
+<!-- Recadrée par le serveur aux proportions voulues, autour du sujet : le navigateur ne télécharge que la partie affichée. -->
+<CmsImage :media="article.cover" ratio="1/1" sizes="12rem" class="w-full rounded-full" />
+<CmsImage :media="article.cover" :width="400" :height="300" />
+```
+
+Proportions servies : `1/1`, `5/4`, `4/3`, `3/2`, `16/10`, `16/9`, `2/1`, `21/9`, `3/1`, et en hauteur `4/5`, `3/4`, `2/3`,
+`9/16` ; une autre valeur est ramenée à la plus proche. Sans `<CmsImage>` : `cmsImageUrl(photo, 640, '1/1')` donne l'adresse
+de l'image recadrée, et `cmsObjectPosition(photo)` la valeur CSS `object-position` à poser sur une balise `<img>` écrite à la
+main (ou sur une image de fond : `background-position`). Le point lui-même est dans `photo.focus` (`{ x, y }` de 0 à 1, ou `null`).
+
 Un contenu n'apparaît sur le site qu'une fois publié. Avec plusieurs langues, chaque fonction accepte `{ locale: 'en' }` ;
 sans cette option, c'est la langue par défaut.
 
@@ -97,6 +116,8 @@ variable `CMS_PASSWORD` (jamais en option de la commande, qui resterait dans l'h
 - Image ou fichier : un chemin. `"/photos/a.jpg"` est lu dans `public/`, `"photos/a.jpg"` à côté du fichier d'import.
   Le fichier est envoyé dans la médiathèque, une seule fois même s'il est cité plusieurs fois ou si l'import est relancé.
   Texte alternatif : `{ "file": "…", "alt": "…" }`, ou `"alt": { "fr": "…", "en": "…" }`.
+  Point d'intérêt d'une image (où se trouve le sujet, de 0 à 1 depuis la gauche et le haut) :
+  `{ "file": "…", "focus": { "x": 0.3, "y": 0.2 } }`.
 - Dossier de la médiathèque : `{ "file": "photos/toit-1.jpg", "folder": "Chantiers/Toiture" }` range le fichier dans
   le dossier « Toiture » du dossier « Chantiers » (`/` sépare les niveaux, 3 au plus). Les dossiers manquants sont créés ;
   un dossier existant est retrouvé par son nom (majuscules comprises), donc relancer l'import ne crée pas de doublon.

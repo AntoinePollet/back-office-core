@@ -29,7 +29,8 @@
  *   quand on relance l'import (il est alors mis à jour, pas recréé) et à le désigner dans un champ relation ou lien.
  * - `slug`, `seo`, `status` (`"published"` ou `"draft"`) : adresse de la page, référencement, publication.
  * - Image ou fichier : un chemin (`"/photos/a.jpg"` : dans `public/` ; `"photos/a.jpg"` : à côté du fichier d'import),
- *   ou `{ "file": "…", "alt": "…", "folder": "Chantiers/Isolation" }` ; `alt` peut être un objet par langue ; `folder` range
+ *   ou `{ "file": "…", "alt": "…", "folder": "Chantiers/Isolation", "focus": { "x": 0.3, "y": 0.2 } }` ; `focus` est le point
+ *   d'intérêt de l'image (où se trouve le sujet : 0 à 1 depuis la gauche et le haut) ; `alt` peut être un objet par langue ; `folder` range
  *   le fichier dans ce dossier de la médiathèque (« / » sépare les niveaux ; les dossiers manquants sont créés).
  * - Galerie (image ou fichier avec `multiple`) : une liste, dans l'ordre d'affichage, de chemins ou d'objets
  *   `{ "file": "…", "alt": "…", "caption": "Marseille (13)" }` (`caption` si le champ a `captions: true`).
@@ -42,6 +43,7 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isEmpty, partition } from '../shared/content'
+import { isFocusInput } from '../shared/media'
 import { parseFolderPath } from '../shared/media-folders'
 import { type AnyField, type CmsConfig, type CmsDefinition, isVisible } from '../shared/format'
 
@@ -85,6 +87,8 @@ export type PlannedFile = {
   alt: Record<string, string>
   /** Dossier de la médiathèque où le ranger, niveau par niveau (`"Chantiers/Isolation"` → ['Chantiers', 'Isolation']). */
   folder?: string[]
+  /** Point d'intérêt de l'image, s'il est donné (`"focus": { "x": 0.3, "y": 0.2 }`). */
+  focus?: { x: number; y: number }
 }
 
 export type Plan = { errors: string[]; warnings: string[]; entries: PlannedEntry[]; files: PlannedFile[] }
@@ -162,7 +166,7 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
       errors.push(`${at} : attendu le chemin d'un fichier ("/photos/a.jpg"), ou { "file": "…", "alt": "…"${extra.length ? extra.map(k => `, "${k}": "…"`).join('') : ''} } (reçu ${kindOf(value)}).`)
       return undefined
     }
-    const keys = ['file', 'alt', 'folder', ...extra]
+    const keys = ['file', 'alt', 'folder', 'focus', ...extra]
     if (isObject(value)) for (const k of Object.keys(value)) if (!keys.includes(k)) errors.push(`${at}.${k} : clé inconnue. Clés possibles : ${list(keys)}.${k === 'caption' ? ' (Ce champ n\'a pas de légende : captions: true dans la configuration.)' : ''}`)
     // « /photos/a.jpg » se lit dans public/, comme dans une page du site ; un chemin relatif part du fichier d'import.
     const path = cited.startsWith('/') ? join(options.publicDir, cited) : isAbsolute(cited) ? cited : resolve(options.baseDir, cited)
@@ -183,9 +187,16 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
       if (parsed.error) errors.push(`${at}.folder : ${parsed.error}.`)
       else folder = parsed.names
     }
+    let focus: { x: number; y: number } | undefined
+    if (isObject(value) && value.focus != null) {
+      if (!isFocusInput(value.focus)) errors.push(`${at}.focus : attendu le point d'intérêt de l'image, { "x": 0.3, "y": 0.2 } (deux nombres entre 0 et 1, depuis la gauche et le haut).`)
+      else focus = value.focus as { x: number; y: number }
+    }
     const known = files.get(path)
-    if (!known) files.set(path, { path, cited, where: at, image: field.type === 'image', alt, ...(folder ? { folder } : {}) })
+    if (!known) files.set(path, { path, cited, where: at, image: field.type === 'image', alt, ...(folder ? { folder } : {}), ...(focus ? { focus } : {}) })
     else {
+      if (focus && !known.focus) known.focus = focus
+      else if (focus && (known.focus!.x !== focus.x || known.focus!.y !== focus.y)) warnings.push(`${at} : le fichier ${cited} a déjà un autre point d'intérêt (${known.where}) ; c'est le premier qui est gardé.`)
       known.image ||= field.type === 'image'
       if (folder && !known.folder) known.folder = folder
       else if (folder && known.folder!.join('/').toLocaleLowerCase('fr') !== folder.join('/').toLocaleLowerCase('fr'))

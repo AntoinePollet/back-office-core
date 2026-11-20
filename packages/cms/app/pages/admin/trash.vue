@@ -8,7 +8,7 @@ definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 type Common = { id: string; title: string; deletedAt: string; deletedBy: string | null; daysLeft: number }
 type Item = Common & (
   | { kind: 'entry'; type: string; typeLabel: string; wasPublished: boolean; restoresPublished: boolean }
-  | { kind: 'media'; mime: string; size: number; thumbnail: string | null }
+  | { kind: 'media'; mime: string; size: number; thumbnail: string | null; thumbnailPosition?: string | null }
 )
 type Trash = { items: Item[]; days: number; canPurge: boolean }
 type Restored = {
@@ -121,7 +121,7 @@ async function empty() {
       <ul v-else class="divide-y divide-base-300">
         <li v-for="item in list" :key="item.id" class="px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2" data-trash-item>
           <div class="w-10 h-10 rounded-field bg-base-200 overflow-hidden shrink-0 grid place-items-center text-base-content/50">
-            <img v-if="item.kind === 'media' && item.thumbnail" :src="item.thumbnail" class="w-full h-full object-cover" alt="" loading="lazy">
+            <img v-if="item.kind === 'media' && item.thumbnail" :src="item.thumbnail" class="w-full h-full object-cover" :style="{ objectPosition: item.thumbnailPosition ?? undefined }" alt="" loading="lazy">
             <FileText v-else-if="item.kind === 'media'" :size="18" />
             <LayoutList v-else :size="18" />
           </div>
