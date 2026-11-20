@@ -5,6 +5,7 @@ import { adminVars, DEFAULT_ADMIN_COLOR } from '../../shared/theme'
 export { cmsImageSrcset, cmsImageUrl } from '../../shared/media'
 import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
+import { seoPageTitle } from '../../shared/seo'
 
 type ReadOptions = { locale?: string }
 
@@ -114,38 +115,76 @@ type SeoEntry = {
   path?: string | null
   url?: string | null
   alternates?: { locale: string; url: string }[]
-  seo?: { title: string | null; description: string | null; image: { url: string } | null; noindex: boolean } | null
+  seo?: {
+    title: string | null; description: string | null; image: { url: string } | null; noindex: boolean
+    shareTitle?: string | null; shareDescription?: string | null
+  } | null
 } | null | undefined
 
+type SeoOptions = {
+  /**
+   * Ajouté après le titre : « Droit des affaires — Cabinet Durand ». Par défaut, le réglage `site.titleSuffix` de
+   * cms.config.ts (celui que montre l'aperçu du back-office) ; `false` : pas de suffixe sur cette page.
+   */
+  titleSuffix?: string | false
+  /**
+   * Sur la page d'accueil, ajoute le bloc de données structurées qui donne à Google le nom du site (`WebSite`).
+   * Défaut : true. À désactiver si le site écrit déjà le sien.
+   */
+  structuredData?: boolean
+}
+
 /**
- * Applique à la page le référencement d'un contenu : titre, description, image de partage,
- * adresse canonique, liens entre langues, et masquage des moteurs de recherche si demandé.
+ * Applique à la page le référencement d'un contenu : titre, description, carte de partage (balises `og:` et
+ * `twitter:`), adresse canonique, liens entre langues, et masquage des moteurs de recherche si demandé.
  *
  *   const { data: service } = await useEntry('services', () => route.params.slug)
  *   useCmsSeo(service)
+ *
+ * Replis, les mêmes que dans l'aperçu de l'onglet Référencement : le titre et la description de partage reprennent
+ * ceux du référencement quand ils sont vides ; l'image de partage est celle du contenu, sinon `site.shareImage`.
  */
-export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: { /** Ajouté après le titre : « Droit des affaires — Cabinet Durand ». */ titleSuffix?: string } = {}) {
+export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: SeoOptions = {}) {
   const origin = useRequestURL().origin
   const preview = useCmsPreview()
+  const site = useRuntimeConfig().public.cmsSeo as { siteName?: string; titleSuffix?: string; shareImage?: string } | undefined
   const e = computed(() => toValue(entry))
   // Base des adresses complètes : celle du site déclarée dans la configuration, sinon celle de la requête.
   const base = computed(() => (e.value?.url && e.value.path ? e.value.url.slice(0, e.value.url.length - e.value.path.length) : origin))
   const absolute = (path?: string | null) => (path ? (/^https?:\/\//.test(path) ? path : base.value + path) : undefined)
-  const title = computed(() => (e.value?.seo?.title ? e.value.seo.title + (options.titleSuffix ? ` — ${options.titleSuffix}` : '') : undefined))
+  const suffix = options.titleSuffix === undefined ? site?.titleSuffix : options.titleSuffix || ''
+  // Sans titre : le suffixe réglé pour le site sert de titre ; avec l'option de la page (ancienne écriture), rien, comme avant.
+  const title = computed(() => (e.value ? seoPageTitle(e.value.seo?.title, suffix, options.titleSuffix === undefined) ?? undefined : undefined))
+  const description = () => e.value?.seo?.description ?? undefined
+  const shareTitle = () => e.value?.seo?.shareTitle || title.value
+  const shareDescription = () => e.value?.seo?.shareDescription || description()
+  const image = () => absolute(e.value?.seo?.image?.url ?? (e.value?.seo ? site?.shareImage : undefined))
 
   useSeoMeta({
     title,
-    description: () => e.value?.seo?.description ?? undefined,
-    ogTitle: title,
-    ogDescription: () => e.value?.seo?.description ?? undefined,
-    ogImage: () => absolute(e.value?.seo?.image?.url),
+    description,
+    ogTitle: shareTitle,
+    ogDescription: shareDescription,
+    ogImage: image,
     ogUrl: () => e.value?.url ?? undefined,
     ogType: 'website',
-    twitterCard: () => (e.value?.seo?.image ? 'summary_large_image' : 'summary'),
+    twitterCard: () => (image() ? 'summary_large_image' : 'summary'),
+    twitterTitle: shareTitle,
+    twitterDescription: shareDescription,
+    twitterImage: image,
     // Un brouillon en aperçu ne doit jamais être indexé.
     robots: () => (e.value?.seo?.noindex || preview.value ? 'noindex, nofollow' : undefined),
   })
   useHead({
+    // Données structurées : seulement ce qui est certain. Sur l'accueil (langue par défaut), le nom du site, que Google
+    // affiche au-dessus de ses résultats. Rien ailleurs : un fil d'Ariane demanderait le nom des pages parentes, que le
+    // back-office ne connaît pas. Jamais en aperçu ni sur une page masquée.
+    script: computed(() => {
+      const page = e.value
+      if (options.structuredData === false || !site?.siteName || !page?.url || page.path !== '/' || page.seo?.noindex || preview.value) return []
+      const data = { '@context': 'https://schema.org', '@type': 'WebSite', 'name': site.siteName, 'url': page.url, ...(page.locale ? { inLanguage: page.locale } : {}) }
+      return [{ type: 'application/ld+json', key: 'cms-website', innerHTML: JSON.stringify(data).replace(/</g, '\\u003c') }]
+    }),
     htmlAttrs: { lang: () => e.value?.locale },
     link: computed(() => {
       const page = e.value

@@ -32,6 +32,13 @@ async function select(media: CmsMedia) {
   usage.value = await cmsApi<Usage[]>(`/api/cms/media/${media.id}/usage`).catch(() => [])
 }
 
+// `/admin/media?file=<identifiant>` (lien d'un conseil de référencement) ouvre directement la fiche du fichier.
+onMounted(async () => {
+  const wanted = useRoute().query.file
+  const file = typeof wanted === 'string' ? (await useCmsMedia().load().catch(() => [])).find(m => m.id === wanted) : undefined
+  if (file) await select(file)
+})
+
 async function saveAlt() {
   const media = selected.value
   if (!media || locales.every(l => (alt.value[l] ?? '') === (media.alt[l] ?? ''))) return

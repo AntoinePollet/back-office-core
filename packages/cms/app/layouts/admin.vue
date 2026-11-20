@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, SearchCheck, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { adminEntryPath } from '../../shared/admin-paths'
@@ -36,6 +36,8 @@ const groups = computed(() => {
   // La médiathèque est une page du back-office, pas un contenu du fichier de configuration.
   if (!out.has('Site')) out.set('Site', [])
   out.get('Site')!.push({ key: 'media', label: 'Médiathèque', icon: Images, to: '/admin/media' })
+  // Référencement : vue d'ensemble des pages, pour qui peut modifier au moins un contenu qui a l'onglet Référencement.
+  if (all.some(([, def]) => def.seo)) out.get('Site')!.push({ key: 'seo', label: 'Référencement', icon: SearchCheck, to: '/admin/seo' })
   // Corbeille : pour qui peut supprimer quelque chose (il n'y verra que cela).
   if (canOpenTrash(user.value)) out.get('Site')!.push({ key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' })
   if (hasForms.value) out.get('Site')!.push({ key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value })

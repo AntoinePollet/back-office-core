@@ -36,8 +36,9 @@ const doc = ref<Doc>({ id: null, version: 0, shared: {}, locales: {} })
 const dirty = ref(false)
 const saving = ref(false)
 const errors = ref<Record<string, Record<string, string>>>({})
-const tab = ref<'content' | 'seo'>('content')
-const locale = ref(defaultLocale)
+// `?tab=seo&lang=en` : lien de la vue d'ensemble « Référencement », qui ouvre le bon onglet dans la bonne langue.
+const tab = ref<'content' | 'seo'>(def.seo && route.query.tab === 'seo' ? 'seo' : 'content')
+const locale = ref(locales.includes(route.query.lang as string) ? route.query.lang as string : defaultLocale)
 const split = ref(false)
 const localeB = ref(locales.find(l => l !== defaultLocale) ?? defaultLocale)
 const conflict = ref<Conflict | null>(null)
@@ -374,10 +375,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             v-show="tab === 'content'" :fields="def.fields" :shared="doc.shared" :values="doc.locales[locale]!.values"
             scope="shared" :errors="errors[locale]" class="max-w-3xl"
           />
-          <fieldset v-if="def.seo" v-show="tab === 'seo'" class="fieldset max-w-3xl">
+          <fieldset v-if="def.seo" v-show="tab === 'seo'" class="fieldset max-w-3xl min-w-0">
             <legend class="fieldset-legend">Image de partage</legend>
-            <CmsMediaField v-model="doc.shared.seo.image" :field="{ type: 'image' }" />
-            <p class="label">Affichée quand la page est partagée sur les réseaux sociaux ou par message.</p>
+            <CmsMediaField v-model="doc.shared.seo.image" :field="{ type: 'image' }" class="min-w-0" />
+            <p class="label whitespace-normal">Affichée quand la page est partagée sur les réseaux sociaux ou par message.</p>
           </fieldset>
           <label v-if="def.seo" v-show="tab === 'seo'" class="flex items-center gap-3 cursor-pointer">
             <input v-model="doc.shared.seo.noindex" type="checkbox" class="toggle toggle-sm">

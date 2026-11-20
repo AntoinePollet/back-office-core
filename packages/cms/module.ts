@@ -10,7 +10,8 @@ import { createJiti } from 'jiti'
  * - rend son `cms.config.ts` accessible sous le nom `#cms-config` ;
  * - prépare, sous `#cms-icons`, les seules icônes Lucide citées dans ce fichier (option `icon`),
  *   pour ne pas embarquer toute la bibliothèque dans le back-office ;
- * - déduit de ce fichier, sous `#cms-types`, le type de chaque contenu : les pages du site ont l'autocomplétion des champs.
+ * - déduit de ce fichier, sous `#cms-types`, le type de chaque contenu : les pages du site ont l'autocomplétion des champs ;
+ * - transmet aux pages du site les réglages de référencement (`site.titleSuffix`, `site.shareImage`), lus par `useCmsSeo`.
  */
 export default defineNuxtModule({
   meta: { name: 'backoffice-core' },
@@ -24,6 +25,9 @@ export default defineNuxtModule({
 
     // Lire la configuration ici la valide aussi : une erreur arrête le démarrage avec un message clair.
     const config = await createJiti(nuxt.options.rootDir).import<any>(file, { default: true })
+    // Réglages de référencement du site, pour `useCmsSeo` : les pages n'embarquent pas toute la configuration.
+    const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>
+    publicConfig.cmsSeo = { siteName: String(config.site?.name ?? ''), titleSuffix: String(config.site?.titleSuffix ?? ''), shareImage: String(config.site?.shareImage ?? '') }
     const definitions = [...Object.values(config.singletons ?? {}), ...Object.values(config.collections ?? {})] as { icon?: string; label: string }[]
     const iconsDir = join(dirname(createRequire(import.meta.url).resolve('@lucide/vue')), '../esm/icons')
     const names = [...new Set(definitions.map(d => d.icon).filter((n): n is string => !!n))].filter((name) => {

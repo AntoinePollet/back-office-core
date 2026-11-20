@@ -200,7 +200,14 @@ type SingletonOpts<F> = {
   group?: string
   /** Adresse publique. Singleton : '/contact'. Collection : '/services/[slug]'. Absent : pas de page propre. */
   path?: string
-  /** Ajoute l'onglet Référencement (titre, description, image de partage, masquage). Exige `path`. */
+  /**
+   * Ajoute l'onglet Référencement. Exige `path`. On y saisit, par langue : le titre et la description pour les moteurs
+   * de recherche, et (facultatifs) un titre et une description propres au partage sur les réseaux et par message ;
+   * pour toutes les langues : l'image de partage et « masquer des moteurs de recherche ». L'onglet montre l'aperçu du
+   * résultat Google et de la carte de partage, et une liste de conseils (seuils dans `shared/seo.ts`). Ces valeurs sont
+   * rangées sous la clé `seo` du contenu, sans champ à déclarer ; le site les reçoit dans `entry.seo` (type `Seo`) et
+   * `useCmsSeo(entry)` les applique. L'écran « Référencement » du back-office liste toutes les pages concernées.
+   */
   seo?: boolean
   /** Brouillon et publication séparés. Défaut : true. */
   drafts?: boolean
@@ -263,6 +270,18 @@ type Site = {
   /** Codes de langue : 'fr', 'en', 'pt-BR'. */
   locales: readonly [string, ...string[]]
   defaultLocale: string
+  /**
+   * Fin du titre de chaque page : avec 'Cabinet Durand', la page « Droit des affaires » a pour titre
+   * « Droit des affaires — Cabinet Durand ». Appliqué par `useCmsSeo` et montré dans l'aperçu de l'onglet Référencement.
+   * Il n'est pas répété si le titre le contient déjà ; une page sans titre a ce texte pour titre.
+   * Une page peut s'en passer : `useCmsSeo(entry, { titleSuffix: false })`.
+   */
+  titleSuffix?: string
+  /**
+   * Image de partage par défaut, pour les pages qui n'en ont pas : un fichier du dossier `public/` du site
+   * ('/partage.jpg', 1200 × 630 px dans l'idéal) ou une adresse complète.
+   */
+  shareImage?: string
 }
 
 type Config = {
@@ -292,7 +311,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups', 'seo']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
@@ -307,6 +326,8 @@ export function validate(config: Config): string[] {
   if (new Set(site.locales).size !== site.locales.length) errors.push('site.locales contient un doublon')
   for (const l of site.locales) if (!LOCALE.test(l)) errors.push(`langue « ${l} » : attendu un code comme 'fr' ou 'pt-BR'`)
   if (!site.locales.includes(site.defaultLocale)) errors.push('site.defaultLocale doit faire partie de site.locales')
+  if (site.titleSuffix !== undefined && (typeof site.titleSuffix !== 'string' || !site.titleSuffix.trim())) errors.push('site.titleSuffix : un texte est attendu (ou rien)')
+  if (site.shareImage !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.shareImage))) errors.push('site.shareImage : attendu un fichier du dossier public (\'/partage.jpg\') ou une adresse complète (https://…)')
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'
   // Un ancien nom encore porté par un voisin, ou revendiqué deux fois : impossible de savoir quelles données suivre.
@@ -462,8 +483,28 @@ export type Media = { id: string; url: string; name: string; alt: string; mime: 
 export type CaptionedMedia = Media & { caption: string | null }
 export type Link = { label: string; href: string; newTab: boolean }
 export type EntryRef = { id: string; collection: string; title: string; slug: string | null }
-/** `title` vaut le titre du contenu quand le champ de référencement est laissé vide. */
-export type Seo = { title: string | null; description: string | null; image: Media | null; noindex: boolean }
+/**
+ * Référencement d'un contenu, tel que le site le reçoit. `useCmsSeo(entry)` s'en sert ; une page peut aussi le lire.
+ * - `title` : titre pour les moteurs de recherche ; vaut le titre du contenu (`titleField`) quand il est laissé vide,
+ *   `null` pour une page unique sans titre. Sans le suffixe du site (`site.titleSuffix`), que `useCmsSeo` ajoute ;
+ * - `description` : `null` si elle est vide ;
+ * - `shareTitle`, `shareDescription` : titre et description propres au partage (balises `og:` et `twitter:`), `null`
+ *   quand ils sont laissés vides : `useCmsSeo` reprend alors le titre et la description ci-dessus ;
+ * - `image` : image de partage du contenu, `null` s'il n'en a pas (`useCmsSeo` prend alors `site.shareImage`) ;
+ * - `noindex` : page masquée des moteurs de recherche (et absente du plan du site).
+ *
+ * En base et dans l'API d'écriture, ces valeurs sont sous la clé `seo` : `title`, `description`, `shareTitle` et
+ * `shareDescription` dans chaque langue, `image` et `noindex` dans les champs communs. Une clé absente est une valeur
+ * vide : aucune migration quand une clé s'ajoute.
+ */
+export type Seo = {
+  title: string | null
+  description: string | null
+  shareTitle: string | null
+  shareDescription: string | null
+  image: Media | null
+  noindex: boolean
+}
 
 type Raw<F> =
   F extends { type: 'text' | 'textarea' | 'richText' | 'date' } ? string

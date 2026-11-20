@@ -92,7 +92,7 @@ export async function entryTitles(event: H3Event, ids: string[]) {
  *   ou un nom de champ inconnu est refusé (422), il n'est jamais ignoré.
  * - **à plat** : `values`, les valeurs par nom de champ pour une langue (`locale`, par défaut celle du site) ; le serveur
  *   les range lui-même. Seuls les champs cités changent, les autres gardent leur valeur ; `null` vide un champ.
- *   `seo` s'écrit `{ title, description, image, noindex }`. Les autres langues se donnent dans `translations`,
+ *   `seo` s'écrit `{ title, description, shareTitle, shareDescription, image, noindex }`. Les autres langues se donnent dans `translations`,
  *   avec les seuls champs traduits. Exemple :
  *   `{ "values": { "title": "Droit social", "fromPrice": 150 }, "translations": { "en": { "values": { "title": "Employment law" } } }, "publish": ["fr", "en"] }`
  */
@@ -563,11 +563,14 @@ export function toPublicEntry(def: CmsDefinition, entry: EntryRow, row: LocaleRo
   const values = (preview ? row.draft : row.published) ?? {}
   const merged = { ...shared, ...values } as Values
   const sharedSeo = (shared.seo ?? {}) as { image?: string; noindex?: boolean }
-  const localSeo = (values.seo ?? {}) as { title?: string; description?: string }
+  const localSeo = (values.seo ?? {}) as { title?: string; description?: string; shareTitle?: string; shareDescription?: string }
   const seo = def.seo
     ? {
         title: localSeo.title || (def.kind === 'collection' ? String(merged[def.titleField] ?? '') : '') || null,
         description: localSeo.description || null,
+        // Propres au partage ; vides, le site reprend le titre et la description ci-dessus (`useCmsSeo`).
+        shareTitle: localSeo.shareTitle || null,
+        shareDescription: localSeo.shareDescription || null,
         image: (sharedSeo.image ?? null) as unknown,
         noindex: !!sharedSeo.noindex,
       }

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 const route = useRoute()
-const { siteName } = useAppConfig()
 // Une ancienne adresse redirige d'elle-même vers la nouvelle.
 const { data: article, error } = await useEntry('articles', () => route.params.slug as string)
 if (error.value || !article.value) throw createError({ statusCode: 404, statusMessage: 'Actualité introuvable', fatal: true })
-useCmsSeo(article, { titleSuffix: siteName })
+useCmsSeo(article)
 
 const formatDate = (date: string) => new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
 </script>
