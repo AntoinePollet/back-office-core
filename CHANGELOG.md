@@ -13,6 +13,18 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Favoris dans le menu.** Une étoile, au survol de chaque entrée du menu (toujours visible sur écran tactile),
+  épingle l'écran dans une section « Favoris » en tête du menu, même s'il est rangé dans un dossier replié. On change
+  l'ordre des favoris en les faisant glisser, ou au clavier (Alt + ↑ / ↓). Les favoris sont propres à chaque compte et
+  le suivent d'un appareil à l'autre ; un favori vers un écran devenu inaccessible n'est pas montré.
+
+### Correctifs
+
+- Menu : un libellé trop long (« Acoustique (vue d'ensemble) »…) élargissait le menu et cachait les chevrons des
+  dossiers. Il est maintenant coupé avec « … », et le libellé entier s'affiche au survol.
+
 ## 0.9.1 — 2026-11-20
 
 ### À faire dans votre site

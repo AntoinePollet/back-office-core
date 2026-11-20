@@ -34,7 +34,8 @@ const { toasts } = useCmsToast()
 type NavItem = { key: string; label: string; to: string; icon: Component; count?: number }
 /** Dossier repliable du menu. `open` : ouvert tant que la personne ne l'a pas replié. */
 type NavFolder = { folder: true; key: string; label: string; icon: Component; items: NavItem[]; open: boolean }
-type NavSection = { title?: string; nodes: (NavItem | NavFolder)[] }
+/** `favorites` : la section Favoris, en tête du menu, dont on peut changer l'ordre. */
+type NavSection = { title?: string; nodes: (NavItem | NavFolder)[]; favorites?: boolean }
 const isFolder = (node: NavItem | NavFolder): node is NavFolder => 'folder' in node
 
 /**
@@ -45,7 +46,73 @@ const isFolder = (node: NavItem | NavFolder): node is NavFolder => 'folder' in n
  *   déjà le nom d'un groupe de contenus ;
  * - puis Référencement, Réglages et Administration, repliés par défaut.
  * Une entrée n'apparaît que pour qui y a droit ; un dossier vide n'apparaît pas.
+ * En tête, les favoris de la personne (étoile de chaque entrée), dans l'ordre qu'elle a choisi : seulement ceux
+ * auxquels elle a encore accès.
  */
+// ───── Favoris : écrans épinglés en tête du menu, rangés par compte (voir server/utils/favorites.ts) ─────
+const favorites = useState<string[]>('cms-favorites', () => [])
+onMounted(() => cmsApi<{ favorites: string[] }>('/api/cms/me/favorites').then((r) => { favorites.value = r.favorites }, () => {}))
+const notify = useCmsToast()
+const isFavorite = (item: NavItem) => favorites.value.includes(item.to)
+/**
+ * Enregistre la nouvelle liste ; l'écran change tout de suite et revient en arrière si l'enregistrement échoue.
+ * Les enregistrements partent l'un après l'autre (deux déplacements rapides ne doivent pas arriver dans le désordre),
+ * et seule la réponse du dernier met l'écran à jour.
+ */
+let saving = Promise.resolve()
+let lastSave = 0
+function saveFavorites(next: string[]) {
+  const before = favorites.value
+  const id = ++lastSave
+  favorites.value = next
+  saving = saving.then(async () => {
+    try {
+      const saved = (await cmsApi<{ favorites: string[] }>('/api/cms/me/favorites', { method: 'PUT', body: { favorites: next } })).favorites
+      if (id === lastSave) favorites.value = saved
+    }
+    catch (e) {
+      if (id === lastSave) favorites.value = before
+      notify.error(cmsErrorMessage(e, 'Favoris non enregistrés.'))
+    }
+  })
+  return saving
+}
+const toggleFavorite = (item: NavItem) => saveFavorites(isFavorite(item) ? favorites.value.filter(to => to !== item.to) : [...favorites.value, item.to])
+/** Déplace un favori d'une place (clavier : Alt + ↑ / ↓), puis lui rend le focus. */
+async function moveFavorite(item: NavItem, delta: -1 | 1) {
+  const list = [...favorites.value]
+  const from = list.indexOf(item.to), to = from + delta
+  if (from < 0 || to < 0 || to >= list.length) return
+  list.splice(to, 0, ...list.splice(from, 1))
+  // Déplacer l'entrée dans la page lui fait perdre le focus : on le lui rend dès l'affichage, sans attendre le serveur,
+  // pour qu'on puisse appuyer plusieurs fois de suite.
+  saveFavorites(list)
+  await nextTick()
+  document.querySelector<HTMLElement>(`[data-nav-favorites] [data-nav-item="${CSS.escape(item.to)}"] a`)?.focus()
+}
+// Glisser-déposer dans la section Favoris : l'entrée déposée prend la place de celle qu'on survole.
+const dragging = ref<string | null>(null)
+const dropTarget = ref<string | null>(null)
+function onDragStart(item: NavItem, event: DragEvent) {
+  dragging.value = item.to
+  event.dataTransfer?.setData('text/plain', item.to)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+function onDragOver(item: NavItem, event: DragEvent) {
+  if (!dragging.value) return
+  event.preventDefault()
+  dropTarget.value = item.to
+}
+function onDrop(item: NavItem) {
+  const from = dragging.value
+  dragging.value = dropTarget.value = null
+  if (!from || from === item.to) return
+  const list = favorites.value.filter(to => to !== from)
+  list.splice(list.indexOf(item.to), 0, from)
+  saveFavorites(list)
+}
+const onDragEnd = () => { dragging.value = dropTarget.value = null }
+
 const nav = computed<NavSection[]>(() => {
   const role = user.value?.role ?? ''
   const isAdmin = role === 'admin'
@@ -111,6 +178,10 @@ const nav = computed<NavSection[]>(() => {
       : []),
   ].filter(f => f.items.length)
   if (folders.length) sections.push({ nodes: folders })
+
+  const byPath = new Map(sections.flatMap(s => s.nodes.flatMap(n => (isFolder(n) ? n.items : [n]))).map(i => [i.to, i]))
+  const pinned = favorites.value.map(to => byPath.get(to)).filter((i): i is NavItem => !!i)
+  if (pinned.length) sections.unshift({ title: 'Favoris', nodes: pinned, favorites: true })
   return sections
 })
 
@@ -118,6 +189,7 @@ const nav = computed<NavSection[]>(() => {
 const groups = computed(() => {
   const out = new Map<string, NavItem[]>()
   for (const section of nav.value) {
+    if (section.favorites) continue
     for (const node of section.nodes) {
       const group = isFolder(node) ? node.label : section.title ?? ''
       out.set(group, [...(out.get(group) ?? []), ...(isFolder(node) ? node.items : [node])])
@@ -204,17 +276,29 @@ async function logout() {
           <template v-for="(section, i) in nav" :key="section.title ?? `section-${i}`">
             <li v-if="section.title" class="menu-title mt-2 first:mt-0">{{ section.title }}</li>
             <li v-else class="mt-2 mb-1 mx-2 border-t border-base-300 pointer-events-none" aria-hidden="true" />
-            <li v-for="node in section.nodes" :key="node.key">
-              <details v-if="isFolder(node)" :open="isOpen(node)" :data-nav-folder="node.key" @toggle="onFolderToggle(node, $event)">
-                <summary><component :is="node.icon" :size="16" class="shrink-0" />{{ node.label }}</summary>
-                <ul>
-                  <li v-for="item in node.items" :key="item.key">
-                    <NuxtLink :to="item.to" :class="{ 'menu-active': isActive(item) }"><component :is="item.icon" :size="16" class="shrink-0" />{{ item.label }}<span v-if="item.count" class="badge badge-sm badge-info">{{ item.count }}</span></NuxtLink>
-                  </li>
+            <template v-if="section.favorites">
+              <li class="p-0" data-nav-favorites>
+                <ul class="p-0 m-0 before:hidden">
+                  <CmsNavLink
+                    v-for="item in section.nodes as NavItem[]" :key="item.to" :item="item" :active="isActive(item)" favorite sortable
+                    draggable="true" :class="{ 'is-dragging': dragging === item.to, 'is-drop-target': dropTarget === item.to && dragging !== item.to }"
+                    @favorite="toggleFavorite(item)" @move="moveFavorite(item, $event)"
+                    @dragstart="onDragStart(item, $event)" @dragover="onDragOver(item, $event)" @drop.prevent="onDrop(item)" @dragend="onDragEnd"
+                  />
                 </ul>
-              </details>
-              <NuxtLink v-else :to="node.to" :class="{ 'menu-active': isActive(node) }"><component :is="node.icon" :size="16" class="shrink-0" />{{ node.label }}<span v-if="node.count" class="badge badge-sm badge-info">{{ node.count }}</span></NuxtLink>
-            </li>
+              </li>
+            </template>
+            <template v-for="node in section.favorites ? [] : section.nodes" :key="node.key">
+              <li v-if="isFolder(node)">
+                <details :open="isOpen(node)" :data-nav-folder="node.key" @toggle="onFolderToggle(node, $event)">
+                  <summary :title="node.label"><component :is="node.icon" :size="16" class="shrink-0" /><span class="truncate min-w-0 grow">{{ node.label }}</span></summary>
+                  <ul>
+                    <CmsNavLink v-for="item in node.items" :key="item.key" :item="item" :active="isActive(item)" :favorite="isFavorite(item)" @favorite="toggleFavorite(item)" />
+                  </ul>
+                </details>
+              </li>
+              <CmsNavLink v-else :item="node" :active="isActive(node)" :favorite="isFavorite(node)" @favorite="toggleFavorite(node)" />
+            </template>
           </template>
         </ul>
         <div class="p-3 border-t border-base-300 flex items-center gap-3">

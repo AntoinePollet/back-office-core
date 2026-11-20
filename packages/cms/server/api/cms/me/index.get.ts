@@ -1,4 +1,4 @@
-import { canDeleteMedia, canEditRestricted, canOrganizeMedia, roleLabel } from '../../../shared/access'
+import { canDeleteMedia, canEditRestricted, canOrganizeMedia, roleLabel } from '../../../../shared/access'
 
 /** La personne connectée, avec ses droits sur chaque type de contenu. */
 export default defineEventHandler(async (event) => {
