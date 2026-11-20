@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Le site peut-il être déployé ?
         id: site
         env:
@@ -45,9 +45,9 @@ jobs:
             exit 1
           fi
           echo "pret=oui" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: steps.site.outputs.pret == 'oui'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.site.outputs.pret == 'oui'
         with:
           node-version: 22
