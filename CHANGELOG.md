@@ -57,12 +57,6 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   balises `og:`), et, sur la page d'accueil seulement, un bloc de données structurées `WebSite` qui donne à Google le
   nom du site (`site.name`). Pour s'en passer : `useCmsSeo(home, { structuredData: false })`.
 - `/admin/media?file=<identifiant>` ouvre directement la fiche d'un fichier de la médiathèque.
-
-### Correctifs
-
-- Sur téléphone, la barre d'actions du formulaire d'un contenu passe à la ligne au lieu de déborder.
-- Le suffixe du titre n'est plus répété quand le titre le contient déjà (« Cabinet Durand, avocats — Cabinet Durand »).
-- Sur téléphone, l'image de partage choisie ne fait plus déborder l'onglet Référencement.
 - **Redirections.** Nouvel écran « Redirections » (administrateur et éditeur) : la liste de toutes les redirections,
   celles créées toutes seules quand l'adresse d'un contenu change et celles ajoutées à la main. Une ancienne adresse
   d'un précédent site se redirige vers une page du site (la redirection suit la page si son adresse change) ou vers une
@@ -75,11 +69,6 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   demandes, dernière fois, provenance), avec « Créer une redirection » en un clic. Aucune donnée personnelle n'est
   conservée ; les balayages de robots sont écartés ; 500 adresses au plus, oubliées après 90 jours sans demande.
 - L'outil d'import (`pnpm cms:import`) accepte une rubrique `redirections` (voir le README du site).
-
-### Correctifs
-
-- La page « introuvable » (404) du site n'est plus gardée une heure par le cache du réseau : elle était mise en cache
-  comme une page ordinaire.
 - **Aperçu en direct.** Dans le formulaire d'un contenu qui a une page, le bouton « Aperçu en direct » affiche la page
   du site à côté du formulaire : elle suit la saisie au bout d'un court délai, sans rien enregistrer ni publier (texte,
   images, galeries, relations, liens, champs masqués par une condition, langue en cours d'édition). Largeurs ordinateur,
@@ -91,6 +80,14 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   jamais enregistré n'a pas d'aperçu avant son premier enregistrement. Si votre hébergement ajoute un en-tête
   `X-Frame-Options: DENY` ou `Content-Security-Policy: frame-ancestors 'none'`, remplacez-le par `SAMEORIGIN` /
   `frame-ancestors 'self'` : le core, lui, n'en pose aucun.
+
+### Correctifs
+
+- Sur téléphone, la barre d'actions du formulaire d'un contenu passe à la ligne au lieu de déborder.
+- Le suffixe du titre n'est plus répété quand le titre le contient déjà (« Cabinet Durand, avocats — Cabinet Durand »).
+- Sur téléphone, l'image de partage choisie ne fait plus déborder l'onglet Référencement.
+- La page « introuvable » (404) du site n'est plus gardée une heure par le cache du réseau : elle était mise en cache
+  comme une page ordinaire.
 
 ### À faire dans votre site
 
