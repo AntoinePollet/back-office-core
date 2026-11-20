@@ -183,6 +183,7 @@ export async function activityLinks(event: H3Event, rows: ActivityRow[]): Promis
       case 'workflow': return workflows.has(id) ? `/admin/workflows/${id}` : null
       case 'module': return activeModule(id) ? `/admin/modules/${id}` : null
       case 'theme': return '/admin/appearance'
+      case 'availability': return '/admin/availability'
       case 'migrations': return '/admin/migrations'
       case 'trash': return '/admin/trash'
       case 'redirects': return '/admin/redirections'
