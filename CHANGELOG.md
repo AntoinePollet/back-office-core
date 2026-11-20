@@ -60,6 +60,7 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 
 ### Correctifs
 
+- Sur téléphone, la barre d'actions du formulaire d'un contenu passe à la ligne au lieu de déborder.
 - Le suffixe du titre n'est plus répété quand le titre le contient déjà (« Cabinet Durand, avocats — Cabinet Durand »).
 - Sur téléphone, l'image de partage choisie ne fait plus déborder l'onglet Référencement.
 - **Redirections.** Nouvel écran « Redirections » (administrateur et éditeur) : la liste de toutes les redirections,

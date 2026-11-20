@@ -318,10 +318,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <h1 class="text-lg font-bold truncate">{{ title }}</h1>
       </div>
       <span v-if="def.drafts" class="badge badge-sm badge-soft" :class="statusMeta[status]?.cls">{{ statusMeta[status]?.label }}</span>
-      <div class="ml-auto flex items-center gap-2">
-        <span class="text-xs text-base-content/60 flex items-center gap-1.5">
+      <!-- Sur téléphone, les actions passent à la ligne au lieu de déborder ; l'état est réduit à sa pastille. -->
+      <div class="ml-auto flex flex-wrap items-center justify-end gap-2 min-w-0">
+        <span class="text-xs text-base-content/60 flex items-center gap-1.5" :title="dirty ? 'Modifications non enregistrées' : 'Enregistré'">
           <span class="status" :class="dirty ? 'status-warning' : 'status-success'" />
-          {{ dirty ? 'Modifications non enregistrées' : 'Enregistré' }}
+          <span class="hidden sm:inline">{{ dirty ? 'Modifications non enregistrées' : 'Enregistré' }}</span>
+          <span class="sr-only sm:hidden">{{ dirty ? 'Modifications non enregistrées' : 'Enregistré' }}</span>
         </span>
         <template v-if="def.drafts">
           <button class="btn btn-sm" :disabled="!dirty || saving" @click="save">Enregistrer le brouillon</button>

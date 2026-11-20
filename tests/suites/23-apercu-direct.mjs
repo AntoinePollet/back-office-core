@@ -263,7 +263,7 @@ export default async function (t) {
     // Le menu latéral se replie en glissant : attendre qu'il soit sorti de l'écran.
     await page.waitForFunction(() => document.querySelector('.drawer-side aside').getBoundingClientRect().right <= 0)
     const shown = () => page.$eval('[data-cms-live-panel]', p => p.offsetParent !== null || getComputedStyle(p).display !== 'none')
-    const panel = await page.$eval('[data-cms-live-panel]', (p) => { const r = p.getBoundingClientRect(); return { left: r.left, width: r.width, vw: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth } })
+    const panel = await page.$eval('[data-cms-live-panel]', (p) => { const r = p.getBoundingClientRect(); return { left: r.left, width: r.width, vw: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, wide: [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(e).position !== 'fixed' && !e.closest('.drawer-side')).slice(0, 6).map(e => e.tagName + '.' + String(e.className).slice(0, 60) + ' ' + Math.round(e.getBoundingClientRect().right)) } })
     check(await shown() && panel.left === 0 && panel.width === panel.vw && !panel.overflow, 'aperçu en plein écran : ' + JSON.stringify(panel))
     await frameH1('Un conseil limpide')
     await t.shot(page, 'petit-ecran-apercu')
