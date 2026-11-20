@@ -13,6 +13,27 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Publication programmée.** Dans le formulaire d'un contenu, « Programmer… » met en ligne un brouillon (ou les
+  modifications en attente d'un contenu publié) à une date et une heure, ou retire un contenu du site. L'heure est
+  celle du site (heure de Paris par défaut, `site.timeZone` dans `cms.config.ts` pour un autre fuseau) et l'interface
+  le rappelle. C'est le brouillon tel qu'il est à l'heure dite qui part en ligne, avec les mêmes vérifications et les
+  mêmes droits qu'une publication à la main ; un échec (contenu devenu incomplet, droit retiré) s'affiche dans le
+  formulaire et au journal d'activité, et peut déclencher le workflow « Une publication programmée a échoué ».
+  Statut « Programmé » dans les listes, écran « Programmé » pour tout voir. Les contenus sans brouillons ne se
+  programment pas.
+- Les pages du site ne sont plus gardées en cache au-delà de la prochaine mise en ligne ou du prochain retrait programmés.
+
+### À faire dans votre site
+
+- **Ajouter le déclencheur des publications programmées** dans `wrangler.jsonc`, à côté de celui des sauvegardes :
+  `"triggers": { "crons": ["17 3 * * *", "*/5 * * * *"] }`, puis déployer. Sans lui, la fonction marche quand même,
+  mais une mise en ligne programmée attend la première visite du site après l'heure prévue (l'écran « Programmé »
+  le signale). La sauvegarde reste celle de la nuit : le déclencheur fréquent n'en fait pas d'autre.
+- Si une collection ou une page unique de votre `cms.config.ts` s'appelle `scheduled`, renommez-la : ce nom est
+  désormais celui d'un écran du back-office.
+
 ## 0.6.0 — 2026-11-19
 
 ### Nouveautés

@@ -8,6 +8,7 @@
 
 import { type AccessRules, CMS_ACTIONS, DEFAULT_ACCESS } from './access'
 import type { CmsModuleRef } from './modules'
+import { isValidTimeZone } from './schedule'
 
 export const FORMAT_VERSION = 1
 
@@ -263,6 +264,11 @@ type Site = {
   /** Codes de langue : 'fr', 'en', 'pt-BR'. */
   locales: readonly [string, ...string[]]
   defaultLocale: string
+  /**
+   * Fuseau horaire du site : celui des heures de la publication programmée (« le 3 décembre à 9 h »).
+   * Un identifiant comme 'Europe/Paris' (valeur par défaut), 'Indian/Reunion', 'America/Montreal'.
+   */
+  timeZone?: string
 }
 
 type Config = {
@@ -292,7 +298,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups', 'scheduled']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
@@ -307,6 +313,7 @@ export function validate(config: Config): string[] {
   if (new Set(site.locales).size !== site.locales.length) errors.push('site.locales contient un doublon')
   for (const l of site.locales) if (!LOCALE.test(l)) errors.push(`langue « ${l} » : attendu un code comme 'fr' ou 'pt-BR'`)
   if (!site.locales.includes(site.defaultLocale)) errors.push('site.defaultLocale doit faire partie de site.locales')
+  if (site.timeZone !== undefined && !isValidTimeZone(site.timeZone)) errors.push(`site.timeZone : fuseau horaire inconnu « ${site.timeZone} » (attendu un identifiant comme 'Europe/Paris')`)
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'
   // Un ancien nom encore porté par un voisin, ou revendiqué deux fois : impossible de savoir quelles données suivre.

@@ -54,8 +54,8 @@ type Target = { key: string; label: string }
 const contentTypes = (): Target[] =>
   [...Object.entries(cmsConfig.collections ?? {}), ...Object.entries(cmsConfig.singletons ?? {})].map(([key, def]) => ({ key, label: def.label }))
 
-/** Déclencheurs décrits comme ceux d'un module : ceux du core (sauvegardes), puis ceux des modules actifs. */
-const coreModuleEvents = (): ModuleWorkflowEvent[] => backupWorkflowEvents()
+/** Déclencheurs décrits comme ceux d'un module : ceux du core (sauvegardes, publication programmée), puis ceux des modules actifs. */
+const coreModuleEvents = (): ModuleWorkflowEvent[] => [...backupWorkflowEvents(), ...scheduleWorkflowEvents()]
 const moduleEvents = (): ModuleWorkflowEvent[] => [...coreModuleEvents(), ...activeModules().flatMap(m => m.workflowEvents?.() ?? [])]
 
 /**

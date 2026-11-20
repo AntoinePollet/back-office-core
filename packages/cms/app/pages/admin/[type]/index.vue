@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { Copy, GripVertical, Plus, Search } from '@lucide/vue'
+import { DEFAULT_TIME_ZONE, scheduleBadge } from '../../../../shared/schedule'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
-type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; values: Record<string, unknown>; statuses: Record<string, string>; review?: boolean; updatedAt: string }
+type Item = { id: string; title: string; slug: string | null; thumbnail: string | null; values: Record<string, unknown>; statuses: Record<string, string>; review?: boolean; scheduled?: { action: 'publish' | 'unpublish'; at: string; failed: boolean }[]; updatedAt: string }
 
 const route = useRoute()
 const type = route.params.type as string
@@ -18,10 +19,12 @@ const columns = (def?.list?.columns ?? []) as string[]
 const items = ref<Item[]>(def ? await cmsApi<Item[]>(`/api/cms/entries/${type}`) : [])
 
 const search = ref('')
-const filter = ref<'all' | 'published' | 'draft'>('all')
+const filter = ref<'all' | 'published' | 'draft' | 'scheduled'>('all')
 const isPublished = (item: Item) => Object.values(item.statuses).some(s => s !== 'draft')
-const matches = (item: Item, f: string) => f === 'all' || (f === 'published') === isPublished(item)
-const filters = [{ id: 'all', label: 'Tous' }, { id: 'published', label: 'Publiés' }, { id: 'draft', label: 'Brouillons' }] as const
+const matches = (item: Item, f: string) => f === 'all' || (f === 'scheduled' ? !!item.scheduled?.length : (f === 'published') === isPublished(item))
+// « Programmés » n'est proposé que s'il y en a.
+const filters = computed(() => [{ id: 'all', label: 'Tous' }, { id: 'published', label: 'Publiés' }, { id: 'draft', label: 'Brouillons' }, ...(items.value.some(i => i.scheduled?.length) ? [{ id: 'scheduled', label: 'Programmés' }] : [])] as { id: typeof filter.value; label: string }[])
+const timeZone = (schema.value.site as { timeZone?: string }).timeZone ?? DEFAULT_TIME_ZONE
 const filtered = computed(() => items.value.filter(i => matches(i, filter.value) && i.title.toLowerCase().includes(search.value.toLowerCase())))
 
 const statusMeta: Record<string, { label: string; cls: string }> = {
@@ -164,6 +167,7 @@ const formatDate = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { 
             <td v-if="def.drafts">
               <span class="badge badge-sm badge-soft" :class="statusMeta[mainStatus(item)]?.cls">{{ statusMeta[mainStatus(item)]?.label }}</span>
               <span v-if="item.review" class="badge badge-sm badge-info badge-soft ml-1" title="Quelqu'un a demandé la publication de ce contenu">Publication demandée</span>
+              <span v-if="item.scheduled?.length" class="badge badge-sm badge-soft ml-1" :class="scheduleBadge(item.scheduled, timeZone)!.failed ? 'badge-error' : 'badge-info'" :title="scheduleBadge(item.scheduled, timeZone)!.title">{{ scheduleBadge(item.scheduled, timeZone)!.label }}</span>
             </td>
             <td class="text-right text-sm text-base-content/60 whitespace-nowrap">{{ formatDate(item.updatedAt) }}</td>
             <td class="pl-0">

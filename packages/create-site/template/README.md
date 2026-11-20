@@ -409,8 +409,10 @@ depuis l'écran **Sauvegardes** du back-office. On y voit la liste, l'état de l
 | Format | Un fichier `.ndjson.gz` : du texte compressé, une valeur JSON par ligne (`gunzip -c fichier | less`). |
 | Fichiers (images, PDF) | **Pas dans la sauvegarde** : ils sont dans le même stockage R2. Voir « Les fichiers » plus bas. |
 
-Le déclenchement vient de la ligne `"triggers": { "crons": ["17 3 * * *"] }` de `wrangler.jsonc` (3 h 17, heure universelle) :
+Le déclenchement vient du déclencheur `"17 3 * * *"` de la ligne `"triggers"` de `wrangler.jsonc` (3 h 17, heure universelle) :
 rien à écrire dans le site. L'heure se change librement ; le core ne fait de toute façon qu'une sauvegarde par jour.
+L'autre déclencheur de cette ligne (`"*/5 * * * *"`, voir « Publication programmée ») ne fait pas de sauvegarde, sauf
+pour rattraper celle de la nuit si elle a plus de 26 heures de retard.
 Sans cette ligne, une sauvegarde se fait quand un administrateur ouvre le back-office, au plus une fois par jour, et
 l'écran « Sauvegardes » signale que la sauvegarde de nuit n'est pas activée.
 
@@ -486,6 +488,37 @@ l'engagement pris avec le client, régler chez Cloudflare :
 
 Offre Cloudflare : la sauvegarde demande l'offre payante de Workers dès que le site a un peu de contenu
 (l'offre gratuite limite chaque exécution à 10 ms de calcul).
+
+## Publication programmée
+
+Dans le formulaire d'un contenu, « Programmer… » (à côté de « Publier ») met en ligne un brouillon — ou les
+modifications en attente d'un contenu déjà publié — à une date et une heure, ou retire un contenu du site (une offre,
+un événement passé). L'écran **Programmé** du back-office liste tout ce qui est prévu ; les listes affichent le statut
+« Programmé ».
+
+- **L'heure est celle du site**, pas celle de l'ordinateur de la personne : par défaut l'heure de Paris. Pour un autre
+  fuseau, `site: { …, timeZone: 'Indian/Reunion' }` dans `cms.config.ts`. L'interface rappelle toujours le fuseau.
+- **Par langue** : la fenêtre coche d'office toutes les langues prêtes.
+- **C'est le brouillon tel qu'il est à l'heure dite** qui part en ligne : on peut le corriger jusqu'au dernier moment.
+  Tant qu'une mise en ligne est programmée, seule une personne qui peut publier peut encore modifier le contenu.
+- **Mêmes règles qu'une publication à la main** : seul qui peut publier peut programmer ; les champs sont vérifiés
+  au moment de programmer puis au moment de publier ; l'action est faite au nom de la personne qui a programmé, avec
+  ses droits du jour. Si le contenu n'est plus complet, ou si cette personne ne peut plus publier, rien n'est mis en
+  ligne : l'échec s'affiche dans le formulaire, dans l'écran « Programmé » et au journal d'activité. Pour en être prévenu
+  par e-mail : workflow avec le déclencheur **« Une publication programmée a échoué »** (variables
+  `{{ entry.title }}`, `{{ schedule.date }}`, `{{ schedule.error }}`, `{{ entry.adminUrl }}`).
+- Publier ou retirer à la main annule la programmation correspondante ; un contenu supprimé perd la sienne (il ne la
+  retrouve pas s'il est restauré) ; une copie n'en hérite pas. Les contenus sans brouillons (`drafts: false`) ne se
+  programment pas : ce qui y est enregistré est en ligne tout de suite.
+
+**Exécution.** Le déclencheur `"*/5 * * * *"` de `wrangler.jsonc` réveille le site toutes les 5 minutes : une mise en
+ligne se fait donc à l'heure dite, à 5 minutes près, et le cache du site est vidé à ce moment-là. Si ce déclencheur
+manque ou a du retard, rien n'est perdu : la première visite du site (ou du back-office) après l'heure prévue exécute ce
+qui est dû avant de répondre, et les pages ne sont jamais gardées en cache au-delà de la prochaine échéance. Sans
+déclencheur, l'heure exacte dépend donc du passage d'un visiteur ; l'écran « Programmé » le signale à l'administrateur.
+
+En local : `curl -X POST localhost:3000/_cms/dev-scheduled -H 'content-type: application/json' -d '{"cron":"*/5 * * * *"}'`
+joue ce déclencheur.
 
 ## Double authentification
 

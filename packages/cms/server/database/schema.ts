@@ -153,12 +153,37 @@ export const revisions = sqliteTable('cms_revisions', {
   published: text('published', { mode: 'json' }).$type<string[]>().notNull(),
   unpublished: text('unpublished', { mode: 'json' }).$type<string[]>().notNull(),
   /** Enregistrement particulier : restauration d'une version, copie d'un autre contenu, ou état d'avant l'historique. */
-  origin: text('origin').$type<'restore' | 'duplicate' | 'initial'>(),
+  origin: text('origin').$type<'restore' | 'duplicate' | 'initial' | 'schedule'>(),
   authorId: text('author_id'),
   /** Nom au moment de l'enregistrement : l'historique reste lisible si le compte est supprimé. */
   authorName: text('author_name'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_revisions_entry').on(t.entryId, t.version)])
+
+// ───────────── Publication programmée ─────────────
+
+/**
+ * Mise en ligne ou retrait programmés d'un contenu, par langue (règles : shared/schedule.ts ; exécution :
+ * server/utils/schedule.ts). Une ligne au plus par contenu, langue et action. La ligne disparaît une fois exécutée ;
+ * en cas d'échec elle reste, avec la raison, jusqu'à ce que quelqu'un décide. Supprimer le contenu supprime ses lignes.
+ */
+export const schedules = sqliteTable('cms_schedules', {
+  entryId: text('entry_id').notNull().references(() => entries.id, { onDelete: 'cascade' }),
+  locale: text('locale').notNull(),
+  action: text('action').$type<'publish' | 'unpublish'>().notNull(),
+  type: text('type').notNull(),
+  /** L'instant prévu (UTC). L'heure saisie est celle du site (`site.timeZone`). */
+  at: integer('at', { mode: 'timestamp_ms' }).notNull(),
+  /** Qui a programmé : c'est en son nom, et avec ses droits du moment, que l'action sera faite. */
+  createdBy: text('created_by').notNull(),
+  createdByName: text('created_by_name').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Exécution en cours : évite que deux déclenchements simultanés fassent deux fois la même chose. */
+  claimedAt: integer('claimed_at', { mode: 'timestamp_ms' }),
+  /** Échec de l'exécution, et sa raison en clair. Une ligne en échec n'est plus tentée. */
+  failedAt: integer('failed_at', { mode: 'timestamp_ms' }),
+  error: text('error'),
+}, t => [primaryKey({ columns: [t.entryId, t.locale, t.action] }), index('cms_schedules_at').on(t.at)])
 
 // ───────────── Corbeille et journal d'activité ─────────────
 
@@ -197,7 +222,7 @@ export const trashRevisions = sqliteTable('cms_trash_revisions', {
   changed: text('changed', { mode: 'json' }).$type<RevisionPart[]>().notNull(),
   published: text('published', { mode: 'json' }).$type<string[]>().notNull(),
   unpublished: text('unpublished', { mode: 'json' }).$type<string[]>().notNull(),
-  origin: text('origin').$type<'restore' | 'duplicate' | 'initial'>(),
+  origin: text('origin').$type<'restore' | 'duplicate' | 'initial' | 'schedule'>(),
   authorId: text('author_id'),
   authorName: text('author_name'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
