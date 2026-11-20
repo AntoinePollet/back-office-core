@@ -291,3 +291,42 @@ test('point d\'intérêt : « focus » à côté de « file », vérifié, le pr
   assert.match(bad.errors[0]!, /cover\.focus : attendu le point d'intérêt de l'image, \{ "x": 0\.3, "y": 0\.2 \}/)
   assert.match(bad.errors[1]!, /photo\.focus : attendu/)
 })
+
+test('redirections : adresse libre, page du site, erreurs situées', () => {
+  const p = plan({
+    collections: { services: [{ id: 's1', title: 'Un' }] },
+    redirections: [
+      { from: 'https://ancien-site.fr/Nos-Services.html?x=1', to: '/services' },
+      { from: '/ancien-service', to: { page: 'services', id: 's1' } },
+      { from: '/old', to: { page: 'services', id: 's1', locale: 'en' }, status: 302 },
+      { from: '/partenaire', to: 'https://exemple.fr/a' },
+    ],
+  })
+  assert.deepEqual(p.errors, [])
+  assert.deepEqual(p.redirects, [
+    { from: '/nos-services.html', to: '/services', status: 301 },
+    { from: '/ancien-service', to: { kind: 'page', type: 'services', id: importId('services', 's1'), locale: 'fr' }, status: 301 },
+    { from: '/old', to: { kind: 'page', type: 'services', id: importId('services', 's1'), locale: 'en' }, status: 302 },
+    { from: '/partenaire', to: 'https://exemple.fr/a', status: 301 },
+  ])
+  assert.deepEqual(plan({ collections: {} }).redirects, [])
+
+  const bad = plan({
+    collections: { services: [{ id: 's1', title: 'Un' }] },
+    redirections: [
+      { from: '/admin/x', to: '/a' },
+      { from: '/a', to: 'www.exemple.fr' },
+      { from: '/b', to: { page: 'services', id: 'inconnu' } },
+      { from: '/c', to: { page: 'categories', id: 'pro' } },
+      { from: '/d', to: '/e', status: 307 },
+      { from: '/f', to: '/g' }, { from: '/F/', to: '/h' },
+      { from: '/i', to: { page: 'services', id: 's1', locale: 'de' } },
+      'texte',
+    ],
+  })
+  assert.deepEqual(bad.errors.map(e => e.split(' : ')[0]), ['redirections[0].from', 'redirections[1].to', 'redirections[2].to.id', 'redirections[3].to.page', 'redirections[4].status', 'redirections[6].from', 'redirections[7].to.locale', 'redirections[8]'])
+  assert.match(bad.errors[0]!, /réservée/)
+  assert.match(bad.errors[3]!, /pas d'adresse sur le site/)
+  assert.match(bad.errors[5]!, /figure déjà plus haut/)
+  assert.match(plan({ redirections: {} }).errors[0]!, /redirections : attendu une liste/)
+})

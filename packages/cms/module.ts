@@ -23,6 +23,13 @@ export default defineNuxtModule({
     // Une icône ajoutée dans la configuration demande de régénérer la liste : le serveur de développement redémarre.
     nuxt.options.watch.push(file)
 
+    // Redirections manuelles : un gestionnaire d'erreurs placé avant celui de Nuxt. Il ne s'exécute que pour une demande
+    // qui échoue (page introuvable) : voir server/redirects-error-handler.ts.
+    nuxt.hook('nitro:config', (nitroConfig) => {
+      const handler = resolve(dirname(fileURLToPath(import.meta.url)), 'server/redirects-error-handler')
+      nitroConfig.errorHandler = [handler, ...[nitroConfig.errorHandler ?? []].flat()]
+    })
+
     // Lire la configuration ici la valide aussi : une erreur arrête le démarrage avec un message clair.
     const config = await createJiti(nuxt.options.rootDir).import<any>(file, { default: true })
     // Réglages de référencement du site, pour `useCmsSeo` : les pages n'embarquent pas toute la configuration.

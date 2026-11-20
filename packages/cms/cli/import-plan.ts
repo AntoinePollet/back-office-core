@@ -39,12 +39,18 @@
  *   ou une page du site : `{ "page": "services", "id": "droit-des-affaires" }` (`{ "page": "home" }` pour une page unique).
  * - Répéteur : un tableau d'objets. Texte mis en forme : du HTML. Date : `"2026-11-17"` (ou `"2026-11-17T09:30"`).
  * - `null` ou `""` vide un champ. Un champ absent du fichier n'est pas touché.
+ * - `redirections` (à la racine, facultatif) : les anciennes adresses d'un précédent site, une liste de
+ *   `{ "from": "/ancienne-page.html", "to": "/contact" }`. `to` est une adresse (`"/…"` ou `"https://…"`) ou une page du
+ *   site, comme pour un lien : `{ "page": "services", "id": "droit-des-affaires" }` (et `"locale": "en"` pour une autre
+ *   langue). `"status": 302` pour une redirection provisoire (301, définitive, par défaut). Une redirection déjà
+ *   présente pour la même ancienne adresse est mise à jour.
  */
 import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
 import { isEmpty, partition } from '../shared/content'
 import { isFocusInput } from '../shared/media'
 import { parseFolderPath } from '../shared/media-folders'
+import { type RedirectTarget, normalizeSource, normalizeUrlTarget } from '../shared/redirects'
 import { type AnyField, type CmsConfig, type CmsDefinition, isVisible } from '../shared/format'
 
 type Fields = Record<string, AnyField>
@@ -91,7 +97,10 @@ export type PlannedFile = {
   focus?: { x: number; y: number }
 }
 
-export type Plan = { errors: string[]; warnings: string[]; entries: PlannedEntry[]; files: PlannedFile[] }
+/** Redirection d'une ancienne adresse (rubrique `redirections`). */
+export type PlannedRedirect = { from: string; to: string | RedirectTarget; status: 301 | 302 }
+
+export type Plan = { errors: string[]; warnings: string[]; entries: PlannedEntry[]; files: PlannedFile[]; redirects: PlannedRedirect[] }
 
 // ───────────────────────── Identifiants stables ─────────────────────────
 
@@ -148,9 +157,9 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
   const collections = config.collections ?? {}
   const singletons = config.singletons ?? {}
 
-  if (!isObject(data)) return { errors: ['Le fichier d\'import doit contenir un objet : { "collections": { … }, "singletons": { … } }.'], warnings, entries, files: [] }
+  if (!isObject(data)) return { errors: ['Le fichier d\'import doit contenir un objet : { "collections": { … }, "singletons": { … } }.'], warnings, entries, files: [], redirects: [] }
   for (const key of Object.keys(data))
-    if (!['collections', 'singletons', 'status'].includes(key)) errors.push(`« ${key} » : clé inconnue à la racine du fichier. Clés possibles : collections, singletons, status.`)
+    if (!['collections', 'singletons', 'status', 'redirections'].includes(key)) errors.push(`« ${key} » : clé inconnue à la racine du fichier. Clés possibles : collections, singletons, status, redirections.`)
   if (data.status !== undefined && !STATUSES.includes(data.status as string)) errors.push('status : attendu "published" ou "draft".')
   const defaultStatus: Status = STATUSES.includes(data.status as string) ? data.status as Status : options.status ?? 'published'
 
@@ -468,7 +477,45 @@ export function planImport(config: CmsConfig, data: unknown, options: PlanOption
     })
   }
 
-  return { errors, warnings, entries, files: [...files.values()] }
+  // Redirections : anciennes adresses d'un précédent site. Le serveur refait toutes les vérifications (boucles, pages en ligne…).
+  const redirects: PlannedRedirect[] = []
+  if (data.redirections !== undefined) {
+    if (!Array.isArray(data.redirections)) errors.push(`redirections : attendu une liste de { "from": "/ancienne", "to": "/nouvelle" } (reçu ${kindOf(data.redirections)}).`)
+    else data.redirections.forEach((item, i) => {
+      const at = `redirections[${i}]`
+      if (!isObject(item)) { errors.push(`${at} : attendu { "from": "/ancienne", "to": "/nouvelle" } (reçu ${kindOf(item)}).`); return }
+      for (const k of Object.keys(item)) if (!['from', 'to', 'status'].includes(k)) errors.push(`${at}.${k} : clé inconnue. Clés possibles : from, to, status.`)
+      const from = normalizeSource(item.from)
+      if (!from.ok) { errors.push(`${at}.from : ${from.error}`); return }
+      if (redirects.some(r => r.from === from.path)) { errors.push(`${at}.from : « ${from.path} » figure déjà plus haut dans la liste.`); return }
+      if (item.status !== undefined && item.status !== 301 && item.status !== 302) { errors.push(`${at}.status : attendu 301 (définitive) ou 302 (provisoire).`); return }
+      const status = item.status === 302 ? 302 : 301
+      if (typeof item.to === 'string') {
+        const to = normalizeUrlTarget(item.to, config.site.url)
+        if (!to.ok) errors.push(`${at}.to : ${to.error}`)
+        else redirects.push({ from: from.path, to: to.url, status })
+        return
+      }
+      if (!isObject(item.to) || typeof item.to.page !== 'string') { errors.push(`${at}.to : attendu une adresse ("/nouvelle", "https://…") ou une page du site { "page": "…", "id": "…" }.`); return }
+      for (const k of Object.keys(item.to)) if (!['page', 'id', 'locale'].includes(k)) errors.push(`${at}.to.${k} : clé inconnue. Clés possibles : page, id, locale.`)
+      const type = item.to.page
+      const def = singletons[type] ?? collections[type]
+      if (!def) { errors.push(`${at}.to.page : « ${type} » n'est ni une collection ni une page unique. Possibles : ${list([...Object.keys(singletons), ...Object.keys(collections)])}.`); return }
+      if (!def.path) { errors.push(`${at}.to.page : « ${type} » n'a pas d'adresse sur le site (pas de "path" dans la configuration).`); return }
+      const locale = item.to.locale === undefined ? defaultLocale : String(item.to.locale)
+      if (!locales.includes(locale)) { errors.push(`${at}.to.locale : langue inconnue. Langues du site : ${list([...locales])}.`); return }
+      if (singletons[type]) {
+        if (item.to.id !== undefined) errors.push(`${at}.to.id : « ${type} » est une page unique, elle n'a pas d'id.`)
+        redirects.push({ from: from.path, to: { kind: 'page', type, id: type, locale }, status })
+        return
+      }
+      if (typeof item.to.id !== 'string') { errors.push(`${at}.to.id : indiquez l'id de l'élément de « ${type} » visé.`); return }
+      if (!keys.get(type)?.has(item.to.id)) { errors.push(`${at}.to.id : aucun élément « ${item.to.id} » dans collections.${type} de ce fichier.`); return }
+      redirects.push({ from: from.path, to: { kind: 'page', type, id: importId(type, item.to.id), locale }, status })
+    })
+  }
+
+  return { errors, warnings, entries, files: [...files.values()], redirects }
 }
 
 // ───────────────────────── Demandes envoyées à l'API ─────────────────────────

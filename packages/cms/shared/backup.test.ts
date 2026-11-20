@@ -46,8 +46,8 @@ test('colonnes sensibles : chiffrées d\'après leur nom, y compris dans une tab
 })
 
 test('restauration : les comptes ne sont pas touchés, les contenus et réglages le sont', () => {
-  for (const t of ['user', 'account', 'session', 'two_factor', 'cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_form_submissions']) assert.ok(isKeptOnRestore(t), t)
-  for (const t of ['cms_entries', 'cms_entry_locales', 'cms_media', 'cms_settings', 'cms_workflows', 'cms_trash', 'cms_module_settings']) assert.ok(!isKeptOnRestore(t), t)
+  for (const t of ['user', 'account', 'session', 'two_factor', 'cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_form_submissions', 'cms_not_found']) assert.ok(isKeptOnRestore(t), t)
+  for (const t of ['cms_entries', 'cms_entry_locales', 'cms_media', 'cms_settings', 'cms_workflows', 'cms_trash', 'cms_module_settings', 'cms_redirect_rules']) assert.ok(!isKeptOnRestore(t), t)
 })
 
 test('valeurs : texte et nombres tels quels, octets en base64', () => {
