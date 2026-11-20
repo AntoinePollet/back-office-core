@@ -13,6 +13,8 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+## 0.9.1 — 2026-11-20
+
 ### À faire dans votre site
 
 - Facultatif, mais à faire avant que GitHub n'arrête Node 20 : dans `.github/workflows/deployer.yml` et
