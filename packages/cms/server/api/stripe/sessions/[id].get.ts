@@ -7,7 +7,7 @@ import { formatAmount } from '../../../../shared/stripe'
  * `pending` tant que l'événement signé de Stripe n'est pas arrivé : la page ne doit pas annoncer un paiement confirmé.
  */
 export default defineEventHandler(async (event) => {
-  requireModule('stripe')
+  await requireModule(event, 'stripe')
   const id = getRouterParam(event, 'id') ?? ''
   if (!/^cs_(test|live)_[A-Za-z0-9]{10,200}$/.test(id)) throw createError({ statusCode: 404, message: 'Paiement introuvable.' })
   const [row] = await useDb(event).select().from(schema.payments).where(eq(schema.payments.sessionId, id))

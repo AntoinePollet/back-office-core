@@ -45,10 +45,10 @@ export default async function (t) {
     await login(page, B)
     check((await claire.signIn(t.admin.email, t.admin.password)).status === 200, 'connexion refusée')
     check((await menuLabels(page)).includes('Audience'), 'menu : ' + (await menuLabels(page)).join(', '))
-    await clickText(page, 'aside a', 'Modules'); await says(page, 'Les fonctions ajoutées à ce site')
-    const cards = await page.$$eval('main a.card', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
-    check(cards.some(c => c.startsWith('Mesure d\'audience À régler')) && cards.some(c => c.startsWith('Anti-robots À régler')), cards.join(' | '))
-    const logos = await page.$$eval('main a.card > span[aria-hidden] svg', els => els.map(s => s.getAttribute('fill') + '/' + s.getAttribute('stroke')))
+    await clickText(page, 'aside a', 'Modules'); await says(page, 'Les fonctions qu\'on peut ajouter à ce site')
+    const cards = await page.$$eval('main [data-module] > a', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
+    check(cards.some(c => c.startsWith('Cloudflare Web Analytics À régler')) && cards.some(c => c.startsWith('Anti-robots À régler')), cards.join(' | '))
+    const logos = await page.$$eval('main [data-module] > a > span[aria-hidden] svg', els => els.map(s => s.getAttribute('fill') + '/' + s.getAttribute('stroke')))
     check(logos.includes('#F38020/none') && logos.includes('none/#F38020'), 'logos : ' + logos.join())
   })
 
@@ -85,7 +85,7 @@ export default async function (t) {
 
   await step('écran Audience : jeton refusé expliqué, avec le chemin du réglage', async () => {
     await page.goto(B + '/admin/audience', { waitUntil: 'networkidle0' })
-    await says(page, 'Cloudflare refuse l\'accès aux statistiques.')
+    await says(page, 'Cloudflare Web Analytics refuse l\'accès aux statistiques.')
     await says(page, 'Vérifier les réglages')
   })
 

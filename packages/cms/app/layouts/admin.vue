@@ -20,7 +20,9 @@ watch(() => route.fullPath, async () => { reviews.value = await cmsApi<unknown[]
 const scheduled = useState<unknown[]>('cms-scheduled', () => [])
 onMounted(() => cmsApi<{ items: unknown[] }>('/api/cms/schedules').then((r) => { scheduled.value = r.items }, () => {}))
 // Module « Formulaires » : messages reçus non lus, pour qui peut les lire (administrateur, éditeur).
-const hasForms = computed(() => !!schema.value.modules?.some(m => m.id === 'forms') && ['admin', 'editor'].includes(user.value?.role ?? ''))
+// Modules actifs (déclarés ou activés dans le back-office), relus quand on en active ou désactive un.
+const hasModule = (test: (m: { id: string; category?: string }) => boolean) => !!schema.value.modules?.some(m => test(m as { id: string; category?: string }))
+const hasForms = computed(() => hasModule(m => m.id === 'forms') && ['admin', 'editor'].includes(user.value?.role ?? ''))
 const unreadMessages = useCmsUnreadMessages()
 watch(() => route.fullPath, () => { if (hasForms.value) refreshCmsUnreadMessages() }, { immediate: true })
 // Site fermé au public (écran « Disponibilité ») : rappelé dans l'en-tête, et « Voir le site » ouvre l'aperçu.
@@ -53,15 +55,15 @@ const groups = computed(() => {
   if (['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'redirections', label: 'Redirections', icon: Signpost, to: '/admin/redirections' })
   if (hasForms.value) out.get('Site')!.push({ key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value })
   // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
-  if (schema.value.modules?.some(m => m.id === 'stripe') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' })
-  // Module « Mesure d'audience » : la fréquentation du site, pour l'administrateur et l'éditeur.
-  if (schema.value.modules?.some(m => m.id === 'analytics') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' })
+  if (hasModule(m => m.id === 'stripe') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' })
+  // Mesure d'audience (Cloudflare Web Analytics, Plausible) : la fréquentation du site, pour l'administrateur et l'éditeur.
+  if (hasModule(m => m.category === 'audience') && ['admin', 'editor'].includes(user.value?.role ?? '')) out.get('Site')!.push({ key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' })
   if (user.value?.role === 'admin') {
     out.get('Site')!.push({ key: 'appearance', label: 'Apparence', icon: Palette, to: '/admin/appearance' })
     out.get('Site')!.push({ key: 'availability', label: 'Disponibilité', icon: Construction, to: '/admin/availability' })
     out.get('Site')!.push({ key: 'workflows', label: 'Workflows', icon: Workflow, to: '/admin/workflows' })
     out.get('Site')!.push({ key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' })
-    if (schema.value.modules?.length) out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
+    out.get('Site')!.push({ key: 'modules', label: 'Modules', icon: Puzzle, to: '/admin/modules' })
     out.get('Site')!.push({ key: 'backups', label: 'Sauvegardes', icon: DatabaseBackup, to: '/admin/backups' })
     out.get('Site')!.push({ key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' })
     out.get('Site')!.push({ key: 'activity', label: 'Activité', icon: ScrollText, to: '/admin/activity' })

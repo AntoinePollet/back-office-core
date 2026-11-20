@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   return {
     workflows: rows.map(w => ({ ...w, lastRun: runs.find(r => r.workflowId === w.id && !r.test) ?? null })),
     /** Déclencheurs proposés, chacun avec ses variables et ce sur quoi on peut le restreindre. */
-    events: workflowCatalog(),
+    events: await workflowCatalog(event),
     emailConfigured: mail.configured,
     /** Module chargé d'envoyer les e-mails, s'il y en a un d'actif : l'interface y renvoie pour le régler. */
     emailModule: mail.module,

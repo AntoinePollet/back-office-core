@@ -1,12 +1,12 @@
 /**
- * Mesure d'audience (module `analytics`) : la partie qui ne dépend ni du serveur ni du navigateur,
+ * Mesure d'audience (modules `analytics` et `plausible`) : la partie qui ne dépend ni du serveur ni du navigateur,
  * pour pouvoir la vérifier par des tests unitaires.
  *
  * - les statistiques telles que l'écran « Audience » les reçoit, quel que soit le fournisseur ;
- * - pour Cloudflare Web Analytics : validation des réglages, balise à insérer dans les pages,
- *   requête à l'API GraphQL Analytics et lecture de sa réponse.
+ * - pour chaque fournisseur (Cloudflare Web Analytics, Plausible) : validation des réglages, balise à insérer dans
+ *   les pages, requête à son API et lecture de sa réponse.
  *
- * Un autre fournisseur (Plausible, Umami…) s'ajouterait à côté : ses réglages, sa balise, sa requête,
+ * Un autre fournisseur (Umami, Matomo…) s'ajouterait à côté : ses réglages, sa balise, sa requête,
  * et la même forme de statistiques en sortie.
  */
 
@@ -163,5 +163,92 @@ export function readCloudflareAudience(status: number, body: unknown, period: Au
       .map(g => ({ path: String(g.dimensions?.requestPath || '/'), pageViews: g.count ?? 0 })),
     referrers: (account.referrers ?? []).filter(g => (g.sum?.visits ?? 0) > 0)
       .map(g => ({ host: g.dimensions?.refererHost || null, visits: g.sum?.visits ?? 0 })),
+  }
+}
+
+// ───────────────────────── Plausible ─────────────────────────
+
+/** Adresse de Plausible quand le site n'en indique pas d'autre (Plausible hébergé par l'éditeur). */
+export const PLAUSIBLE_DEFAULT_HOST = 'https://plausible.io'
+/** Nom de domaine tel qu'enregistré dans Plausible : « cabinet-durand.fr », sans « https:// » ni chemin. */
+const DOMAIN = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i
+
+/** Adresse de Plausible saisie (instance auto-hébergée), sans barre finale ; celle de Plausible si rien n'est saisi. */
+export function plausibleHost(value: string | undefined) {
+  const text = (value ?? '').trim().replace(/\/+$/, '')
+  return text || PLAUSIBLE_DEFAULT_HOST
+}
+
+/**
+ * Vérifie les réglages saisis. Un réglage absent n'est pas une erreur ici : c'est « À régler ».
+ * Valider le domaine et l'adresse, c'est aussi garantir qu'ils ne peuvent pas injecter de HTML dans les pages.
+ */
+export function plausibleSettingsErrors(settings: Record<string, string | undefined>) {
+  const errors: Record<string, string> = {}
+  if (settings.domain && !DOMAIN.test(settings.domain.trim())) errors.domain = 'Domaine : le nom du site tel qu\'enregistré dans Plausible, par exemple « cabinet-durand.fr » (sans https:// ni /).'
+  if (settings.host?.trim()) {
+    let url: URL | null = null
+    try { url = new URL(settings.host.trim()) }
+    catch { /* refusé plus bas */ }
+    if (!url || url.protocol !== 'https:' || url.search || url.hash || /["'<>\s]/.test(settings.host)) errors.host = 'Adresse de Plausible : une adresse complète en https://, par exemple « https://stats.mon-domaine.fr ».'
+  }
+  return errors
+}
+
+/** La balise à ajouter à la fin des pages du site, ou null si le domaine est absent ou invalide. */
+export function plausibleBeacon(settings: Record<string, string | undefined>): string | null {
+  const domain = settings.domain?.trim()
+  if (!domain || Object.keys(plausibleSettingsErrors(settings)).length) return null
+  return `<script defer data-domain="${domain.toLowerCase()}" src="${plausibleHost(settings.host)}/js/script.js"></script>`
+}
+
+/**
+ * Les requêtes à envoyer à l'API de statistiques de Plausible (v2, POST /api/v2/query) pour une période se terminant
+ * aujourd'hui : total, par jour, par page, par source. `visits` = visites, `pageviews` = pages vues.
+ */
+export function plausibleAudienceRequests(domain: string, period: AudiencePeriod, now = Date.now()) {
+  const days = periodDays(period, now)
+  const base = { site_id: domain.trim().toLowerCase(), date_range: [days[0]!, days.at(-1)!] }
+  return {
+    total: { ...base, metrics: ['visits', 'pageviews'] },
+    days: { ...base, metrics: ['visits', 'pageviews'], dimensions: ['time:day'] },
+    pages: { ...base, metrics: ['pageviews'], dimensions: ['event:page'], order_by: [['pageviews', 'desc']], pagination: { limit: 10 } },
+    referrers: { ...base, metrics: ['visits'], dimensions: ['visit:source'], order_by: [['visits', 'desc']], pagination: { limit: 10 } },
+  }
+}
+
+type PlausibleRow = { dimensions?: unknown[]; metrics?: unknown[] }
+type PlausibleAnswer = { status: number; body: unknown }
+
+const rows = (answer: PlausibleAnswer) => ((answer.body as { results?: PlausibleRow[] } | null)?.results ?? [])
+const metric = (row: PlausibleRow | undefined, i: number) => Number(row?.metrics?.[i] ?? 0) || 0
+
+/** Lit les quatre réponses de Plausible. Lève une `AudienceError` lisible si Plausible refuse la clé ou le site. */
+export function readPlausibleAudience(answers: Record<'total' | 'days' | 'pages' | 'referrers', PlausibleAnswer>, period: AudiencePeriod, now = Date.now()): AudienceStats {
+  for (const answer of Object.values(answers)) {
+    const message = String((answer.body as { error?: unknown } | null)?.error ?? '').slice(0, 200)
+    if (answer.status === 401 || answer.status === 403)
+      throw new AudienceError('refused', 'Plausible refuse cette clé d\'API. Créez une clé « Stats API » dans les réglages de votre compte Plausible.')
+    if (answer.status === 400 && /site|domain|not found|access/i.test(message))
+      throw new AudienceError('refused', `Plausible ne trouve pas ce site avec cette clé : vérifiez le domaine${message ? ` (${message})` : ''}.`)
+    if (answer.status === 429) throw new AudienceError('unavailable', 'Plausible limite le nombre de demandes : réessayez dans quelques minutes.')
+    if (answer.status >= 400) throw new AudienceError('unavailable', `Plausible n'a pas pu fournir les statistiques${message ? ` : ${message}` : ` (erreur ${answer.status})`}.`)
+  }
+  const byDay = new Map(rows(answers.days).map(r => [String(r.dimensions?.[0] ?? '').slice(0, 10), r]))
+  const days = periodDays(period, now).map(date => ({ date, visits: metric(byDay.get(date), 0), pageViews: metric(byDay.get(date), 1) }))
+  const total = rows(answers.total)[0]
+  return {
+    period,
+    from: days[0]!.date,
+    to: days.at(-1)!.date,
+    totals: {
+      visits: total ? metric(total, 0) : days.reduce((n, d) => n + d.visits, 0),
+      pageViews: total ? metric(total, 1) : days.reduce((n, d) => n + d.pageViews, 0),
+    },
+    days,
+    pages: rows(answers.pages).filter(r => metric(r, 0) > 0).map(r => ({ path: String(r.dimensions?.[0] || '/'), pageViews: metric(r, 0) })),
+    // « Direct / None » : adresse tapée, favori, application.
+    referrers: rows(answers.referrers).filter(r => metric(r, 0) > 0)
+      .map(r => ({ host: /^direct/i.test(String(r.dimensions?.[0] ?? '')) ? null : String(r.dimensions?.[0] || '') || null, visits: metric(r, 0) })),
   }
 }

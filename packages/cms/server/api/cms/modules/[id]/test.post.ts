@@ -1,7 +1,7 @@
 /** Vérifie les réglages enregistrés d'un module (la clé d'API est-elle acceptée ?). */
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
-  const definition = requireModule(getRouterParam(event, 'id')!)
+  const definition = requireKnownModule(getRouterParam(event, 'id')!)
   if (!definition.test) throw createError({ statusCode: 400, message: 'Ce module n\'a rien à vérifier.' })
   try {
     return { ok: true, message: await definition.test(event, await moduleSettings(event, definition.id)) }

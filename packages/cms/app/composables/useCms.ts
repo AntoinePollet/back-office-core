@@ -325,6 +325,11 @@ export async function useCmsSchema() {
   return schema as Ref<CmsConfig>
 }
 
+/** Relit le JSON du back-office : après l'activation d'un module, le menu change (Audience, Messages reçus…). */
+export async function refreshCmsSchema() {
+  useState<CmsConfig | null>('cms-schema').value = await cmsApi<CmsConfig>('/api/cms/schema')
+}
+
 /** Nombre de changements de structure en attente de validation (avertissement du back-office). */
 export const useCmsMigrationsPending = () => useState<number>('cms-migrations-pending', () => 0)
 
@@ -535,6 +540,10 @@ export async function refreshCmsUnreadMessages() {
 /** Un module tel que l'API du back-office le décrit : ses réglages, sans jamais la valeur d'une clé d'API. */
 export type CmsModuleState = {
   id: string; label: string; description: string
+  /** Famille (email, audience, forms, payment, security, other), pour ranger l'écran « Modules ». */
+  category: string
+  /** Activé sur ce site ; `canEnable` faux : le module doit d'abord être déclaré dans cms.config.ts (`needsCode`). */
+  enabled: boolean; canEnable: boolean; needsCode: string | null
   /** Logo affiché à côté du nom (tracés SVG 24 × 24). */
   logo: { style: 'fill' | 'stroke'; paths: string[]; color: string } | null
   settings: {

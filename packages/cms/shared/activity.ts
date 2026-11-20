@@ -108,6 +108,8 @@ export const ACTIVITY_ACTIONS = {
     ? `Connexion bloquée un moment pour le compte ${d.email}, après ${plural(d.count ?? 0, 'échec')}`
     : `Connexions bloquées un moment depuis une même adresse, après ${plural(d.count ?? 0, 'échec')}`)),
   // Réglages
+  'module.enabled': action('settings', 'Module activé', d => `a activé le module ${quote(d.name)}`),
+  'module.disabled': action('settings', 'Module désactivé', d => `a désactivé le module ${quote(d.name)}`),
   'module.updated': action('settings', 'Réglages d\'un module modifiés', d => `a modifié les réglages du module ${quote(d.name)}`),
   'theme.updated': action('settings', 'Apparence modifiée', () => 'a modifié l\'apparence du site'),
   'theme.reset': action('settings', 'Apparence modifiée', () => 'a rétabli l\'apparence d\'origine du site'),

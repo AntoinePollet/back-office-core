@@ -7,7 +7,7 @@ import { applyStripeEvent } from '../../cms-modules/stripe'
  * d'être lu. Réponse 400 si la signature est refusée : Stripe le montre dans son tableau de bord et réessaie.
  */
 export default defineEventHandler(async (event) => {
-  requireModule('stripe')
+  await requireModule(event, 'stripe')
   // Corps brut, tel que Stripe l'a signé : le relire comme JSON puis le réécrire changerait la signature.
   const body = (await readRawBody(event, 'utf8')) ?? ''
   if (body.length > 1_000_000) throw createError({ statusCode: 413, message: 'Événement trop gros.' })

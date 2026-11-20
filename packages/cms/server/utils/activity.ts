@@ -181,7 +181,7 @@ export async function activityLinks(event: H3Event, rows: ActivityRow[]): Promis
       case 'user': return users.has(id) ? '/admin/users' : null
       case 'role': return roles.has(id) ? '/admin/roles' : null
       case 'workflow': return workflows.has(id) ? `/admin/workflows/${id}` : null
-      case 'module': return activeModule(id) ? `/admin/modules/${id}` : null
+      case 'module': return findModuleDefinition(id) ? `/admin/modules/${id}` : null
       case 'theme': return '/admin/appearance'
       case 'availability': return '/admin/availability'
       case 'migrations': return '/admin/migrations'

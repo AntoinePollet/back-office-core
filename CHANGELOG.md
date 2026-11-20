@@ -25,6 +25,24 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   back-office. Changement d'état : cache du site vidé, ligne au journal d'activité. Aucune migration (le réglage est
   rangé dans `cms_settings`).
 
+### Nouveautés
+
+- **Module Resend** : `resend()` dans `cms.config.ts` envoie les e-mails du site (workflows, lien de nouveau mot de
+  passe, notifications des formulaires) par Resend, à la place de Brevo. Clé d'API et expéditeur dans l'écran Modules
+  (ou `NUXT_RESEND_API_KEY` et `NUXT_EMAIL_FROM`). « Vérifier la connexion » contrôle la clé et, avec une clé « Full
+  access », que le domaine de l'expéditeur est vérifié dans Resend.
+- Avec plusieurs modules d'envoi déclarés, c'est le premier **réglé** qui envoie (auparavant : le premier déclaré).
+- **Modules activés depuis le back-office.** L'écran « Modules » montre tous les modules, rangés par famille (envoi
+  d'e-mails, mesure d'audience, formulaires, paiement, sécurité), avec un interrupteur « Activé ». Un module déclaré
+  dans `cms.config.ts` reste activé tant qu'un administrateur ne le désactive pas : rien ne change pour un site
+  existant. On peut régler un module avant de l'activer ; le désactiver garde ses réglages. Le menu (Audience, Messages
+  reçus, Paiements) et le site suivent tout de suite ; activations et désactivations figurent au journal d'activité.
+  Formulaires et Stripe, qui ont besoin d'options dans le code, ne s'activent qu'une fois déclarés.
+- **Plausible** : nouveau module de mesure d'audience (`plausible()`, ou `analytics({ provider: 'plausible' })`), sans
+  cookie, sur plausible.io ou une instance hébergée par le client. Domaine et clé « Stats API » dans l'écran Modules ;
+  la balise est ajoutée aux pages et l'écran « Audience » lit ses statistiques. Le module Cloudflare s'appelle
+  désormais « Cloudflare Web Analytics » dans le back-office.
+
 ## 0.7.0 — 2026-11-20
 
 ### Nouveautés

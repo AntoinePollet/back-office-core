@@ -56,13 +56,13 @@ const contentTypes = (): Target[] =>
 
 /** Déclencheurs décrits comme ceux d'un module : ceux du core (sauvegardes, publication programmée), puis ceux des modules actifs. */
 const coreModuleEvents = (): ModuleWorkflowEvent[] => [...backupWorkflowEvents(), ...scheduleWorkflowEvents()]
-const moduleEvents = (): ModuleWorkflowEvent[] => [...coreModuleEvents(), ...activeModules().flatMap(m => m.workflowEvents?.() ?? [])]
+const moduleEvents = async (event: H3Event): Promise<ModuleWorkflowEvent[]> => [...coreModuleEvents(), ...(await activeModules(event)).flatMap(m => m.workflowEvents?.() ?? [])]
 
 /**
  * Tout ce que l'éditeur de workflow propose sur ce site : les déclencheurs du core et ceux des modules actifs,
  * avec, pour chacun, ses variables et ce sur quoi on peut le restreindre (`targets`).
  */
-export function workflowCatalog() {
+export async function workflowCatalog(event: H3Event) {
   const types = contentTypes()
   return [
     ...WORKFLOW_EVENTS.map(e => ({
@@ -71,7 +71,7 @@ export function workflowCatalog() {
       targets: e.scope === 'invite' ? [] : types,
       targetsLabel: 'Pour quels contenus',
     })),
-    ...moduleEvents().map(e => ({
+    ...(await moduleEvents(event)).map(e => ({
       name: e.name, label: e.label,
       // Un événement de module n'a pas forcément d'auteur : pas de {{ user.email }}.
       variables: [...e.variables, ...WORKFLOW_VARIABLES.common.filter(v => v.key !== 'user.email')],
@@ -123,12 +123,12 @@ function buildContext(event: H3Event, payload: CmsEvent): { context: Context; su
 }
 
 /** Exemple de données pour le bouton « Tester ». */
-export function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user: { id: string; email: string }): CmsEvent {
+export async function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user: { id: string; email: string }): Promise<CmsEvent> {
   const at = new Date().toISOString()
   const who = { id: user.id, email: user.email }
   const fromCore = coreModuleEvents().find(e => e.name === trigger.event)
   if (fromCore) return { name: trigger.event, module: 'core', ...fromCore.sample(trigger.types[0]), at }
-  const fromModule = activeModules().find(m => m.workflowEvents?.().some(e => e.name === trigger.event))
+  const fromModule = (await activeModules(event)).find(m => m.workflowEvents?.().some(e => e.name === trigger.event))
   if (fromModule) {
     const sample = fromModule.workflowEvents!().find(e => e.name === trigger.event)!.sample(trigger.types[0])
     return { name: trigger.event, module: fromModule.id, ...sample, at }
@@ -197,11 +197,11 @@ export async function runWorkflows(event: H3Event, payload: CmsEvent) {
 }
 
 /** Vérifie et normalise un workflow reçu du back-office. */
-export function parseWorkflow(body: any): { name: string; enabled: boolean; trigger: WorkflowTrigger; actions: WorkflowAction[] } {
+export async function parseWorkflow(event: H3Event, body: any): Promise<{ name: string; enabled: boolean; trigger: WorkflowTrigger; actions: WorkflowAction[] }> {
   const fail = (message: string) => { throw createError({ statusCode: 400, message }) }
   const name = String(body?.name ?? '').trim()
   if (!name) fail('Donnez un nom au workflow.')
-  const meta = workflowCatalog().find(e => e.name === body?.trigger?.event)
+  const meta = (await workflowCatalog(event)).find(e => e.name === body?.trigger?.event)
   if (!meta) fail('Choisissez un déclencheur.')
   const known = meta!.targets.map(t => t.key)
   const types = Array.isArray(body.trigger.types) ? body.trigger.types.filter((t: unknown) => known.includes(t as string)) : []

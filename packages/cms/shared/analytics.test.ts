@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
-  AudienceError, cloudflareAudienceRequest, cloudflareBeacon, cloudflareSettingsErrors, parsePeriod, periodDays, readCloudflareAudience,
+  AudienceError, cloudflareAudienceRequest, cloudflareBeacon, cloudflareSettingsErrors, parsePeriod, periodDays, plausibleAudienceRequests,
+  plausibleBeacon, plausibleHost, plausibleSettingsErrors, readCloudflareAudience, readPlausibleAudience,
 } from './analytics.ts'
-import { analytics, turnstile } from './modules.ts'
+import { analytics, plausible, turnstile } from './modules.ts'
 
 const NOW = Date.parse('2026-11-18T15:30:00Z')
 const TOKEN = '0123456789abcdef0123456789abcdef'
 
 test('analytics() et turnstile() : déclaration dans cms.config.ts', () => {
-  assert.deepEqual(analytics(), { id: 'analytics', options: { provider: 'cloudflare' } })
+  assert.deepEqual(analytics(), { id: 'analytics' })
+  assert.deepEqual(analytics({ provider: 'plausible' }), { id: 'plausible' })
+  assert.deepEqual(plausible(), { id: 'plausible' })
   assert.throws(() => analytics({ provider: 'google' as never }), /fournisseur « google » inconnu/)
   assert.deepEqual(turnstile(), { id: 'turnstile' })
 })
@@ -87,4 +90,61 @@ test('réponse en erreur : jeton refusé, compte introuvable, panne', () => {
   assert.match(kind(200, { data: { viewer: { accounts: [] } } }), /^refused: Ce compte Cloudflare est introuvable/)
   assert.match(kind(200, { data: null, errors: [{ message: 'query complexity exceeded' }] }), /^unavailable: .*query complexity exceeded/)
   assert.match(kind(502, null), /^unavailable: .*erreur 502/)
+})
+
+// ───────────── Plausible ─────────────
+
+test('réglages Plausible : domaine, adresse d\'une instance, balise sans injection possible', () => {
+  assert.deepEqual(plausibleSettingsErrors({ domain: 'cabinet-durand.fr' }), {})
+  assert.deepEqual(plausibleSettingsErrors({}), {}, 'un réglage vide n\'est pas une erreur : il est « à régler »')
+  assert.deepEqual(plausibleSettingsErrors({ domain: 'blog.cabinet-durand.fr', host: 'https://stats.cabinet-durand.fr/' }), {})
+  const errors = plausibleSettingsErrors({ domain: 'https://cabinet-durand.fr/', host: 'http://stats.exemple.fr' })
+  assert.deepEqual(Object.keys(errors).sort(), ['domain', 'host'])
+  assert.ok(plausibleSettingsErrors({ host: 'https://x.fr/"><script>' }).host)
+  assert.equal(plausibleSettingsErrors({ domain: 'cabinet"><script>.fr' }).domain !== undefined, true)
+  assert.equal(plausibleHost(''), 'https://plausible.io')
+  assert.equal(plausibleHost(' https://stats.exemple.fr/ '), 'https://stats.exemple.fr')
+  assert.equal(plausibleBeacon({ domain: 'Cabinet-Durand.fr' }), '<script defer data-domain="cabinet-durand.fr" src="https://plausible.io/js/script.js"></script>')
+  assert.equal(plausibleBeacon({ domain: 'cabinet-durand.fr', host: 'https://stats.exemple.fr' }), '<script defer data-domain="cabinet-durand.fr" src="https://stats.exemple.fr/js/script.js"></script>')
+  assert.equal(plausibleBeacon({ domain: 'cabinet"><script>.fr' }), null)
+  assert.equal(plausibleBeacon({}), null)
+})
+
+test('requêtes Plausible : période se terminant aujourd\'hui, quatre regroupements', () => {
+  const r = plausibleAudienceRequests(' Cabinet-Durand.fr ', 7, NOW)
+  assert.deepEqual(r.total, { site_id: 'cabinet-durand.fr', date_range: ['2026-11-12', '2026-11-18'], metrics: ['visits', 'pageviews'] })
+  assert.deepEqual(r.days.dimensions, ['time:day'])
+  assert.deepEqual(r.pages.dimensions, ['event:page'])
+  assert.deepEqual(r.referrers.dimensions, ['visit:source'])
+  assert.equal(r.pages.pagination.limit, 10)
+})
+
+test('réponse Plausible : jours complétés, sources, accès direct', () => {
+  const ok = (results: unknown[]) => ({ status: 200, body: { results } })
+  const stats = readPlausibleAudience({
+    total: ok([{ dimensions: [], metrics: [12, 40] }]),
+    days: ok([{ dimensions: ['2026-11-17'], metrics: [5, 15] }, { dimensions: ['2026-11-18'], metrics: [7, 25] }]),
+    pages: ok([{ dimensions: ['/'], metrics: [30] }, { dimensions: ['/contact'], metrics: [10] }, { dimensions: ['/vide'], metrics: [0] }]),
+    referrers: ok([{ dimensions: ['Direct / None'], metrics: [8] }, { dimensions: ['Google'], metrics: [4] }]),
+  }, 7, NOW)
+  assert.deepEqual(stats.totals, { visits: 12, pageViews: 40 })
+  assert.equal(stats.days.length, 7)
+  assert.deepEqual(stats.days.at(-1), { date: '2026-11-18', visits: 7, pageViews: 25 })
+  assert.deepEqual(stats.days[0], { date: '2026-11-12', visits: 0, pageViews: 0 })
+  assert.deepEqual(stats.pages, [{ path: '/', pageViews: 30 }, { path: '/contact', pageViews: 10 }])
+  assert.deepEqual(stats.referrers, [{ host: null, visits: 8 }, { host: 'Google', visits: 4 }])
+})
+
+test('réponse Plausible : clé refusée, site inconnu, limite, panne', () => {
+  const ok = { status: 200, body: { results: [] } }
+  const answers = (bad: { status: number; body: unknown }) => ({ total: bad, days: ok, pages: ok, referrers: ok })
+  const kind = (bad: { status: number; body: unknown }) => {
+    try { readPlausibleAudience(answers(bad), 7, NOW); return 'ok' }
+    catch (e) { assert.ok(e instanceof AudienceError); return `${e.kind}: ${e.message}` }
+  }
+  assert.match(kind({ status: 401, body: { error: 'Invalid API key' } }), /^refused: Plausible refuse cette clé/)
+  assert.match(kind({ status: 400, body: { error: 'Site not found' } }), /^refused: Plausible ne trouve pas ce site/)
+  assert.match(kind({ status: 429, body: null }), /^unavailable: Plausible limite/)
+  assert.match(kind({ status: 500, body: null }), /^unavailable: .*erreur 500/)
+  assert.equal(kind(ok), 'ok')
 })

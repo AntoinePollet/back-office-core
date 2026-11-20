@@ -17,7 +17,7 @@ const WINDOW_MS = 10 * 60_000
  * version **publiée** du contenu. Tout montant envoyé par le navigateur est ignoré.
  */
 export default defineEventHandler(async (event) => {
-  requireModule('stripe')
+  await requireModule(event, 'stripe')
   if (Number(getRequestHeader(event, 'content-length') ?? 0) > 10_000) throw createError({ statusCode: 413, message: 'Demande trop longue.' })
   const body = await readBody<{ collection?: unknown; id?: unknown; quantity?: unknown; locale?: unknown; returnPath?: unknown }>(event).catch(() => null)
 
