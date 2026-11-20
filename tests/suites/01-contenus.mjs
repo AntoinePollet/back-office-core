@@ -48,7 +48,8 @@ export default async function (t) {
     await pickImage()
     await page.waitForFunction(() => !document.querySelector('.modal-open') && document.body.innerText.includes('Remplacer'))
     const category = await field(page, 'Catégorie', 'select')
-    // Première catégorie proposée, après l'option vide.
+    // Première catégorie proposée, après l'option vide (la liste est chargée à l'affichage du champ : on l'attend).
+    await page.waitForFunction(el => el.options.length > 1, {}, category)
     await category.select(await category.$eval('option:nth-child(2)', o => o.value))
     await (await (await find(page, 'label', 'Tarif sur devis')).$('input')).evaluate(el => el.click())
     await clickText(page, 'button', 'Publier'); await page.waitForFunction(() => /\/admin\/services\/[0-9a-f-]{36}$/.test(location.pathname))

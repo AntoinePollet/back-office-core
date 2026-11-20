@@ -9,7 +9,7 @@ import { MAX_REVISIONS } from '../../../shared/content'
 type Snapshot = { shared: Record<string, any>; locales: Record<string, { slug: string | null; values: Record<string, any> }> }
 type Revision = {
   id: string; version: number; createdAt: string; author: string | null
-  changed: string[]; published: string[]; unpublished: string[]; origin: 'restore' | 'duplicate' | 'initial' | null
+  changed: string[]; published: string[]; unpublished: string[]; origin: 'restore' | 'duplicate' | 'initial' | 'schedule' | null
 }
 
 const props = defineProps<{
@@ -44,7 +44,7 @@ const langs = (codes: string[]) => (multi && codes.length ? ` (${codes.map(local
 /** Ce que cet enregistrement a fait, en clair. */
 function summary(r: Revision) {
   if (r.origin === 'initial') return 'Version d\'origine'
-  const what = r.origin === 'restore' ? 'Restauration d\'une version' : r.origin === 'duplicate' ? 'Copie d\'un autre contenu' : null
+  const what = r.origin === 'restore' ? 'Restauration d\'une version' : r.origin === 'duplicate' ? 'Copie d\'un autre contenu' : r.origin === 'schedule' ? 'Publication programmée' : null
   const parts: string[] = []
   if (r.published.length) parts.push(`Publication${langs(r.published)}`)
   if (r.unpublished.length) parts.push(`Retrait du site${langs(r.unpublished)}`)

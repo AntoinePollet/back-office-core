@@ -10,7 +10,10 @@ const SITE_CACHE = 'public, max-age=0, s-maxage=3600'
 /** Autorise la mise en cache d'une réponse publique. Jamais en aperçu : un brouillon ne se met pas en cache. */
 export function allowSiteCache(event: H3Event) {
   if ('preview' in getQuery(event)) return
-  setResponseHeader(event, 'cache-control', SITE_CACHE)
+  // Une mise en ligne ou un retrait programmés : la réponse ne doit pas être gardée au-delà de cette échéance.
+  const until = scheduleCacheSeconds()
+  if (until === 0) return
+  setResponseHeader(event, 'cache-control', until !== null && until < 3600 ? `public, max-age=0, s-maxage=${until}` : SITE_CACHE)
 }
 
 /**

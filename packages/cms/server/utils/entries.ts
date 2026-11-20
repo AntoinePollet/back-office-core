@@ -56,6 +56,8 @@ export async function loadDoc(event: H3Event, type: string, id: string) {
     /** Demande de publication en attente, s'il y en a une. */
     review: review ? { by: review.requestedByName, byId: review.requestedBy, note: review.note, at: review.createdAt } : null,
     locales: Object.fromEntries(rows.map(r => [r.locale, { slug: r.slug, status: r.status, values: r.draft, publishedAt: r.publishedAt }])),
+    /** Mises en ligne et retraits programmés (server/utils/schedule.ts). */
+    schedules: await entrySchedules(event, id),
   }
 }
 
@@ -132,7 +134,7 @@ type SaveBody = {
   after?: string
 }
 type Author = { id: string; name: string; email: string; role: string; types?: string[] | null; custom?: CustomRights | null }
-type Origin = 'restore' | 'duplicate'
+type Origin = 'restore' | 'duplicate' | 'schedule'
 
 /**
  * Refus d'enregistrer : le contenu a changé depuis que le formulaire l'a lu.
@@ -171,6 +173,10 @@ export async function saveDoc(event: H3Event, type: string, id: string | null) {
   if (typeof body !== 'object' || Array.isArray(body)) throw createError({ statusCode: 400, message: 'Un objet JSON est attendu.' })
   return writeDoc(event, type, id, body, user, { strict: true })
 }
+
+/** Exécution d'une mise en ligne ou d'un retrait programmés (server/utils/schedule.ts), au nom de la personne qui a programmé : mêmes règles qu'à la main. */
+export const writeScheduled = (event: H3Event, type: string, id: string, body: Pick<SaveBody, 'locales' | 'publish' | 'unpublish'>, user: Author) =>
+  writeDoc(event, type, id, body, user, { origin: 'schedule' })
 
 /**
  * `strict` : la demande vient de l'API. Tout ce qu'elle contient d'inconnu ou de mal rangé est refusé.
@@ -376,6 +382,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
   }).map(r => r.locale)
   const changed = [...(sharedChanged ? ['shared'] : []), ...changedLocales]
   const version = (existing?.version ?? 0) + (changed.length ? 1 : 0)
+  // Une mise en ligne programmée publiera le brouillon tel qu'il sera : qui ne peut pas publier ne le modifie plus.
+  if (existing && changed.length && !can(user, type, 'publish')) await assertNotScheduled(event, entryId)
   // Une langue envoyée à l'identique n'est pas réécrite, sauf si on la (re)publie.
   const writes = upserts.filter(u => changedLocales.includes(u.locale) || publish.includes(u.locale))
     .map(u => ({ ...u, version: changedLocales.includes(u.locale) ? version : byLocale.get(u.locale)?.version ?? 0 }))
@@ -465,6 +473,8 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
   }
   // Publier ou retirer du site répond à la demande de publication en attente, s'il y en a une.
   if (existing && (publish.length || unpublish.length)) statements.push(db.delete(schema.reviewRequests).where(eq(schema.reviewRequests.entryId, entryId)))
+  // Publier ou retirer une langue à la main répond aussi à ce qui était programmé pour elle.
+  statements.push(...scheduleCleanup(event, entryId, publish, unpublish))
   if (statements.length) await db.batch(statements as [any, ...any[]])
   // Le site a changé si quelque chose a été publié, retiré, ou si une adresse en ligne a bougé.
   const purged = publish.length || moved.length || unpublish.some(l => byLocale.get(l)?.published) ? await purgeSiteCache(event) : null
@@ -482,7 +492,7 @@ async function writeDoc(event: H3Event, type: string, id: string | null, request
   for (const locale of unpublish) if (byLocale.get(locale)?.published) events.push({ name: 'entry.unpublished', type, id: entryId, title, locale, user: who })
   // Journal d'activité : rien si l'enregistrement n'a rien changé ; une restauration de version et une copie sont dites telles.
   const touched = changed.length || publish.length || events.some(e => e.name === 'entry.unpublished')
-  emitCmsEvents(event, events, { activity: !touched ? 'unchanged' : origin === 'restore' ? 'revision' : origin === 'duplicate' ? 'duplicate' : undefined })
+  emitCmsEvents(event, events, { activity: origin === 'schedule' ? false : !touched ? 'unchanged' : origin === 'restore' ? 'revision' : origin === 'duplicate' ? 'duplicate' : undefined })
 
   const doc = (await loadDoc(event, type, entryId))!
   // `purgeFailed` n'est présent que si le site devait être mis à jour : vrai quand le cache n'a pas pu être vidé.

@@ -16,8 +16,10 @@
     }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "playground-media" }],
-  // Sauvegarde automatique de la base, chaque nuit à 3 h 17 (heure universelle). Le core fait le reste : rien d'autre à écrire.
-  "triggers": { "crons": ["17 3 * * *"] },
+  // Tâches planifiées, faites par le core (rien d'autre à écrire) :
+  // - « 17 3 * * * » : sauvegarde automatique de la base, chaque nuit à 3 h 17 (heure universelle) ;
+  // - « */5 * * * * » : publications programmées (mise en ligne ou retrait d'un contenu à l'heure choisie), à 5 minutes près.
+  "triggers": { "crons": ["17 3 * * *", "*/5 * * * *"] },
   // Redimensionnement des images de la médiathèque. Sans cette liaison, les images sont servies dans leur taille d'origine.
   "images": { "binding": "IMAGES" }
 }

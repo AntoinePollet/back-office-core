@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck } from '@lucide/vue'
+import { ArrowLeftRight, ChartLine, CreditCard, DatabaseBackup, ExternalLink, FileText, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, Trash2, Users, Workflow, ClipboardCheck, CalendarClock } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { adminEntryPath } from '../../shared/admin-paths'
@@ -15,6 +15,9 @@ const cmsVersion = useRuntimeConfig().public.cmsVersion
 // Demandes de publication qui concernent la personne, relues à chaque changement d'écran.
 const reviews = useState<unknown[]>('cms-reviews', () => [])
 watch(() => route.fullPath, async () => { reviews.value = await cmsApi<unknown[]>('/api/cms/reviews').catch(() => reviews.value) }, { immediate: true })
+// Mises en ligne et retraits programmés : lus à l'ouverture, puis tenus à jour par le formulaire et l'écran « Programmé ».
+const scheduled = useState<unknown[]>('cms-scheduled', () => [])
+onMounted(() => cmsApi<{ items: unknown[] }>('/api/cms/schedules').then((r) => { scheduled.value = r.items }, () => {}))
 // Module « Formulaires » : messages reçus non lus, pour qui peut les lire (administrateur, éditeur).
 const hasForms = computed(() => !!schema.value.modules?.some(m => m.id === 'forms') && ['admin', 'editor'].includes(user.value?.role ?? ''))
 const unreadMessages = useCmsUnreadMessages()
@@ -25,6 +28,7 @@ const groups = computed(() => {
   const out = new Map<string, { key: string; label: string; to: string; icon: Component; count?: number }[]>()
   // Demandes de publication : l'entrée n'apparaît que s'il y en a, pour ne pas encombrer le menu.
   if (reviews.value.length) out.set('À faire', [{ key: 'reviews', label: 'À valider', icon: ClipboardCheck, to: '/admin/reviews', count: reviews.value.length }])
+  if (scheduled.value.length) out.set('À faire', [...(out.get('À faire') ?? []), { key: 'scheduled', label: 'Programmé', icon: CalendarClock, to: '/admin/scheduled', count: scheduled.value.length }])
   const all = [...Object.entries(schema.value.singletons ?? {}), ...Object.entries(schema.value.collections ?? {})]
   for (const [key, def] of all) {
     const group = def.group ?? (def.kind === 'singleton' ? 'Pages' : 'Collections')

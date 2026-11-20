@@ -18,10 +18,11 @@ export default defineEventHandler(async (event) => {
   if (!full && !canListTitles(user, type)) assertAccess(user, type, 'edit')
 
   const db = useDb(event)
-  const [allDocs, rows, pending] = await Promise.all([
+  const [allDocs, rows, pending, planned] = await Promise.all([
     db.select().from(schema.entries).where(eq(schema.entries.type, type)),
     db.select().from(schema.entryLocales).where(eq(schema.entryLocales.type, type)),
     db.select({ entryId: schema.reviewRequests.entryId }).from(schema.reviewRequests).where(eq(schema.reviewRequests.type, type)),
+    schedulesByEntry(event, type),
   ])
   // Avec le droit « seulement ses contenus », la liste complète ne montre que les siens (les titres, eux, restent proposés aux champs relation).
   const docs = full && rightsFor(user, type).own ? allDocs.filter(d => d.createdBy === user.id) : allDocs
@@ -44,6 +45,8 @@ export default defineEventHandler(async (event) => {
       statuses: Object.fromEntries(mine.map(r => [r.locale, r.status])),
       /** Une publication a été demandée et attend une réponse. */
       review: requested.has(doc.id),
+      /** Mises en ligne et retraits programmés : { action, at, failed, locale }. */
+      scheduled: planned.get(doc.id) ?? [],
       createdAt: doc.createdAt,
       updatedAt: new Date(Math.max(doc.updatedAt.getTime(), ...mine.map(r => r.updatedAt.getTime()))),
       sortValue: sortKey ? values[sortKey] : undefined,

@@ -62,8 +62,12 @@ const localeChanged = (l: string) => localeState(l) !== baseline.locales[l]
 /** Demande de publication en attente sur ce contenu. Hors de `doc` : ce n'est pas une modification du formulaire. */
 const review = ref<{ by: string; byId: string; note: string | null; at: string } | null>(null)
 
+/** Mises en ligne et retraits programmés (composant `CmsSchedule`). */
+const schedules = ref<any[]>([])
+
 function hydrate(data?: any, unsaved = false) {
   review.value = data?.review ?? null
+  schedules.value = data?.schedules ?? []
   const next: Doc = {
     id: data?.id ?? null,
     version: data?.version ?? 0,
@@ -320,6 +324,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </span>
         <template v-if="def.drafts">
           <button class="btn btn-sm" :disabled="!dirty || saving" @click="save">Enregistrer le brouillon</button>
+          <CmsSchedule v-model:schedules="schedules" part="button" :type="type" :id="doc.id" :def="def" :locales="locales" :states="doc.locales" :dirty="dirty" @errors="errors = $event" />
           <button v-if="access.publish" class="btn btn-sm btn-primary" :disabled="saving" @click="publish">Publier</button>
         </template>
         <button v-else class="btn btn-sm btn-primary" :disabled="!dirty || saving" @click="save">Enregistrer</button>
@@ -327,6 +332,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     </div>
 
     <CmsSiteDelayNotice />
+    <CmsSchedule v-model:schedules="schedules" part="notice" :type="type" :id="doc.id" :def="def" :locales="locales" :states="doc.locales" :dirty="dirty" />
     <div v-if="errorCount" class="alert alert-error alert-soft text-sm mb-4">
       {{ errorCount }} champ{{ errorCount > 1 ? 's' : '' }} à corriger avant de publier
       <template v-if="multi">({{ Object.keys(errors).map(localeName).join(', ') }})</template>.
