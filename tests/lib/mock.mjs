@@ -10,6 +10,11 @@ import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudfla
  * - POST /turnstile/v0/siteverify → vérification d'un jeton Turnstile ; GET /turnstile/v0/api.js → faux script Turnstile
  * - /echec → 500
  * - toute autre adresse → 200
+ * - Resend, sous /resend : POST /resend/emails → { id } ; GET /resend/domains → domaines (cabinet-durand.fr vérifié,
+ *   pas-encore.fr en attente), 403 avec la clé « re_mauvaise », 401 « restricted_api_key » avec « re_envoi_seulement » ;
+ *   403 sans User-Agent, comme le vrai service
+ * - Plausible, sous /plausible : POST /plausible/api/v2/query → statistiques selon les regroupements demandés ;
+ *   401 avec la clé « mauvaise-cle-plausible », 400 « site not found » pour le domaine inconnu.fr
  * - GET /_calls → les appels reçus (pour déboguer à la main)
  * - Stripe, sous /stripe : POST /stripe/v1/checkout/sessions → une session (cs_test_<n>) ; GET /stripe/v1/checkout/sessions →
  *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement »
@@ -30,6 +35,8 @@ export async function startMock(port) {
       calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, body })
       if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
       if (req.url.startsWith('/github/')) return github(req, res, body)
+      if (req.url.startsWith('/resend/')) return resend(req, res)
+      if (req.url.startsWith('/plausible/')) return plausible(req, res, body)
       if (req.url === '/turnstile/v0/api.js') {
         res.setHeader('content-type', 'text/javascript')
         return res.end(TURNSTILE_SCRIPT)
@@ -64,6 +71,35 @@ export async function startMock(port) {
     }
     res.statusCode = 404
     res.end('{"error":{"message":"Unrecognized request URL"}}')
+  }
+  // Resend : vérifier la clé et le domaine de l'expéditeur, envoyer un e-mail.
+  let resendIds = 0
+  function resend(req, res) {
+    const key = req.headers.authorization?.replace(/^Bearer /, '')
+    const fail = (status, name, message) => { res.statusCode = status; return res.end(JSON.stringify({ statusCode: status, name, message })) }
+    if (!req.headers['user-agent']) return fail(403, 'missing_user_agent', 'User-Agent header is required')
+    if (!key) return fail(401, 'missing_api_key', 'Missing API key in the authorization header')
+    if (key === 're_mauvaise') return fail(403, 'invalid_api_key', 'API key is invalid')
+    if (req.method === 'GET' && req.url === '/resend/domains') {
+      if (key === 're_envoi_seulement') return fail(401, 'restricted_api_key', 'This API key is restricted to only send emails')
+      return res.end(JSON.stringify({ object: 'list', data: [{ id: 'd1', name: 'cabinet-durand.fr', status: 'verified' }, { id: 'd2', name: 'pas-encore.fr', status: 'pending' }] }))
+    }
+    if (req.method === 'POST' && req.url === '/resend/emails') return res.end(JSON.stringify({ id: `re-mail-${++resendIds}` }))
+    fail(404, 'not_found', 'Route not found')
+  }
+  // Plausible : API de statistiques v2. Les chiffres dépendent des regroupements demandés (dimensions).
+  function plausible(req, res, body) {
+    const key = req.headers.authorization?.replace(/^Bearer /, '')
+    if (req.method !== 'POST' || req.url !== '/plausible/api/v2/query') { res.statusCode = 404; return res.end('{"error":"Not found"}') }
+    if (key === 'mauvaise-cle-plausible') { res.statusCode = 401; return res.end('{"error":"Invalid API key or site ID. Please make sure you\'re using a valid API key with access to the site you\'ve requested."}') }
+    if (body?.site_id === 'inconnu.fr') { res.statusCode = 400; return res.end('{"error":"Site not found or you don\'t have access to it"}') }
+    const [from, to] = body?.date_range ?? []
+    const dimension = body?.dimensions?.[0]
+    const results = !dimension ? [{ dimensions: [], metrics: [21, 63] }]
+      : dimension === 'time:day' ? [{ dimensions: [from], metrics: [9, 27] }, { dimensions: [to], metrics: [12, 36] }]
+        : dimension === 'event:page' ? [{ dimensions: ['/'], metrics: [40] }, { dimensions: ['/plausible-contact'], metrics: [23] }]
+          : [{ dimensions: ['Direct / None'], metrics: [15] }, { dimensions: ['DuckDuckGo'], metrics: [6] }]
+    res.end(JSON.stringify({ results, meta: {}, query: body }))
   }
   // GitHub : la dernière version publiée du core, réglable par la suite (voir 21-mises-a-jour).
   const release = { tag: 'v0.0.1', status: 200, delay: 0 }

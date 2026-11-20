@@ -1,5 +1,5 @@
 import { defineCms, collection, section, singleton, f, type InferEntry } from 'backoffice-core/config'
-import { analytics, brevo, forms, stripe, turnstile } from 'backoffice-core/modules'
+import { analytics, brevo, forms, resend, stripe, turnstile } from 'backoffice-core/modules'
 
 const config = defineCms({
   site: {
@@ -12,6 +12,8 @@ const config = defineCms({
   // Fonctions ajoutées au site. Les clés d'API se saisissent dans le back-office, écran « Modules ».
   modules: [
     brevo(),
+    // Autre fournisseur d'e-mails : le premier des deux qui est réglé envoie.
+    resend(),
     // Mesure d'audience sans cookie (Cloudflare Web Analytics) : écran « Audience » du back-office.
     analytics(),
     // Anti-robots des formulaires (Cloudflare Turnstile) : <CmsTurnstile /> dans la page de contact.

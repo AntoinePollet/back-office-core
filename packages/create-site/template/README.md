@@ -265,15 +265,21 @@ Dans le tableau de bord Cloudflare : Workers, `__ID__`, Réglages, Domaines et r
 
 ### Envoi d'e-mails (facultatif)
 
-Les e-mails du back-office (workflows, lien de nouveau mot de passe, notifications des formulaires) partent par Brevo.
-Le plus simple : dans le back-office, **Modules → Brevo**, coller la clé d'API et l'expéditeur, puis « Vérifier la
-connexion ». La clé est enregistrée chiffrée et ne peut plus être relue ensuite.
+Les e-mails du back-office (workflows, lien de nouveau mot de passe, notifications des formulaires) partent par Brevo
+(`brevo()`) ou par Resend (`resend()`), selon le module déclaré dans `cms.config.ts`. Le plus simple : dans le
+back-office, **Modules → Brevo** (ou **Resend**), coller la clé d'API et l'expéditeur, puis « Vérifier la connexion ».
+La clé est enregistrée chiffrée et ne peut plus être relue ensuite. Si les deux modules sont déclarés, c'est le premier
+réglé, dans l'ordre de `cms.config.ts`, qui envoie.
+
+Avec Resend, le domaine de l'expéditeur doit être ajouté et vérifié dans Resend (« Domains ») ; avec une clé « Full
+access », « Vérifier la connexion » contrôle aussi ce domaine. Une clé « Sending access » suffit pour envoyer.
 
 On peut aussi les poser dans l'hébergement ; ce qui est saisi dans le back-office passe avant :
 
 ```sh
 pnpm exec wrangler secret put NUXT_BREVO_API_KEY
-pnpm exec wrangler secret put NUXT_EMAIL_FROM     # « Nom du site <contact@exemple.fr> », expéditeur validé dans Brevo
+pnpm exec wrangler secret put NUXT_RESEND_API_KEY  # ou celle-ci, avec resend()
+pnpm exec wrangler secret put NUXT_EMAIL_FROM     # « Nom du site <contact@exemple.fr> », expéditeur validé dans Brevo ou Resend
 ```
 
 Les clés saisies dans le back-office sont chiffrées avec `NUXT_AUTH_SECRET` : si ce secret change, il faut les saisir
@@ -281,8 +287,14 @@ Les clés saisies dans le back-office sont chiffrées avec `NUXT_AUTH_SECRET` : 
 
 ## Modules
 
-Un module ajoute une fonction au site. Il s'active dans `cms.config.ts` et se règle dans le back-office (écran
-« Modules », réservé aux administrateurs) :
+Un module ajoute une fonction au site. L'écran **Modules** du back-office (administrateurs) les montre tous, rangés
+par famille, avec un interrupteur « Activé » : on active ce dont on a besoin, puis on le règle. Un module déclaré dans
+`cms.config.ts` est activé tant que personne ne le désactive dans le back-office ; un module non déclaré est désactivé
+tant que personne ne l'active. Désactiver un module garde ses réglages, et on peut régler un module avant de l'activer.
+
+Les formulaires (`forms`) et le paiement (`stripe`) ont besoin d'être décrits dans le code (les champs des formulaires,
+les collections vendues) : ils ne s'activent dans le back-office qu'une fois déclarés dans `cms.config.ts`, et on peut
+ensuite les y désactiver. Les autres modules n'ont pas besoin du code ; les déclarer sert à les avoir activés d'office :
 
 ```ts
 import { brevo, forms } from 'backoffice-core/modules'
@@ -309,9 +321,11 @@ export default defineCms({
 | Module | Ce qu'il apporte |
 | --- | --- |
 | `brevo()` | L'envoi des e-mails. Réglages : clé d'API, expéditeur. |
+| `resend()` | L'envoi des e-mails par Resend, à la place de Brevo. Réglages : clé d'API, expéditeur (domaine vérifié dans Resend). |
 | `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
 | `stripe({ … })` | Le paiement en ligne d'un produit à prix fixe, sur la page de paiement de Stripe. Le prix vient du back-office. Paiements visibles dans « Paiements » (administrateurs et éditeurs). Réglages : clé d'API, secret du webhook. |
 | `analytics()` | La fréquentation du site dans l'écran « Audience » (administrateurs et éditeurs) : visites, pages vues, courbe par jour, pages les plus vues, sites d'origine. Par Cloudflare Web Analytics, sans cookie ni bandeau de consentement. Réglages : jeton de la balise, identifiant du site, identifiant du compte, jeton d'API en lecture. |
+| `plausible()` | La même chose par Plausible (plausible.io ou votre propre instance), sans cookie. Réglages : domaine du site, clé « Stats API », adresse de l'instance (facultative). `analytics({ provider: 'plausible' })` revient au même. |
 | `turnstile()` | Un anti-robots pour les formulaires du site (Cloudflare Turnstile), le plus souvent invisible pour les visiteurs. Réglages : clé du site, clé secrète. Côté page : `<CmsTurnstile />`. |
 
 ### Brancher un formulaire sur une page
@@ -376,7 +390,16 @@ pour la corriger.
 
 ### Mesure d'audience
 
-Ajouter `analytics()` aux modules, puis dans le tableau de bord Cloudflare :
+Deux fournisseurs, sans cookie : **Cloudflare Web Analytics** (`analytics()`) et **Plausible** (`plausible()`), à
+activer dans l'écran Modules. Chaque module de mesure actif ajoute sa balise aux pages ; l'écran « Audience » lit le
+premier qui est réglé.
+
+**Plausible.** Dans Plausible, « Add a website » avec le nom de domaine du site, puis dans les réglages du compte,
+« API Keys » → « New API Key », type *Stats API*. Saisir le domaine et la clé dans **Modules → Plausible** (et, pour
+une instance hébergée par vos soins, son adresse), puis « Vérifier la connexion ». Avec une politique de sécurité du
+contenu, autoriser l'adresse de Plausible (script et envoi des mesures).
+
+**Cloudflare Web Analytics.** Dans le tableau de bord Cloudflare :
 
 1. **Web Analytics → Ajouter un site** (nom de domaine du site). Dans le code proposé, copier la valeur de `"token"` :
    c'est le *jeton de la balise*. Ne pas coller le code dans les pages : le core ajoute la balise tout seul.
@@ -385,7 +408,7 @@ Ajouter `analytics()` aux modules, puis dans le tableau de bord Cloudflare :
 4. **Profil → Jetons d'API → Créer un jeton personnalisé**, autorisation *Compte → Account Analytics → Lecture* :
    c'est le *jeton d'API*, qui ne sert qu'à lire les statistiques.
 
-Saisir ces quatre valeurs dans **Modules → Mesure d'audience**, puis « Vérifier la connexion ». La balise est ajoutée
+Saisir ces quatre valeurs dans **Modules → Cloudflare Web Analytics**, puis « Vérifier la connexion ». La balise est ajoutée
 aux pages du site rendues par le serveur (jamais au back-office ni aux aperçus de brouillon) ; le cache du site est
 vidé à l'enregistrement, elle apparaît donc tout de suite. Les statistiques sont relues au plus toutes les cinq minutes.
 

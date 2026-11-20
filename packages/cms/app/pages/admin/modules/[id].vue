@@ -70,6 +70,25 @@ async function test() {
   }
 }
 
+// Activer ou désactiver le module : les réglages sont gardés.
+const toggling = ref(false)
+async function setEnabled(enabled: boolean) {
+  if (!enabled && !confirm(`Désactiver « ${state.value.label} » ? Il cesse de fonctionner sur le site tout de suite. Ses réglages sont gardés.`)) return
+  toggling.value = true
+  try {
+    state.value = await cmsApi<CmsModuleState>(`${url}/enabled`, { method: 'PUT', body: { enabled } })
+    await refreshCmsSchema()
+    const done = enabled ? 'Module activé' : 'Module désactivé'
+    toast.success(cmsSiteUpdated(state.value) ? done : `${done} ; le site peut mettre jusqu'à une heure à en tenir compte`)
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e))
+  }
+  finally {
+    toggling.value = false
+  }
+}
+
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text)
@@ -92,15 +111,32 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Des modifications ne sont pas 
         <div class="text-xs text-base-content/50">Modules</div>
         <h1 class="text-lg font-bold truncate">{{ state.label }}</h1>
       </div>
-      <div v-if="state.settings.length" class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-2 text-sm mr-2" :class="state.canEnable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'">
+          <input
+            type="checkbox" class="toggle toggle-sm toggle-success" :checked="state.enabled" :disabled="!state.canEnable || toggling" data-module-enabled
+            @change="setEnabled(($event.target as HTMLInputElement).checked)"
+          >
+          {{ state.enabled ? 'Activé' : 'Désactivé' }}
+        </label>
+        <template v-if="state.settings.length">
         <button v-if="state.canTest" class="btn btn-sm" :disabled="saving || testing || (!state.configured && !dirty)" @click="test">{{ testing ? 'Vérification…' : 'Vérifier la connexion' }}</button>
         <button class="btn btn-sm btn-primary" :disabled="saving || !dirty" @click="save">Enregistrer</button>
+        </template>
       </div>
     </div>
 
     <p class="text-sm text-base-content/70 mb-4">{{ state.description }}</p>
 
-    <div v-if="state.settings.length && !state.configured" class="alert alert-warning alert-soft text-sm mb-4">
+    <div v-if="state.needsCode" class="alert alert-info alert-soft text-sm mb-4 block">
+      Ce module a besoin d'être décrit dans le code du site avant de pouvoir être activé. À ajouter par le développeur dans
+      <code>cms.config.ts</code>, liste <code>modules</code> : <code class="break-all">{{ state.needsCode }}</code>
+    </div>
+    <div v-else-if="!state.enabled" class="alert alert-soft text-sm mb-4" data-module-disabled>
+      Ce module est désactivé : il ne fait rien sur le site. Vous pouvez le régler dès maintenant et l'activer ensuite.
+    </div>
+
+    <div v-if="state.enabled && state.settings.length && !state.configured" class="alert alert-warning alert-soft text-sm mb-4">
       À régler pour que le module fonctionne : {{ state.missing.join(', ') }}.
     </div>
     <div v-if="testResult" class="alert alert-soft text-sm mb-4" :class="testResult.ok ? 'alert-success' : 'alert-error'" role="status">{{ testResult.message }}</div>

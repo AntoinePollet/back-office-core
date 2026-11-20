@@ -8,6 +8,8 @@ const definitions = () => formDefinitions(cmsConfig)
 /** Formulaires du site : messages enregistrés, consultables dans le back-office, et déclencheur de workflow. */
 export const formsModule: CmsModuleDefinition = {
   id: 'forms',
+  category: 'forms',
+  needsCode: 'forms({ contact: { label: \'Contact\', fields: { … } } })',
   label: 'Formulaires',
   // Icône « boîte de réception » de Lucide.
   logo: { style: 'stroke', color: 'currentColor', paths: ['M22 12h-6l-2 3h-4l-2-3H2', 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'] },
@@ -72,7 +74,7 @@ export async function storeSubmission(event: H3Event, id: string, def: FormDefin
 export const canReadSubmissions = (user: { role: string }) => user.role === 'admin' || user.role === 'editor'
 
 export async function requireSubmissionsAccess(event: H3Event) {
-  requireModule('forms')
+  await requireModule(event, 'forms')
   const user = await requireUser(event)
   if (!canReadSubmissions(user)) throw createError({ statusCode: 403, message: 'Les messages reçus sont réservés aux administrateurs et aux éditeurs.' })
   return user

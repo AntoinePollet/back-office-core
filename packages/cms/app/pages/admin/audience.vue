@@ -6,8 +6,8 @@ import type { AudienceStats } from '../../../shared/analytics'
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-editor'] })
 
 type Answer =
-  | { state: 'ok'; stats: AudienceStats; updatedAt: string }
-  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string }
+  | { state: 'ok'; stats: AudienceStats; updatedAt: string; source: string; module: string }
+  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string; source?: string; module?: string }
 
 const user = useCmsUser()
 const isAdmin = computed(() => user.value?.role === 'admin')
@@ -58,8 +58,8 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
       <ChartLine :size="32" class="text-base-content/30" />
       <p class="font-medium">La mesure d'audience n'est pas encore réglée.</p>
       <template v-if="isAdmin">
-        <p class="text-sm text-base-content/60 max-w-md">Il faut saisir une fois les identifiants de Cloudflare Web Analytics. Les statistiques apparaîtront ensuite ici.</p>
-        <NuxtLink to="/admin/modules/analytics" class="btn btn-primary btn-sm"><Settings :size="16" />Régler la mesure d'audience</NuxtLink>
+        <p class="text-sm text-base-content/60 max-w-md">Il faut saisir une fois les identifiants de {{ answer.source ?? 'l\'outil de mesure' }}. Les statistiques apparaîtront ensuite ici.</p>
+        <NuxtLink :to="`/admin/modules/${answer.module ?? ''}`" class="btn btn-primary btn-sm"><Settings :size="16" />Régler la mesure d'audience</NuxtLink>
       </template>
       <p v-else class="text-sm text-base-content/60 max-w-md">Demandez à l'administrateur du site de la régler (écran « Modules »).</p>
     </div>
@@ -67,11 +67,11 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
     <!-- Jeton refusé, ou panne. -->
     <div v-else-if="answer && answer.state !== 'ok'" class="alert alert-soft items-start" :class="answer.state === 'refused' ? 'alert-error' : 'alert-warning'" role="alert">
       <div class="space-y-2">
-        <p class="font-medium">{{ answer.state === 'refused' ? 'Cloudflare refuse l\'accès aux statistiques.' : 'Les statistiques ne sont pas disponibles pour le moment.' }}</p>
+        <p class="font-medium">{{ answer.state === 'refused' ? `${answer.source ?? 'Le fournisseur'} refuse l'accès aux statistiques.` : 'Les statistiques ne sont pas disponibles pour le moment.' }}</p>
         <p class="text-sm">{{ answer.message }}</p>
         <p v-if="answer.state === 'refused' && !isAdmin" class="text-sm">Prévenez l'administrateur du site : un réglage est à corriger.</p>
         <div class="flex flex-wrap gap-2">
-          <NuxtLink v-if="answer.state === 'refused' && isAdmin" to="/admin/modules/analytics" class="btn btn-sm"><Settings :size="16" />Vérifier les réglages</NuxtLink>
+          <NuxtLink v-if="answer.state === 'refused' && isAdmin" :to="`/admin/modules/${answer.module ?? ''}`" class="btn btn-sm"><Settings :size="16" />Vérifier les réglages</NuxtLink>
           <button v-if="answer.state === 'unavailable'" class="btn btn-sm" :disabled="loading" @click="load"><RefreshCw :size="16" />Réessayer</button>
         </div>
       </div>
@@ -136,7 +136,7 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
       </div>
 
       <p class="text-xs text-base-content/50 mt-4">
-        Source : Cloudflare Web Analytics, sans cookie. Chiffres relus toutes les 5 minutes (dernière lecture {{ cmsFormatWhen(answer!.state === 'ok' ? answer!.updatedAt : new Date()) }}).
+        Source : {{ answer!.state === 'ok' ? answer!.source : '' }}, sans cookie. Chiffres relus toutes les 5 minutes (dernière lecture {{ cmsFormatWhen(answer!.state === 'ok' ? answer!.updatedAt : new Date()) }}).
         Les journées sont comptées en heure universelle ; les robots connus sont écartés.
       </p>
     </template>

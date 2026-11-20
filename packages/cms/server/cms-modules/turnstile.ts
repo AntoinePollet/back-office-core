@@ -24,6 +24,7 @@ async function siteverify(event: H3Event, secret: string, token: string, remotei
 /** Anti-robots des formulaires du site, par Cloudflare Turnstile (https://www.cloudflare.com/products/turnstile/). */
 export const turnstileModule: CmsModuleDefinition = {
   id: 'turnstile',
+  category: 'security',
   label: 'Anti-robots',
   // Icône « bouclier » de Lucide, dans la couleur de Cloudflare.
   logo: { style: 'stroke', color: '#F38020', paths: ['M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z', 'm9 12 2 2 4-4'] },
@@ -58,7 +59,7 @@ const ready = (settings: ModuleSettings) => isTurnstileSiteKey(settings.siteKey)
 
 /** Clé publique à donner aux pages du site, ou null si l'anti-robots n'est pas actif et réglé. */
 export async function turnstileSiteKey(event: H3Event) {
-  if (!activeModule('turnstile')) return null
+  if (!(await activeModule(event, 'turnstile'))) return null
   const settings = await moduleSettings(event, 'turnstile')
   return ready(settings) ? settings.siteKey! : null
 }
@@ -70,7 +71,7 @@ export async function turnstileSiteKey(event: H3Event) {
  * dans le journal du serveur : mieux vaut un formulaire bloqué qu'un formulaire ouvert aux robots sans le savoir.
  */
 export async function requireHuman(event: H3Event, token: unknown) {
-  if (!activeModule('turnstile')) return
+  if (!(await activeModule(event, 'turnstile'))) return
   const settings = await moduleSettings(event, 'turnstile')
   if (!ready(settings)) return
   if (!isTurnstileToken(token)) throw createError({ statusCode: 400, message: MISSING_TOKEN_MESSAGE, data: { turnstile: 'missing' } })

@@ -5,5 +5,5 @@ export default defineEventHandler(async (event) => {
   const admin = await requireAdmin(event)
   const [workflow] = await useDb(event).select().from(schema.workflows).where(eq(schema.workflows.id, getRouterParam(event, 'id')!))
   if (!workflow) throw createError({ statusCode: 404, message: 'Workflow introuvable.' })
-  return executeWorkflow(event, workflow, sampleEvent(event, workflow.trigger, admin), true)
+  return executeWorkflow(event, workflow, await sampleEvent(event, workflow.trigger, admin), true)
 })

@@ -11,7 +11,7 @@ const WINDOW_MS = 10 * 60_000
  * d'après la définition du formulaire, et le nombre d'envois par visiteur est limité.
  */
 export default defineEventHandler(async (event) => {
-  requireModule('forms')
+  await requireModule(event, 'forms')
   const id = getRouterParam(event, 'id')!
   const def = formDefinitions(cmsConfig)[id]
   if (!def) throw createError({ statusCode: 404, message: 'Formulaire introuvable.' })

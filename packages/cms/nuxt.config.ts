@@ -33,12 +33,18 @@ export default defineNuxtConfig({
     brevoApiKey: '',
     /** Adresse de l'API Brevo. Ne se change que pour les tests : NUXT_BREVO_API_URL. */
     brevoApiUrl: 'https://api.brevo.com/v3',
+    /** Clé d'API Resend (module « resend ») : variable NUXT_RESEND_API_KEY. */
+    resendApiKey: '',
+    /** Adresse de l'API Resend. Ne se change que pour les tests : NUXT_RESEND_API_URL. */
+    resendApiUrl: 'https://api.resend.com',
     /** Adresse de l'API Stripe. Ne se change que pour les tests : NUXT_STRIPE_API_URL. */
     stripeApiUrl: 'https://api.stripe.com',
-    /** Expéditeur des e-mails, validé dans Brevo : « Cabinet Durand <contact@cabinet-durand.fr> ». Variable NUXT_EMAIL_FROM. */
+    /** Expéditeur des e-mails, validé dans Brevo ou Resend : « Cabinet Durand <contact@cabinet-durand.fr> ». Variable NUXT_EMAIL_FROM. */
     emailFrom: '',
     /** Adresse de l'API Cloudflare (statistiques du module « analytics »). Ne se change que pour les tests : NUXT_CLOUDFLARE_API_URL. */
     cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
+    /** Adresse de l'API de statistiques de Plausible. Ne se change que pour les tests : NUXT_PLAUSIBLE_API_URL. Vide : l'adresse réglée dans le module. */
+    plausibleApiUrl: '',
     /** Nombre de jours pendant lesquels une sauvegarde est conservée : variable NUXT_BACKUP_RETENTION_DAYS. */
     backupRetentionDays: 30,
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */

@@ -2,7 +2,11 @@ import { eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import type { StoredSecret } from '../database/schema'
 import { decryptSecret, encryptSecret, secretHint } from '../../shared/secrets'
+import type { AudiencePeriod, AudienceStats } from '../../shared/analytics'
+import type { ModuleCategory } from '../../shared/modules'
 import { brevoModule } from '../cms-modules/brevo'
+import { resendModule } from '../cms-modules/resend'
+import { plausibleModule } from '../cms-modules/plausible'
 import { formsModule } from '../cms-modules/forms'
 import { stripeModule } from '../cms-modules/stripe'
 import { analyticsModule } from '../cms-modules/analytics'
@@ -11,7 +15,11 @@ import { turnstileModule } from '../cms-modules/turnstile'
 /**
  * Modules : ce qu'un module apporte au serveur, et le registre où ils sont inscrits.
  *
- * Un module est actif sur un site quand il est déclaré dans `cms.config.ts` (`modules: [brevo(), …]`).
+ * Tous les modules connus sont montrés dans l'écran « Modules » du back-office, où un administrateur les active ou
+ * les désactive. Sans choix enregistré, un module est actif s'il est déclaré dans `cms.config.ts`
+ * (`modules: [brevo(), …]`) : un site existant garde ses modules. Un module qui a besoin d'options écrites dans le code
+ * (`needsCode` : les formulaires, les produits vendus) ne peut être actif que s'il est déclaré.
+ *
  * Sa définition, ici, dit ce qu'il sait faire. Un projet client peut inscrire son propre module depuis un
  * plugin Nitro (`registerCmsModule({ id: 'mon-module', … })`) et le déclarer avec `{ id: 'mon-module' }`.
  */
@@ -57,9 +65,27 @@ export type MailMessage = { to: string[]; subject: string; html: string; replyTo
  */
 export type ModuleLogo = { style: 'fill' | 'stroke'; paths: string[]; color: string }
 
+
+/** Un module de mesure d'audience : la balise à ajouter aux pages, et la lecture des statistiques pour l'écran « Audience ». */
+export type AudienceCapability = {
+  /** Réglages complets et valides : le module peut mesurer et lire. */
+  ready: (settings: ModuleSettings) => boolean
+  /** Balise HTML à ajouter à la fin des pages du site, ou null si les réglages ne le permettent pas encore. */
+  beacon: (settings: ModuleSettings) => string | null
+  /** Statistiques d'une période se terminant aujourd'hui. Lève une `AudienceError` lisible en cas de refus ou de panne. */
+  stats: (event: H3Event, settings: ModuleSettings, period: AudiencePeriod) => Promise<AudienceStats>
+}
+
 export type CmsModuleDefinition = {
   id: string
   label: string
+  /** Famille, pour ranger l'écran « Modules ». Défaut : « Autres ». */
+  category?: ModuleCategory
+  /**
+   * Le module a besoin d'options écrites dans cms.config.ts : il ne peut pas être activé depuis le back-office tant
+   * qu'il n'y est pas déclaré. Valeur : la ligne à ajouter, montrée dans l'écran « Modules ».
+   */
+  needsCode?: string
   logo?: ModuleLogo
   /** Une phrase : à quoi sert le module. */
   description: string
@@ -81,32 +107,82 @@ export type CmsModuleDefinition = {
   validate?: (values: ModuleSettings) => Record<string, string>
   /** Les réglages changent les pages du site (balise, clé publique) : leur enregistrement vide le cache du site. */
   affectsSite?: boolean
+  /** Le module mesure l'audience du site. */
+  audience?: AudienceCapability
 }
 
 /** Construit au premier usage : les modules intégrés utilisent eux-mêmes ce fichier, ils ne sont pas encore chargés à son import. */
 let builtin: Map<string, CmsModuleDefinition> | undefined
-const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, formsModule, analyticsModule, turnstileModule, stripeModule].map(m => [m.id, m])))
+const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, stripeModule, turnstileModule].map(m => [m.id, m])))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {
   registry().set(definition.id, definition)
 }
 
-/** Modules actifs sur ce site : déclarés dans cms.config.ts et connus du serveur, dans l'ordre de la configuration. */
-export function activeModules(): CmsModuleDefinition[] {
-  return (cmsConfig.modules ?? []).map(m => registry().get(m.id)).filter((m): m is CmsModuleDefinition => !!m)
+/** Tous les modules connus : déclarés dans cms.config.ts d'abord (dans leur ordre), puis les autres. */
+export function allModules(): CmsModuleDefinition[] {
+  const declared = (cmsConfig.modules ?? []).map(m => registry().get(m.id)).filter((m): m is CmsModuleDefinition => !!m)
+  return [...declared, ...[...registry().values()].filter(m => !declared.includes(m))]
 }
 
-export const activeModule = (id: string) => activeModules().find(m => m.id === id)
+export const findModuleDefinition = (id: string) => registry().get(id)
 
-/** Options écrites dans cms.config.ts pour un module actif. */
+/** Le module est-il déclaré dans cms.config.ts ? */
+export const isDeclared = (id: string) => !!cmsConfig.modules?.some(m => m.id === id)
+
+/** Le module peut-il être actif ? Non pour un module qui a besoin d'options dans le code et n'y est pas déclaré. */
+export const canEnable = (definition: CmsModuleDefinition) => !definition.needsCode || isDeclared(definition.id)
+
+const TOGGLES_KEY = 'modules'
+type Toggles = Record<string, boolean>
+
+/** Choix enregistrés dans le back-office (module → activé), lus une fois par requête. */
+async function toggles(event: H3Event): Promise<Toggles> {
+  return (event.context._cmsModuleToggles ??= useDb(event).select().from(schema.settings).where(eq(schema.settings.key, TOGGLES_KEY))
+    .then(([row]) => (row?.value && typeof row.value === 'object' ? row.value as Toggles : {}))) as Promise<Toggles>
+}
+
+/** Le module est-il activé : choix du back-office, sinon déclaré dans cms.config.ts. */
+async function isEnabled(event: H3Event, definition: CmsModuleDefinition) {
+  if (!canEnable(definition)) return false
+  return (await toggles(event))[definition.id] ?? isDeclared(definition.id)
+}
+
+/** Modules actifs sur ce site, dans l'ordre de `allModules`. */
+export async function activeModules(event: H3Event): Promise<CmsModuleDefinition[]> {
+  const out: CmsModuleDefinition[] = []
+  for (const definition of allModules()) if (await isEnabled(event, definition)) out.push(definition)
+  return out
+}
+
+export const activeModule = async (event: H3Event, id: string) => (await activeModules(event)).find(m => m.id === id)
+
+/** Active ou désactive un module. Les réglages du module sont gardés. */
+export async function setModuleEnabled(event: H3Event, definition: CmsModuleDefinition, enabled: boolean) {
+  if (enabled && !canEnable(definition)) throw createError({ statusCode: 400, message: `${definition.label} doit d'abord être déclaré dans cms.config.ts : ${definition.needsCode}` })
+  const value = { ...(await toggles(event)), [definition.id]: enabled }
+  const now = new Date()
+  await useDb(event).insert(schema.settings).values({ key: TOGGLES_KEY, value, updatedAt: now })
+    .onConflictDoUpdate({ target: schema.settings.key, set: { value, updatedAt: now } })
+  event.context._cmsModuleToggles = Promise.resolve(value)
+}
+
+/** Options écrites dans cms.config.ts pour un module (vides s'il n'y est pas déclaré). */
 export const moduleOptions = <T = Record<string, unknown>>(id: string) =>
   (cmsConfig.modules?.find(m => m.id === id)?.options ?? {}) as T
 
 /** Répond 404 si le module n'est pas actif sur ce site : ses routes n'existent alors pas. */
-export function requireModule(id: string) {
-  const found = activeModule(id)
+export async function requireModule(event: H3Event, id: string) {
+  const found = await activeModule(event, id)
   if (!found) throw createError({ statusCode: 404, message: 'Cette fonction n\'est pas activée sur ce site.' })
+  return found
+}
+
+/** Un module connu (actif ou non), pour son écran de réglages. 404 sinon. */
+export function requireKnownModule(id: string) {
+  const found = findModuleDefinition(id)
+  if (!found) throw createError({ statusCode: 404, message: 'Module inconnu.' })
   return found
 }
 
@@ -158,6 +234,7 @@ export type SettingState = ModuleSettingField & {
 
 export async function describeModule(event: H3Event, definition: CmsModuleDefinition) {
   const row = await loadRow(event, definition.id)
+  const enabled = await isEnabled(event, definition)
   const settings: SettingState[] = []
   for (const field of definition.settings ?? []) {
     const env = !!envValue(event, field)
@@ -175,7 +252,13 @@ export async function describeModule(event: H3Event, definition: CmsModuleDefini
   return {
     id: definition.id,
     label: definition.label,
+    category: definition.category ?? 'other',
     description: definition.description,
+    /** Activé sur ce site. */
+    enabled,
+    /** Peut être activé depuis le back-office ; sinon `needsCode` dit quoi ajouter à cms.config.ts. */
+    canEnable: canEnable(definition),
+    needsCode: canEnable(definition) ? null : definition.needsCode ?? null,
     logo: definition.logo ?? null,
     settings,
     /** Tous les réglages obligatoires sont renseignés (ou le module n'en a pas). */

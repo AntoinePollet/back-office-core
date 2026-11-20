@@ -27,6 +27,17 @@ export type CmsModuleRef = { id: string; options?: Record<string, unknown>; chec
 const KEY = /^[a-z][a-zA-Z0-9]*$/
 const fail = (message: string): never => { throw new Error(`Configuration invalide :\n  - ${message}`) }
 
+/** Familles de modules, dans l'ordre de l'écran « Modules ». */
+export const MODULE_CATEGORIES = {
+  email: 'Envoi d\'e-mails',
+  audience: 'Mesure d\'audience',
+  forms: 'Formulaires',
+  payment: 'Paiement',
+  security: 'Sécurité',
+  other: 'Autres',
+} as const
+export type ModuleCategory = keyof typeof MODULE_CATEGORIES
+
 // ───────────────────────── Brevo ─────────────────────────
 
 /**
@@ -36,22 +47,36 @@ const fail = (message: string): never => { throw new Error(`Configuration invali
  */
 export const brevo = () => ({ id: 'brevo' as const })
 
+// ───────────────────────── Resend ─────────────────────────
+
+/**
+ * Envoi d'e-mails par Resend, à la place de Brevo : workflows, lien de nouveau mot de passe, notifications des
+ * formulaires. La clé d'API et l'expéditeur se règlent dans le back-office (ou, à défaut, par les variables
+ * NUXT_RESEND_API_KEY et NUXT_EMAIL_FROM de l'hébergement). Avec les deux modules déclarés, c'est le premier réglé
+ * qui envoie.
+ */
+export const resend = () => ({ id: 'resend' as const })
+
 // ───────────────────────── Mesure d'audience ─────────────────────────
 
-/** Fournisseurs de mesure d'audience connus. Un seul pour l'instant : Cloudflare Web Analytics (sans cookie). */
-export const ANALYTICS_PROVIDERS = ['cloudflare'] as const
+/** Fournisseurs de mesure d'audience connus, tous sans cookie : Cloudflare Web Analytics, Plausible. */
+export const ANALYTICS_PROVIDERS = ['cloudflare', 'plausible'] as const
 export type AnalyticsProviderId = typeof ANALYTICS_PROVIDERS[number]
 
 /**
  * Mesure d'audience sans cookie : la balise du fournisseur est ajoutée aux pages du site et l'écran « Audience »
  * du back-office montre visites, pages vues, pages les plus vues et sites d'où viennent les visiteurs.
- * Les jetons se règlent dans le back-office (écran « Modules »).
+ * Cloudflare Web Analytics par défaut ; `analytics({ provider: 'plausible' })` revient à `plausible()`.
+ * Les jetons se règlent dans le back-office (écran « Modules »), où l'on peut aussi activer l'autre fournisseur.
  */
 export function analytics(options: { provider?: AnalyticsProviderId } = {}) {
   const provider = options.provider ?? 'cloudflare'
   if (!(ANALYTICS_PROVIDERS as readonly string[]).includes(provider)) fail(`analytics() : fournisseur « ${provider} » inconnu (${ANALYTICS_PROVIDERS.join(', ')})`)
-  return { id: 'analytics' as const, options: { provider } }
+  return provider === 'plausible' ? plausible() : { id: 'analytics' as const }
 }
+
+/** Mesure d'audience par Plausible (plausible.io ou une instance hébergée par le client). Réglages dans le back-office. */
+export const plausible = () => ({ id: 'plausible' as const })
 
 // ───────────────────────── Anti-robots ─────────────────────────
 

@@ -21,12 +21,12 @@ export default async function (t) {
     await login(page, B)
     const labels = await menuLabels(page)
     check(labels.includes('Modules') && labels.some(l => l.startsWith('Messages reçus')), 'menu : ' + labels.join(', '))
-    await clickText(page, 'aside a', 'Modules'); await says(page, 'Les fonctions ajoutées à ce site')
-    const cards = await page.$$eval('main a.card', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
+    await clickText(page, 'aside a', 'Modules'); await says(page, 'Les fonctions qu\'on peut ajouter à ce site')
+    const cards = await page.$$eval('main [data-module] > a', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
     // D'autres modules peuvent être actifs dans le playground (audience, anti-robots…) : on cherche ces deux-là par leur nom.
     check(cards.some(c => c.startsWith('Brevo À régler')) && cards.some(c => c.startsWith('Formulaires Actif')), cards.join(' | '))
     // Logo officiel de Brevo dans sa couleur, icône dessinée pour les formulaires.
-    const logos = Object.fromEntries(await page.$$eval('main a.card', els => els.map(a => {
+    const logos = Object.fromEntries(await page.$$eval('main [data-module] > a', els => els.map(a => {
       const s = a.querySelector(':scope > span[aria-hidden] svg')
       return [a.querySelector('.font-semibold')?.textContent.trim(), s && s.getAttribute('fill') + '/' + s.getAttribute('stroke')]
     })))

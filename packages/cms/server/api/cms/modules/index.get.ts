@@ -1,5 +1,5 @@
-/** Modules actifs sur ce site et leur état : réglés ou non. */
+/** Tous les modules connus et leur état : activés ou non, réglés ou non. Les modules activés d'abord. */
 export default defineEventHandler(async (event) => {
   await requireAdmin(event)
-  return Promise.all(activeModules().map(definition => describeModule(event, definition)))
+  return Promise.all(allModules().map(definition => describeModule(event, definition)))
 })
