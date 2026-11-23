@@ -13,6 +13,8 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+## 0.11.0 — 2026-11-23
+
 ### Nouveautés
 
 - **Logo du site dans le back-office** : nouveau réglage `site.logo` de `cms.config.ts`, un fichier du dossier `public/`
