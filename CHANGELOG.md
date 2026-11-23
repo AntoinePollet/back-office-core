@@ -13,6 +13,14 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Logo du site dans le back-office** : nouveau réglage `site.logo` de `cms.config.ts`, un fichier du dossier `public/`
+  du site (`'/logo.svg'`, carré de préférence) ou une adresse complète. Il s'affiche en haut du menu, à la place de
+  l'initiale du nom. Sans ce réglage, rien ne change.
+- **Menu : logo et compte toujours visibles.** Le haut du menu (nom du site) et le bas (compte, déconnexion, version)
+  restent en place ; quand le menu est plus haut que l'écran, seule la liste des écrans défile.
+
 ## 0.10.0 — 2026-11-21
 
 ### Nouveautés

@@ -7,6 +7,8 @@ const config = defineCms({
     // Référencement : fin du titre de chaque page, et image de partage des pages qui n'en ont pas (fichier de public/).
     titleSuffix: 'Cabinet Durand',
     shareImage: '/partage.png',
+    // Logo en haut du menu du back-office (sans logo : l'initiale du nom).
+    logo: '/logo.svg',
   },
 
   // Fonctions ajoutées au site. Les clés d'API se saisissent dans le back-office, écran « Modules ».

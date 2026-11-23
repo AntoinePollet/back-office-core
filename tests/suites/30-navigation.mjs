@@ -163,6 +163,30 @@ export default async function (t) {
     await t.shot(page, 'libelles-longs')
   })
 
+  await step('menu plus haut que l\'écran : logo et compte restent visibles, seul le menu défile', async () => {
+    const short = await t.newPage({ width: 1280, height: 560 })
+    await short.goto(B + '/admin/services', { waitUntil: 'networkidle0' })
+    const result = await short.evaluate(async () => {
+      for (const d of document.querySelectorAll('[data-nav-folder]')) d.open = true
+      const scroller = document.querySelector('[data-cms-nav]').parentElement
+      scroller.scrollTop = scroller.scrollHeight
+      window.scrollTo(0, document.body.scrollHeight)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const head = document.querySelector('[data-cms-nav-head]').getBoundingClientRect()
+      const foot = document.querySelector('[data-cms-nav-foot]').getBoundingClientRect()
+      const logo = document.querySelector('[data-cms-nav-head] img')
+      return {
+        scrolls: scroller.scrollHeight > scroller.clientHeight && scroller.scrollTop > 0,
+        head: Math.round(head.top), foot: Math.round(foot.bottom), height: window.innerHeight,
+        logo: logo ? `${logo.getAttribute('src')} ${logo.naturalWidth > 0}` : null,
+      }
+    })
+    check(result.scrolls, 'le menu ne défile pas : ' + JSON.stringify(result))
+    check(result.head === 0 && result.foot <= result.height && result.foot > result.height - 120, 'en-tête ou compte hors de l\'écran : ' + JSON.stringify(result))
+    check(result.logo === '/logo.svg true', 'logo du site : ' + result.logo)
+    await t.shot(short, 'menu-defilant')
+  })
+
   await step('éditeur : ni Réglages ni Administration, la corbeille dans Outils', async () => {
     check((await claire.signIn(t.admin.email, t.admin.password)).status === 200, 'connexion')
     const { link } = await claire.json('/api/cms/users', { method: 'POST', body: { name: MARC.name, email: MARC.email, role: MARC.role } })

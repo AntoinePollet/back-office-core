@@ -295,6 +295,11 @@ type Site = {
    * ('/partage.jpg', 1200 × 630 px dans l'idéal) ou une adresse complète.
    */
   shareImage?: string
+  /**
+   * Logo du site, affiché en haut du menu du back-office à la place de l'initiale : un fichier du dossier `public/`
+   * du site ('/logo.svg', carré de préférence) ou une adresse complète.
+   */
+  logo?: string
 }
 
 type Config = {
@@ -342,6 +347,7 @@ export function validate(config: Config): string[] {
   if (site.timeZone !== undefined && !isValidTimeZone(site.timeZone)) errors.push(`site.timeZone : fuseau horaire inconnu « ${site.timeZone} » (attendu un identifiant comme 'Europe/Paris')`)
   if (site.titleSuffix !== undefined && (typeof site.titleSuffix !== 'string' || !site.titleSuffix.trim())) errors.push('site.titleSuffix : un texte est attendu (ou rien)')
   if (site.shareImage !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.shareImage))) errors.push('site.shareImage : attendu un fichier du dossier public (\'/partage.jpg\') ou une adresse complète (https://…)')
+  if (site.logo !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.logo))) errors.push('site.logo : attendu un fichier du dossier public (\'/logo.svg\') ou une adresse complète (https://…)')
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'
   // Un ancien nom encore porté par un voisin, ou revendiqué deux fois : impossible de savoir quelles données suivre.

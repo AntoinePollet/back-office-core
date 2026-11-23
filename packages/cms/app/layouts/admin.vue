@@ -265,43 +265,47 @@ async function logout() {
 
     <div class="drawer-side z-30">
       <label for="cms-nav" class="drawer-overlay" />
-      <aside class="w-64 min-h-full bg-base-100 border-r border-base-300 flex flex-col">
-        <div class="h-14 px-4 flex items-center gap-3 border-b border-base-300">
-          <div class="w-8 h-8 rounded-field bg-primary text-primary-content grid place-items-center font-bold">
+      <!-- Hauteur de l'écran : l'en-tête (logo) et le pied (compte) restent visibles, seul le menu défile. -->
+      <aside class="w-64 h-dvh bg-base-100 border-r border-base-300 flex flex-col">
+        <div class="h-14 shrink-0 px-4 flex items-center gap-3 border-b border-base-300" data-cms-nav-head>
+          <img v-if="schema.site.logo" :src="schema.site.logo" alt="" class="w-8 h-8 rounded-field object-contain shrink-0">
+          <div v-else class="w-8 h-8 shrink-0 rounded-field bg-primary text-primary-content grid place-items-center font-bold">
             {{ schema.site.name[0] }}
           </div>
           <div class="font-semibold text-sm truncate">{{ schema.site.name }}</div>
         </div>
-        <ul class="menu w-full grow gap-0.5" data-cms-nav>
-          <template v-for="(section, i) in nav" :key="section.title ?? `section-${i}`">
-            <li v-if="section.title" class="menu-title mt-2 first:mt-0">{{ section.title }}</li>
-            <li v-else class="mt-2 mb-1 mx-2 border-t border-base-300 pointer-events-none" aria-hidden="true" />
-            <template v-if="section.favorites">
-              <li class="p-0" data-nav-favorites>
-                <ul class="p-0 m-0 before:hidden">
-                  <CmsNavLink
-                    v-for="item in section.nodes as NavItem[]" :key="item.to" :item="item" :active="isActive(item)" favorite sortable
-                    draggable="true" :class="{ 'is-dragging': dragging === item.to, 'is-drop-target': dropTarget === item.to && dragging !== item.to }"
-                    @favorite="toggleFavorite(item)" @move="moveFavorite(item, $event)"
-                    @dragstart="onDragStart(item, $event)" @dragover="onDragOver(item, $event)" @drop.prevent="onDrop(item)" @dragend="onDragEnd"
-                  />
-                </ul>
-              </li>
-            </template>
-            <template v-for="node in section.favorites ? [] : section.nodes" :key="node.key">
-              <li v-if="isFolder(node)">
-                <details :open="isOpen(node)" :data-nav-folder="node.key" @toggle="onFolderToggle(node, $event)">
-                  <summary :title="node.label"><component :is="node.icon" :size="16" class="shrink-0" /><span class="truncate min-w-0 grow">{{ node.label }}</span></summary>
-                  <ul>
-                    <CmsNavLink v-for="item in node.items" :key="item.key" :item="item" :active="isActive(item)" :favorite="isFavorite(item)" @favorite="toggleFavorite(item)" />
+        <div class="grow min-h-0 overflow-y-auto overscroll-contain">
+          <ul class="menu w-full gap-0.5" data-cms-nav>
+            <template v-for="(section, i) in nav" :key="section.title ?? `section-${i}`">
+              <li v-if="section.title" class="menu-title mt-2 first:mt-0">{{ section.title }}</li>
+              <li v-else class="mt-2 mb-1 mx-2 border-t border-base-300 pointer-events-none" aria-hidden="true" />
+              <template v-if="section.favorites">
+                <li class="p-0" data-nav-favorites>
+                  <ul class="p-0 m-0 before:hidden">
+                    <CmsNavLink
+                      v-for="item in section.nodes as NavItem[]" :key="item.to" :item="item" :active="isActive(item)" favorite sortable
+                      draggable="true" :class="{ 'is-dragging': dragging === item.to, 'is-drop-target': dropTarget === item.to && dragging !== item.to }"
+                      @favorite="toggleFavorite(item)" @move="moveFavorite(item, $event)"
+                      @dragstart="onDragStart(item, $event)" @dragover="onDragOver(item, $event)" @drop.prevent="onDrop(item)" @dragend="onDragEnd"
+                    />
                   </ul>
-                </details>
-              </li>
-              <CmsNavLink v-else :item="node" :active="isActive(node)" :favorite="isFavorite(node)" @favorite="toggleFavorite(node)" />
+                </li>
+              </template>
+              <template v-for="node in section.favorites ? [] : section.nodes" :key="node.key">
+                <li v-if="isFolder(node)">
+                  <details :open="isOpen(node)" :data-nav-folder="node.key" @toggle="onFolderToggle(node, $event)">
+                    <summary :title="node.label"><component :is="node.icon" :size="16" class="shrink-0" /><span class="truncate min-w-0 grow">{{ node.label }}</span></summary>
+                    <ul>
+                      <CmsNavLink v-for="item in node.items" :key="item.key" :item="item" :active="isActive(item)" :favorite="isFavorite(item)" @favorite="toggleFavorite(item)" />
+                    </ul>
+                  </details>
+                </li>
+                <CmsNavLink v-else :item="node" :active="isActive(node)" :favorite="isFavorite(node)" @favorite="toggleFavorite(node)" />
+              </template>
             </template>
-          </template>
-        </ul>
-        <div class="p-3 border-t border-base-300 flex items-center gap-3">
+          </ul>
+        </div>
+        <div class="shrink-0 p-3 border-t border-base-300 flex items-center gap-3" data-cms-nav-foot>
           <div class="avatar avatar-placeholder">
             <div class="bg-neutral text-neutral-content w-8 rounded-full"><span class="text-xs">{{ initials }}</span></div>
           </div>
@@ -311,7 +315,7 @@ async function logout() {
           </NuxtLink>
           <button class="btn btn-ghost btn-sm btn-square" title="Se déconnecter" aria-label="Se déconnecter" @click="logout"><LogOut :size="16" /></button>
         </div>
-        <div class="px-4 pb-2 -mt-1 text-[11px] text-base-content/40" title="Version du back-office">Version {{ cmsVersion }}<CmsUpdateNotice /></div>
+        <div class="shrink-0 px-4 pb-2 -mt-1 text-[11px] text-base-content/40" title="Version du back-office">Version {{ cmsVersion }}<CmsUpdateNotice /></div>
       </aside>
     </div>
 
