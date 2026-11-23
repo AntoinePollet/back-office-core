@@ -150,7 +150,7 @@ export async function migrateContent(event: H3Event, options: Options): Promise<
     }
 
     // Les requêtes d'écriture groupée passent directement par D1 : le lot de Drizzle n'accepte pas le SQL libre avec paramètres.
-    const d1 = event.context.cloudflare.env.DB as D1Like
+    const d1 = usePlatform().database(event) as D1Like
     const raw = (text: string, ...params: unknown[]) => d1.prepare(text).bind(...params)
     const built = (query: { toSQL: () => { sql: string; params: unknown[] } }) => raw(query.toSQL().sql, ...query.toSQL().params)
     const statements: unknown[] = []
@@ -227,7 +227,9 @@ let nextCheck = 0
  * Une erreur ici ne doit jamais empêcher le site de répondre.
  */
 export async function ensureContentSchema(event: H3Event) {
-  if (synced || Date.now() < nextCheck || !event.context.cloudflare?.env?.DB) return
+  if (synced || Date.now() < nextCheck) return
+  // Chez Cloudflare, certaines requêtes n'ont pas de base (pré-rendu) ; sur un serveur Node, elle est toujours là.
+  if (usePlatform().name === 'cloudflare' && !event.context.cloudflare?.env?.DB) return
   try {
     const [row] = await useDb(event).select().from(schema.settings).where(eq(schema.settings.key, KEY))
     let state = row?.value as Pick<State, 'target' | 'pending'> | undefined

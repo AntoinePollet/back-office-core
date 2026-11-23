@@ -1,4 +1,5 @@
 // Aperçu en direct : la page du site à côté du formulaire, mise à jour pendant la saisie, sans rien enregistrer.
+import { config } from '../lib/config.mjs'
 import { check, clickText, field, fieldset, find, login, until, wait } from '../lib/harness.mjs'
 
 export const meta = { title: 'aperçu en direct à côté du formulaire (saisie, image, galerie, champ masqué, relation, langue, largeurs, droits, cache, origine)' }
@@ -347,7 +348,7 @@ export default async function (t) {
       check(read.headers.get('cache-control') === 'private, no-store', `${path} : ${read.headers.get('cache-control')}`)
     }
     // Hors aperçu, le site garde son cache : la fonction n'y a rien changé.
-    check(/s-maxage/.test((await visitor.get('/api/content/services')).headers.get('cache-control') ?? ''), 'le cache du site a disparu')
+    check(config.siteCached((await visitor.get('/api/content/services')).headers.get('cache-control')), 'le cache du site a disparu')
   })
 
   await step('messages : une page d\'une autre origine ne peut ni injecter de contenu ni écouter le cadre', async () => {

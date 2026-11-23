@@ -6,6 +6,7 @@ import {
   isBackupTable, isBlob, isKeptOnRestore, isSealed, isSealedColumn, orphanStatements, parseBackupName, retentionDays, rowLine, tableLine, withFailure,
 } from '../../shared/backup'
 import { decryptSecret, encryptSecret } from '../../shared/secrets'
+import type { Bucket, BucketPart, SqlDatabase } from '../platform/types'
 import type { ModuleWorkflowEvent } from './modules'
 
 /**
@@ -20,23 +21,9 @@ import type { ModuleWorkflowEvent } from './modules'
  * envoyé par morceaux), 100 valeurs par requête D1, 50 Mo par résultat de requête.
  */
 
-// Ce que le core utilise de D1 et de R2, décrit ici pour ne pas dépendre des types installés dans le projet client.
-type D1Result = { results?: Record<string, unknown>[]; meta?: { size_after?: number; changes?: number } }
-type D1Statement = { bind: (...values: unknown[]) => D1Statement; all: () => Promise<D1Result>; run: () => Promise<D1Result> }
-type D1 = { prepare: (sql: string) => D1Statement; batch: (statements: D1Statement[]) => Promise<D1Result[]> }
-type R2Part = { partNumber: number; etag: string }
-type R2Listed = { key: string; size: number; uploaded: Date }
-type Bucket = {
-  get: (key: string) => Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>
-  put: (key: string, value: ArrayBuffer | ArrayBufferView | string, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>
-  delete: (key: string | string[]) => Promise<void>
-  list: (options: { prefix?: string; cursor?: string; limit?: number }) => Promise<{ objects: R2Listed[]; truncated: boolean; cursor?: string }>
-  createMultipartUpload: (key: string, options?: { httpMetadata?: { contentType?: string } }) => Promise<{
-    uploadPart: (partNumber: number, value: ArrayBuffer | ArrayBufferView) => Promise<R2Part>
-    complete: (parts: R2Part[]) => Promise<unknown>
-    abort: () => Promise<void>
-  }>
-}
+// La base et le stockage sont ceux de l'hébergement, sous la forme de D1 et de R2 (server/platform/types.ts).
+type D1 = SqlDatabase
+type R2Part = BucketPart
 
 /** En dessous de cette taille, la base est lue en une seule transaction : la copie est parfaitement cohérente. */
 const SNAPSHOT_MAX_BYTES = 8 * 1024 * 1024
@@ -53,19 +40,10 @@ const RETRY_AFTER_MS = 3600_000
 
 const q = (name: string) => `"${name.replace(/"/g, '""')}"`
 
-function d1Of(event: H3Event) {
-  const d1 = event.context.cloudflare?.env?.DB as D1 | undefined
-  if (!d1) throw createError({ statusCode: 500, message: 'Base D1 introuvable : la liaison « DB » manque dans wrangler.jsonc.' })
-  return d1
-}
+const d1Of = (event: H3Event) => usePlatform().database(event)
 
-/** Où vont les sauvegardes : le bucket `BACKUPS` s'il est déclaré dans wrangler.jsonc, sinon celui de la médiathèque. */
-export function backupBucket(event: H3Event) {
-  const env = event.context.cloudflare?.env as { BACKUPS?: Bucket; MEDIA?: Bucket } | undefined
-  const bucket = env?.BACKUPS ?? env?.MEDIA
-  if (!bucket) throw createError({ statusCode: 500, message: 'Stockage R2 introuvable : la liaison « MEDIA » manque dans wrangler.jsonc.' })
-  return { bucket, dedicated: !!env?.BACKUPS }
-}
+/** Où vont les sauvegardes : un stockage à part si le site en déclare un, sinon celui de la médiathèque. */
+export const backupBucket = (event: H3Event) => usePlatform().backupBucket(event)
 
 function siteSecret(event: H3Event) {
   const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
@@ -440,8 +418,8 @@ async function readBackup(body: ReadableStream<Uint8Array>) {
 
 /** Les clés des fichiers présents dans le stockage de la médiathèque ; null s'il y en a trop pour les compter ici. */
 async function mediaKeys(event: H3Event) {
-  const bucket = event.context.cloudflare?.env?.MEDIA as Bucket | undefined
-  if (!bucket?.list) return null
+  const bucket = usePlatform().mediaBucket(event)
+  if (!bucket.list) return null
   const keys = new Set<string>()
   let cursor: string | undefined
   for (let page = 0; page < 30; page++) {

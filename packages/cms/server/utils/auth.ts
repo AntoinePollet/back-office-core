@@ -5,6 +5,21 @@ import type { H3Event } from 'h3'
 import { CMS_ROLES as SHARED_ROLES, type CmsRole as SharedRole, type CustomRights, isBuiltinRole } from '../../shared/access'
 import { twoFactorSetupRequired } from '../../shared/two-factor'
 
+/** En-tête interne qui porte, pour Better Auth, l'adresse du visiteur établie par le core (serveur Node seulement). */
+const CLIENT_IP_HEADER = 'x-cms-client-ip'
+
+/**
+ * À appeler avant de confier une requête à Better Auth : sur un serveur Node, y inscrit l'adresse du visiteur telle
+ * que l'hébergement la donne (connexion, ou `X-Forwarded-For` si NUXT_TRUST_PROXY), en écrasant ce que le visiteur
+ * aurait pu envoyer sous ce nom. Sans cela, Better Auth compterait tous les visiteurs comme un seul.
+ */
+export function trustedClientIp(event: H3Event) {
+  if (usePlatform().name !== 'node') return
+  const ip = usePlatform().clientIp(event)
+  if (ip) event.headers.set(CLIENT_IP_HEADER, ip)
+  else event.headers.delete(CLIENT_IP_HEADER)
+}
+
 function createAuth(event: H3Event) {
   const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
   if (!secret) throw createError({ statusCode: 500, message: 'Variable NUXT_AUTH_SECRET manquante.' })
@@ -19,6 +34,9 @@ function createAuth(event: H3Event) {
       schema: { user: schema.user, session: schema.session, account: schema.account, verification: schema.verification, twoFactor: schema.twoFactor },
     }),
     emailAndPassword: { enabled: true, minPasswordLength: 10 },
+    // Serveur Node : l'adresse du visiteur est celle que le core a établie (voir `trustedClientIp`), pas un en-tête
+    // que le visiteur pourrait écrire lui-même. Chez Cloudflare, Better Auth lit celui que pose le réseau.
+    ...(usePlatform().name === 'node' ? { advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } } } : {}),
     user: {
       additionalFields: { role: { type: 'string', defaultValue: 'editor', input: false } },
     },

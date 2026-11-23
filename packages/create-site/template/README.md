@@ -9,11 +9,10 @@ Site vitrine avec son back-office. Le projet étend `backoffice-core` : le core 
 | `app/pages/` | Les pages du site (Vue, Tailwind 4, daisyUI 5) |
 | `app/layouts/default.vue` | En-tête et pied de page communs |
 | `app/app.config.ts` | Nom du site affiché dans les pages |
-| `wrangler.jsonc` | Ressources Cloudflare : Worker `__ID__`, base D1 `__ID__`, bucket R2 `__BUCKET__` |
-| `.npmrc` | Réglage de pnpm indispensable avec la dépendance git vers le core (voir le commentaire du fichier) |
+__HOSTING_FILES__| `.npmrc` | Réglage de pnpm indispensable avec la dépendance git vers le core (voir le commentaire du fichier) |
 | `renovate.json`, `.github/workflows/` | Mises à jour du core et mises en ligne automatiques (voir « Mettre à jour le core ») |
 
-## Lancer en local
+__HOSTING_NOTE__## Lancer en local
 
 Il faut Node 22.21 ou plus récent (ou 24.11 et plus) et pnpm 9 ou plus récent.
 

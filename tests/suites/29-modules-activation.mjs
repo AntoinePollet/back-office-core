@@ -1,4 +1,5 @@
 // Activation des modules depuis le back-office : tous les modules montrés, interrupteurs, effets sur le site et le menu ; Plausible.
+import { config } from '../lib/config.mjs'
 import { check, login, menuLabels, says, until } from '../lib/harness.mjs'
 
 export const meta = {
@@ -26,7 +27,7 @@ export default async function (t) {
   const home = async () => (await visitor.get('/')).text
   const queries = () => calls().filter(c => c.url === '/plausible/api/v2/query')
   let ip = 10
-  const sendForm = values => visitor.call('/api/forms/contact', { method: 'POST', body: { values }, headers: { 'cf-connecting-ip': `203.0.113.${ip++}` } })
+  const sendForm = values => visitor.call('/api/forms/contact', { method: 'POST', body: { values }, headers: { [config.ipHeader]: `203.0.113.${ip++}` } })
 
   await step('préparation : administratrice, éditeur', async () => {
     check((await claire.signIn(t.admin.email, t.admin.password)).status === 200, 'connexion refusée')

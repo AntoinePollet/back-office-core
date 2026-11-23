@@ -182,7 +182,22 @@ async function collect(args) {
     }))
   }
 
-  const cloudflare = await answer({
+  const hosting = await answer({
+    given: args.hosting, option: '--hosting', check: () => undefined,
+    ask: () => p.select({
+      showInstructions: false,
+      message: `Où le site sera-t-il hébergé ? ${ARROWS}`,
+      options: [
+        { value: 'cloudflare', label: 'Chez Cloudflare (Workers, base D1, bucket R2)', hint: 'le plus simple : rien à administrer' },
+        { value: 'node', label: 'Sur un serveur Node, avec Docker', hint: 'VPS, serveur du client ou autre hébergeur' },
+      ],
+      initialValue: 'cloudflare',
+    }),
+    fallback: () => 'cloudflare',
+  })
+  if (hosting === 'node' && args.cloudflare) throw new UsageError('--cloudflare ne s\'utilise pas avec un hébergement sur serveur Node.')
+
+  const cloudflare = hosting === 'node' ? false : await answer({
     given: args.cloudflare, option: '--cloudflare', check: () => undefined,
     ask: () => p.confirm({ active: 'Oui', inactive: 'Non',
       message: args.dryRun
@@ -200,13 +215,13 @@ async function collect(args) {
     ? true
     : await answer({
       given: args.install, option: '--install', check: () => undefined,
-      ask: () => p.confirm({ active: 'Oui', inactive: 'Non', message: 'Installer les dépendances et préparer la base locale maintenant ?', initialValue: true }),
+      ask: () => p.confirm({ active: 'Oui', inactive: 'Non', message: hosting === 'node' ? 'Installer les dépendances maintenant ?' : 'Installer les dépendances et préparer la base locale maintenant ?', initialValue: true }),
       fallback: () => true,
     })
 
   if (missing.length) throw new UsageError(`Sans terminal interactif, ces options sont obligatoires : ${missing.join(', ')}`)
   return {
-    name: siteName, id, url: normalizeUrl(url), locales, defaultLocale, dir, core, coreRef, corePath, cloudflare, install,
+    name: siteName, id, url: normalizeUrl(url), locales, defaultLocale, dir, core, coreRef, corePath, hosting, cloudflare, install,
     accountId: args.accountId, dryRun: args.dryRun, interactive,
   }
 }
@@ -253,6 +268,7 @@ export async function main(argv) {
   }
 
   const { id, dir } = answers
+  const node = answers.hosting === 'node'
   const cd = `cd ${shellLine(shortPath(dir))}`
   const done = []
   const next = []
@@ -275,11 +291,12 @@ export async function main(argv) {
     const install = await step('Installation des dépendances', 'pnpm', ['install'], dir)
     if (install.code !== 0) {
       p.log.error(`L'installation des dépendances a échoué (voir le message ci-dessus).${answers.core === 'git' ? `\nLe dépôt github.com/${CORE_REPO} est-il poussé et accessible ? Sinon, utiliser un lien local : voir README.md.` : ''}`)
-      p.note([cd, 'pnpm install', 'pnpm db:migrate', 'pnpm dev'].join('\n'), 'Pour reprendre, une fois le problème corrigé')
+      p.note([cd, 'pnpm install', ...(node ? [] : ['pnpm db:migrate']), 'pnpm dev'].join('\n'), 'Pour reprendre, une fois le problème corrigé')
       p.outro('Le projet est créé, mais ses dépendances ne sont pas installées.')
       return 1
     }
-    const migrate = await step('Création de la base locale', 'pnpm', ['db:migrate'], dir)
+    // Sur un serveur Node, le site crée lui-même sa base à son premier démarrage (dans .data/).
+    const migrate = node ? { code: 0 } : await step('Création de la base locale', 'pnpm', ['db:migrate'], dir)
     if (migrate.code !== 0) {
       p.log.error('La préparation de la base locale a échoué (voir le message ci-dessus).')
       p.note([cd, 'pnpm db:migrate', 'pnpm dev'].join('\n'), 'Pour reprendre, une fois le problème corrigé')
@@ -287,7 +304,7 @@ export async function main(argv) {
       return 1
     }
     installed = true
-    done.push('les dépendances et la base locale (dans .wrangler/)')
+    done.push(node ? 'les dépendances (la base locale se crée au premier lancement, dans .data/)' : 'les dépendances et la base locale (dans .wrangler/)')
   }
 
   // 3. Cloudflare.
@@ -324,10 +341,18 @@ export async function main(argv) {
 
   // 4. Récapitulatif.
   next.push(cd)
-  if (!installed) next.push('pnpm install', 'pnpm db:migrate      # crée la base locale')
+  if (node) done.push('le fichier .env, avec un secret des sessions tiré au hasard (à garder hors de git)')
+  if (!installed) next.push('pnpm install', ...(node ? [] : ['pnpm db:migrate      # crée la base locale']))
   next.push('pnpm dev             # http://localhost:3000, back-office sur /admin')
   const sections = [`Créé :\n${bullet(done.map(d => `- ${d}`))}`, `Pour travailler en local :\n${bullet(next)}`]
-  if (!deployed || deployed.dryRun) {
+  if (node) {
+    sections.push(`Pour mettre en ligne, sur le serveur (Docker installé, domaine pointé vers lui) :\n${bullet([
+      '# copier le projet et son fichier .env, y vérifier SITE_DOMAIN, puis :',
+      'docker compose up -d --build',
+      '# détails, mises à jour et sauvegardes : HEBERGEMENT.md',
+    ])}`)
+  }
+  else if (!deployed || deployed.dryRun) {
     sections.push(`Pour mettre en ligne${deployed?.dryRun ? ' (non exécuté : --dry-run)' : ''} :\n${bullet([...(installed ? [] : ['# après pnpm install']), 'pnpm exec wrangler login   # une fois par machine', ...manualCommands(answers)])}`)
   }
   else {

@@ -26,8 +26,24 @@ function findChrome() {
 
 const port = number('E2E_PORT', 3121)
 
+/** E2E_TARGET=node : les tests tournent sur la version « serveur Node » du core (fichier SQLite, disque, sharp). */
+const target = env.E2E_TARGET || 'cloudflare'
+if (target !== 'cloudflare' && target !== 'node') throw new Error(`E2E_TARGET doit valoir « cloudflare » ou « node » (reçu « ${target} »).`)
+
 export const config = {
   testsDir,
+  /** Hébergement testé : « cloudflare » (par défaut) ou « node ». */
+  target,
+  /**
+   * En-tête qui porte l'adresse du visiteur : celui de Cloudflare, ou celui d'un serveur frontal devant un serveur
+   * Node (le serveur de test est alors lancé avec NUXT_TRUST_PROXY=true).
+   */
+  ipHeader: target === 'node' ? 'x-forwarded-for' : 'cf-connecting-ip',
+  /**
+   * Une réponse publique du site porte-t-elle la bonne consigne de cache ? Chez Cloudflare, elle est gardée par le
+   * réseau (`s-maxage`) ; sur un serveur Node, aucun cache partagé : elle doit être revérifiée à chaque fois.
+   */
+  siteCached: header => (target === 'node' ? header === 'public, max-age=0, must-revalidate' : /s-maxage=\d+/.test(header ?? '') && header.includes('max-age=0')),
   rootDir: path.resolve(testsDir, '..'),
   playgroundDir: path.resolve(testsDir, '..', 'playground'),
   /** Port du serveur de développement lancé pour les tests. */

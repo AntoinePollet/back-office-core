@@ -8,8 +8,8 @@ const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.jso
 export default defineNuxtConfig({
   compatibilityDate: '2026-01-01',
 
+  // Le module branche aussi l'hébergement (Cloudflare ou serveur Node) : voir `cms: { target }` dans module.ts.
   modules: [
-    'nitro-cloudflare-dev',
     fileURLToPath(new URL('./module.ts', import.meta.url)),
   ],
 
@@ -53,10 +53,21 @@ export default defineNuxtConfig({
     cmsUpdateCheck: true,
     /** Adresse interrogée (une fois par jour au plus) pour connaître la dernière version du core. Ne se change que pour les tests : NUXT_CMS_UPDATE_URL. */
     cmsUpdateUrl: 'https://api.github.com/repos/AntoinePollet/back-office-core/releases/latest',
-  },
 
-  nitro: {
-    preset: 'cloudflare_module',
+    // ───── Serveur Node seulement (`cms: { target: 'node' }`) ; sans effet chez Cloudflare. ─────
+    /** Dossier des données à conserver (base SQLite, fichiers de la médiathèque) : variable NUXT_DATA_DIR. */
+    dataDir: '.data',
+    /** Stockage compatible S3 pour la médiathèque, à la place du disque : NUXT_S3_ENDPOINT et NUXT_S3_BUCKET, avec les clés d'accès. */
+    s3Endpoint: '',
+    s3Bucket: '',
+    /** Bucket à part pour les sauvegardes (facultatif) : NUXT_S3_BACKUP_BUCKET. */
+    s3BackupBucket: '',
+    /** Région attendue par le service S3 : NUXT_S3_REGION. */
+    s3Region: 'us-east-1',
+    s3AccessKeyId: '',
+    s3SecretAccessKey: '',
+    /** Le site est derrière un serveur frontal (Caddy, Nginx…) qui transmet l'adresse du visiteur : NUXT_TRUST_PROXY=true. */
+    trustProxy: false,
   },
 
   vite: {

@@ -30,6 +30,7 @@ En cas d'échec, regarder `tests/resultats/` (ignoré par git, vidé à chaque l
 
 | Variable | Défaut | Rôle |
 | --- | --- | --- |
+| `E2E_TARGET` | `cloudflare` | `node` : teste la version « serveur Node » du core (fichier SQLite, disque, sharp). Demande Node 24 |
 | `E2E_PORT` | `3121` | port du serveur de test |
 | `E2E_MOCK_PORT` | `E2E_PORT` + 10 | port du faux service (Brevo, Stripe, Cloudflare, webhooks) |
 | `E2E_CHROME` | Chrome ou Chromium trouvé aux emplacements habituels | chemin du navigateur |

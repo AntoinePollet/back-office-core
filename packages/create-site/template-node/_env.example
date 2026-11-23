@@ -1,0 +1,23 @@
+# Réglages du site en production. Copier ce fichier en « .env » et le remplir. Ne jamais l'envoyer dans git.
+
+# Secret des sessions (obligatoire). Le tirer au hasard : openssl rand -hex 32
+# Le changer déconnecte tout le monde, rend illisibles les clés d'API des modules et invalide la double authentification.
+NUXT_AUTH_SECRET=
+
+# Domaine du site, pour le certificat HTTPS de Caddy (sans https://).
+SITE_DOMAIN=__SITE_DOMAIN__
+
+# ───── Fichiers de la médiathèque dans un stockage compatible S3 (facultatif) ─────
+# Sans ces réglages, les fichiers sont rangés dans le volume de données, à côté de la base.
+# NUXT_S3_ENDPOINT=https://s3.fr-par.scw.cloud
+# NUXT_S3_REGION=fr-par
+# NUXT_S3_BUCKET=__BUCKET__
+# NUXT_S3_ACCESS_KEY_ID=
+# NUXT_S3_SECRET_ACCESS_KEY=
+# Bucket à part pour les sauvegardes de la base (facultatif) :
+# NUXT_S3_BACKUP_BUCKET=
+
+# ───── E-mails (facultatif, voir README.md) ─────
+# NUXT_EMAIL_FROM="__SITE_NAME__ <contact@exemple.fr>"
+# NUXT_BREVO_API_KEY=
+# NUXT_RESEND_API_KEY=

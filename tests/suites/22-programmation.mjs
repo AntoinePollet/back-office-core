@@ -398,21 +398,23 @@ export default async function (t) {
   await step('repli sans déclencheur : la première lecture après l\'heure met en ligne ; le cache ne dépasse pas l\'échéance', async () => {
     ids.fallback = await create(claire, 'Sans déclencheur')
     const cached = async () => (await visitor.get('/api/content/services')).headers.get('cache-control')
-    check(/s-maxage=3600/.test(await cached()), 'cache habituel : ' + await cached())
+    // Sur un serveur Node, aucun cache partagé ne garde les réponses : il n'y a pas de durée à raccourcir.
+    const shared = config.target !== 'node'
+    check(shared ? /s-maxage=3600/.test(await cached()) : config.siteCached(await cached()), 'cache habituel : ' + await cached())
     const at = new Date(Date.now() + 4000).toISOString()
     const r = await schedule(claire, ids.fallback, { action: 'publish', at })
     check(r.status === 200 && r.json.schedules[0].at === at, `instant complet accepté : ${r.status} ${r.text.slice(0, 200)}`)
     // Une réponse publique n'est pas gardée en cache au-delà de l'échéance : une vieille page ne masquera pas la nouvelle.
     const header = await cached()
     const seconds = Number(/s-maxage=(\d+)/.exec(header)?.[1])
-    check(seconds >= 1 && seconds <= 4, 'durée de cache avant l\'échéance : ' + header)
+    check(shared ? seconds >= 1 && seconds <= 4 : config.siteCached(header), 'durée de cache avant l\'échéance : ' + header)
     check(!(await online('sans-declencheur')), 'pas encore en ligne')
     await wait(Math.max(0, new Date(at).getTime() - Date.now()) + 300)
     // Aucun déclencheur n'est joué : c'est cette lecture qui exécute l'échéance, avant de répondre.
     const first = await visitor.get('/api/content/services/sans-declencheur')
     check(first.status === 200 && first.json.title === 'Sans déclencheur', `première lecture après l'heure : ${first.status} ${first.text.slice(0, 200)}`)
     check((await planned(ids.fallback)).length === 0, 'programmation exécutée')
-    check(/s-maxage=3600/.test(await cached()) || Number(/s-maxage=(\d+)/.exec(await cached())?.[1]) > 4, 'le cache reprend sa durée : ' + await cached())
+    check(!shared || /s-maxage=3600/.test(await cached()) || Number(/s-maxage=(\d+)/.exec(await cached())?.[1]) > 4, 'le cache reprend sa durée : ' + await cached())
     await logged(/^Mise en ligne automatique de « Sans déclencheur » \(Services, français\), programmée par Claire Durand/)
     // La page du site déclenche le repli de la même façon (ici pour un retrait).
     const off = new Date(Date.now() + 3000).toISOString()

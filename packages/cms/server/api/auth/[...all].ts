@@ -20,6 +20,7 @@ export default defineEventHandler(async (event) => {
   if (url.pathname.includes('/sign-up'))
     throw createError({ statusCode: 403, message: 'Les inscriptions sont fermées.' })
 
+  trustedClientIp(event)
   const auth = useAuth(event)
   // Étape du code (après le mot de passe), activation, codes de secours : la limite de tentatives et l'usage unique
   // d'un code sont appliqués par `twoFactorGuard`, au cœur de Better Auth, là où le compte visé est connu.

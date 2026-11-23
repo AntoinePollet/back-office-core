@@ -78,7 +78,7 @@ export default async function (t) {
     const v = await visit('/vieille-page')
     check(v.status === 301 && v.location === '/contact?de=ancien', JSON.stringify(v))
     // La réponse de redirection se met en cache comme une page : elle est purgée à chaque modification.
-    check(/s-maxage=\d+/.test(v.cache) && v.cache.includes('max-age=0'), 'cache de la redirection : ' + v.cache)
+    check(config.siteCached(v.cache), 'cache de la redirection : ' + v.cache)
     for (const same of ['/Vieille-Page', '/vieille-page/', '//vieille-page', '/VIEILLE-PAGE/?x=1']) check((await visit(same)).location === '/contact?de=ancien', 'variante non reconnue : ' + same)
     const head = await fetch(B + '/vieille-page', { method: 'HEAD', redirect: 'manual', headers: { 'user-agent': BROWSER } })
     check(head.status === 301 && head.headers.get('location') === '/contact?de=ancien', 'HEAD : ' + head.status)
@@ -237,7 +237,7 @@ export default async function (t) {
     // Les étapes précédentes ont déjà fait compter quelques adresses : on repart d'une liste vide.
     check((await claire.del(`${R}/not-found`)).status === 200 && (await missing()).length === 0, 'la liste n\'a pas été vidée')
     for (let i = 0; i < 3; i++) {
-      const v = await visit('/Ancien-Catalogue/', { referer: 'https://www.google.com/search?q=cabinet+durand&client=secret', 'cf-connecting-ip': '203.0.113.9' })
+      const v = await visit('/Ancien-Catalogue/', { referer: 'https://www.google.com/search?q=cabinet+durand&client=secret', [config.ipHeader]: '203.0.113.9' })
       check(v.status === 404 && !/public|s-maxage/.test(v.cache), 'page 404 : ' + JSON.stringify(v))
     }
     await visit('/services/jamais-existe', { referer: B + '/services/droit-social?x=1' })

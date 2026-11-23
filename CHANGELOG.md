@@ -13,6 +13,16 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Hébergement hors de Cloudflare.** Un site peut maintenant tourner sur un serveur Node ordinaire, dans un conteneur
+  Docker (VPS, serveur du client, autre hébergeur) : `cms: { target: 'node' }` dans son `nuxt.config.ts`. La base est
+  alors un fichier SQLite (mêmes tables, mêmes migrations, appliquées au démarrage), les fichiers de la médiathèque
+  vont sur le disque ou dans un stockage compatible S3 (`NUXT_S3_*`), les images sont redimensionnées par `sharp`, et
+  le site déclenche lui-même la sauvegarde de la nuit et les publications programmées. Demande Node 24.
+  `pnpm create-site --hosting node` crée un tel site, avec son `Dockerfile`, son `docker-compose.yml` (Caddy pour le
+  HTTPS), son fichier `.env` et un guide `HEBERGEMENT.md`. Rien ne change pour les sites hébergés chez Cloudflare.
+
 ## 0.11.0 — 2026-11-23
 
 ### Nouveautés

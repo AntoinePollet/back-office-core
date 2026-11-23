@@ -1,0 +1,43 @@
+# Le site et son serveur frontal (Caddy : HTTPS automatique). Voir HEBERGEMENT.md.
+#
+#   docker compose up -d --build     construit l'image sur place et démarre
+#   docker compose logs -f site      journaux du site
+#
+# Réglages dans le fichier .env (modèle : .env.example).
+services:
+  site:
+    build: .
+    # Avec l'image construite par GitHub (flux « Déployer ») : retirer « build: . » et indiquer l'image.
+    # image: ghcr.io/<compte>/__ID__:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Caddy transmet l'adresse du visiteur : sans ce réglage, la limite de tentatives de connexion compterait
+      # tous les visiteurs comme un seul.
+      NUXT_TRUST_PROXY: "true"
+    volumes:
+      # La base, les fichiers de la médiathèque et les sauvegardes. À sauvegarder aussi hors du serveur.
+      - donnees:/data
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - site
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  donnees:
+  caddy_data:
+  caddy_config:

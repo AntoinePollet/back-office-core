@@ -25,9 +25,14 @@ Le core
   --core-ref <référence>    Avec --core git : étiquette de version, branche ou commit (défaut : la version du core, ex. v0.1.0)
   --core-path <dossier>     Avec --core local : dossier du core (défaut : packages/cms de ce dépôt)
 
+L'hébergement
+  --hosting <cloudflare|node>     cloudflare (défaut) : Workers, base D1, bucket R2.
+                                  node : serveur Node dans un conteneur Docker (VPS, serveur du client, autre hébergeur),
+                                  avec Dockerfile, docker-compose.yml et HEBERGEMENT.md.
+
 Les étapes
   --install / --no-install        Installer les dépendances et préparer la base locale
-  --cloudflare / --no-cloudflare  Créer la base D1, le bucket R2, puis déployer
+  --cloudflare / --no-cloudflare  Créer la base D1, le bucket R2, puis déployer (hébergement cloudflare seulement)
   --account-id <identifiant>      Compte Cloudflare à utiliser, s'il y en a plusieurs
   --dry-run                       N'exécute aucune commande Cloudflare : affiche ce qui serait fait.
                                   Les fichiers du projet, eux, sont bien créés.
@@ -49,6 +54,7 @@ const OPTIONS = {
   'core': { type: 'string' },
   'core-ref': { type: 'string' },
   'core-path': { type: 'string' },
+  'hosting': { type: 'string' },
   'install': { type: 'boolean' },
   'no-install': { type: 'boolean' },
   'cloudflare': { type: 'boolean' },
@@ -78,7 +84,12 @@ export function readArgs(argv) {
   }
   if (values.core !== undefined && values.core !== 'git' && values.core !== 'local')
     throw new UsageError(`--core attend « git » ou « local » (reçu : ${values.core}).`)
+  if (values.hosting !== undefined && values.hosting !== 'cloudflare' && values.hosting !== 'node')
+    throw new UsageError(`--hosting attend « cloudflare » ou « node » (reçu : ${values.hosting}).`)
+  if (values.hosting === 'node' && values.cloudflare) throw new UsageError('--cloudflare ne s\'utilise pas avec --hosting node.')
+  if (values.hosting === 'node' && values['account-id'] !== undefined) throw new UsageError('--account-id ne s\'utilise pas avec --hosting node.')
   return {
+    hosting: values.hosting,
     name: values.name,
     id: values.id,
     url: values.url,

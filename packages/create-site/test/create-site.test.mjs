@@ -95,6 +95,48 @@ test('projet généré : plus aucun marqueur, fichiers valides', () => {
   rmSync(dir, { recursive: true })
 })
 
+test('projet généré pour un serveur Node : Docker à la place de wrangler', () => {
+  const dir = join(temp(), 'atelier')
+  const files = generate(answers(dir, { hosting: 'node' }))
+  for (const expected of ['.dockerignore', '.env', '.env.example', '.gitignore', 'Caddyfile', 'Dockerfile', 'HEBERGEMENT.md', 'README.md', 'docker-compose.yml', 'nuxt.config.ts', 'package.json', ...AUTOMATION_FILES])
+    assert.ok(files.includes(expected), expected)
+  assert.ok(!files.includes('wrangler.jsonc'))
+  assert.ok(!files.some(f => f.startsWith('_')))
+  for (const file of files) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /__[A-Z_]+__/, file)
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  assert.equal(pkg.name, 'atelier-emilie')
+  assert.ok(pkg.dependencies.sharp, 'sharp redimensionne les images')
+  assert.ok(!pkg.devDependencies.wrangler && !JSON.stringify(pkg.scripts).includes('wrangler'), 'plus rien de wrangler')
+  assert.match(readFileSync(join(dir, 'nuxt.config.ts'), 'utf8'), /cms: \{ target: 'node' \}/)
+  // Le secret des sessions est tiré au hasard dans .env, jamais dans le modèle ; .env reste hors de git et de l'image.
+  assert.match(readFileSync(join(dir, '.env'), 'utf8'), /^NUXT_AUTH_SECRET=[0-9a-f]{64}$/m)
+  assert.match(readFileSync(join(dir, '.env.example'), 'utf8'), /^NUXT_AUTH_SECRET=$/m)
+  assert.match(readFileSync(join(dir, '.env'), 'utf8'), /^SITE_DOMAIN=atelier-emilie\.fr$/m)
+  for (const ignore of ['.gitignore', '.dockerignore']) assert.match(readFileSync(join(dir, ignore), 'utf8'), /^\.env$/m, ignore)
+  const docker = readFileSync(join(dir, 'Dockerfile'), 'utf8')
+  for (const part of ['pnpm install --frozen-lockfile', 'nuxt build', 'NUXT_DATA_DIR=/data', 'USER node', '.output/server/index.mjs']) assert.ok(docker.includes(part), part)
+  const deploy = readFileSync(join(dir, '.github/workflows/deployer.yml'), 'utf8')
+  assert.ok(deploy.includes('docker push') && !deploy.includes('wrangler') && !deploy.includes('CLOUDFLARE'), 'le déploiement publie une image')
+  assert.ok(!readFileSync(join(dir, '.github/workflows/verifier.yml'), 'utf8').includes('wrangler'))
+  const readme = readFileSync(join(dir, 'README.md'), 'utf8')
+  assert.ok(readme.includes('HEBERGEMENT.md') && !readme.includes('| `wrangler.jsonc` |'))
+  assert.ok(automationSteps(answers(dir, { hosting: 'node' })).join('\n').includes('ghcr.io'))
+  // Le modèle Cloudflare, lui, ne reçoit rien de tout cela.
+  const other = join(temp(), 'atelier')
+  const cloudflare = generate(answers(other))
+  for (const absent of ['Dockerfile', 'HEBERGEMENT.md', '.env', 'docker-compose.yml']) assert.ok(!cloudflare.includes(absent), absent)
+  assert.ok(readFileSync(join(other, 'README.md'), 'utf8').includes('| `wrangler.jsonc` | Ressources Cloudflare : Worker `atelier-emilie`, base D1 `atelier-emilie`, bucket R2 `atelier-emilie-media` |\n| `.npmrc`'))
+  rmSync(dir, { recursive: true })
+  rmSync(other, { recursive: true })
+})
+
+test('--hosting', () => {
+  assert.equal(readArgs(['--hosting', 'node']).hosting, 'node')
+  assert.equal(readArgs([]).hosting, undefined)
+  assert.throws(() => readArgs(['--hosting', 'ovh']), UsageError)
+  assert.throws(() => readArgs(['--hosting', 'node', '--cloudflare']), UsageError)
+})
+
 test('projet généré : mises à jour et déploiement automatiques', () => {
   const dir = join(temp(), 'atelier')
   const files = generate(answers(dir, { coreRef: 'v0.5.0' }))
@@ -155,6 +197,14 @@ test('versions du modèle alignées sur le playground', () => {
     for (const [name, version] of Object.entries(playground[group])) {
       if (name === 'backoffice-core') continue
       assert.equal(template[group][name], version, `${name} : le modèle et le playground divergent`)
+    }
+  }
+  // Le modèle « serveur Node » suit les mêmes versions, wrangler en moins.
+  const node = read('../template-node/_package.json')
+  for (const group of ['dependencies', 'devDependencies']) {
+    for (const [name, version] of Object.entries(template[group])) {
+      if (name === 'wrangler' || name === '@types/node') continue
+      assert.equal(node[group][name], version, `${name} : les deux modèles divergent`)
     }
   }
 })
