@@ -90,6 +90,16 @@ const hostOf = (url: string) => {
 }
 
 /**
+ * Sites par lesquels un visiteur ne fait que passer avant de revenir (page de paiement, connexion) : en revenir n'est
+ * pas une nouvelle arrivée.
+ */
+const PASSAGE_HOSTS = /(^|\.)(stripe\.com|paypal\.com|accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com)$/
+
+/** Une provenance qui dit plus que le site précédent : campagne, paramètres utm ou clic d'annonce. */
+export const isCampaignOrigin = (origin: Omit<VisitOrigin, 'at'> | null | undefined) =>
+  !!origin && !!(origin.source || origin.medium || origin.campaign || origin.campaignId || origin.click)
+
+/**
  * Provenance d'une arrivée sur le site, lue dans l'adresse de la page et le site précédent (`document.referrer`).
  * Null quand il n'y a rien à retenir : pas de paramètre de campagne, pas d'identifiant de clic, et un visiteur
  * qui arrive directement ou depuis une autre page du site lui-même.
@@ -107,7 +117,7 @@ export function readVisitOrigin(href: string, referrer: string, now = Date.now()
   const click = CLICK_PARAMS.find(p => text(params.get(p)))
   if (click) { out.click = click; out.clickId = text(params.get(click)) }
   const from = hostOf(referrer)
-  if (from && from !== url.hostname.toLowerCase()) out.referrer = from
+  if (from && from !== url.hostname.toLowerCase() && !PASSAGE_HOSTS.test(from)) out.referrer = from
   if (!out.source && !out.medium && !out.campaign && !out.campaignId && !out.click && !out.referrer) return null
   out.landing = url.pathname.slice(0, ORIGIN_MAX_TEXT)
   return out
@@ -150,10 +160,11 @@ const ADS_BY_SOURCE: [RegExp, Channel][] = [
   [/^(linkedin|li)$/, 'linkedin-ads'],
   [/^tiktok$/, 'tiktok-ads'],
 ]
-const SEARCH_HOSTS = /(^|\.)(google\.[a-z.]+|bing\.com|duckduckgo\.com|qwant\.com|ecosia\.org|search\.yahoo\.com|yandex\.[a-z.]+|baidu\.com|startpage\.com|search\.brave\.com|lilo\.org)$/
+// Google et Yandex : le moteur seulement (google.fr, www.google.com), pas docs.google.com ni sites.google.com.
+const SEARCH_HOSTS = /^(www\.)?(google|yandex)\.[a-z]{2,3}(\.[a-z]{2})?$|(^|\.)(bing\.com|duckduckgo\.com|qwant\.com|ecosia\.org|search\.yahoo\.com|baidu\.com|startpage\.com|search\.brave\.com|lilo\.org)$/
 const SOCIAL_HOSTS = /(^|\.)(facebook\.com|fb\.me|instagram\.com|linkedin\.com|lnkd\.in|t\.co|twitter\.com|x\.com|youtube\.com|pinterest\.[a-z.]+|tiktok\.com|reddit\.com|threads\.net|bsky\.app|mastodon\.social|whatsapp\.com)$/
 const SOCIAL_SOURCES = /^(facebook|fb|instagram|ig|linkedin|twitter|x|youtube|pinterest|tiktok|reddit|threads|bluesky|mastodon|whatsapp)$/
-const MAIL_HOSTS = /(^|\.)(mail\.google\.com|outlook\.live\.com|outlook\.office\.com|mail\.yahoo\.com|webmail\.[a-z.]+|mail\.[a-z.]+)$/
+const MAIL_HOSTS = /(^|\.)(mail\.google\.com|outlook\.live\.com|outlook\.office\.com|mail\.yahoo\.com)$|^(webmail|mail)\.[a-z0-9.-]+$/
 
 /** Canal d'une provenance, d'après les identifiants de clic, puis les paramètres `utm_*`, puis le site précédent. */
 export function channelOf(origin: Omit<VisitOrigin, 'at'>): Channel {

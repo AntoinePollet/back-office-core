@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { channelOf, cleanOrigin, filterByOrigin, originFromMetadata, originStats, originSummary, originToMetadata, readVisitOrigin } from './attribution.ts'
+import { channelOf, cleanOrigin, isCampaignOrigin, filterByOrigin, originFromMetadata, originStats, originSummary, originToMetadata, readVisitOrigin } from './attribution.ts'
 
 const NOW = Date.UTC(2026, 10, 24, 12)
 const site = 'https://cabinet-durand.fr'
@@ -87,4 +87,23 @@ test('comptes par canal et par campagne, filtre par période et par canal, résu
   assert.equal(originSummary(rows[0]!.origin), 'Google Ads · campagne « printemps »')
   assert.equal(originSummary(rows[3]!.origin), 'Moteur de recherche · depuis www.bing.com')
   assert.equal(originSummary(null), 'Accès direct')
+})
+
+test('retour d\'une page de paiement ou de connexion : pas une nouvelle arrivée ; campagne ou simple site précédent', () => {
+  assert.equal(readVisitOrigin(`${site}/boutique`, 'https://checkout.stripe.com/c/pay/cs_test_1', NOW), null)
+  assert.equal(readVisitOrigin(`${site}/`, 'https://accounts.google.com/signin', NOW), null)
+  // Un paramètre de campagne compte toujours, même en revenant de la page de paiement.
+  assert.deepEqual(readVisitOrigin(`${site}/merci?utm_source=lettre`, 'https://checkout.stripe.com/x', NOW), { at: NOW, source: 'lettre', landing: '/merci' })
+  assert.equal(isCampaignOrigin({ click: 'gclid', clickId: 'x' }), true)
+  assert.equal(isCampaignOrigin({ campaignId: '101' }), true)
+  assert.equal(isCampaignOrigin({ referrer: 'www.google.com', landing: '/' }), false)
+  assert.equal(isCampaignOrigin(null), false)
+})
+
+test('canal du site précédent : le moteur de Google seulement, messageries avec chiffres et tirets', () => {
+  const c = (referrer: string) => channelOf({ referrer })
+  for (const host of ['google.fr', 'www.google.com', 'www.google.co.uk', 'yandex.ru', 'www.bing.com', 'fr.search.yahoo.com']) assert.equal(c(host), 'search', host)
+  for (const host of ['docs.google.com', 'sites.google.com', 'classroom.google.com', 'google.example.com']) assert.equal(c(host), 'referral', host)
+  for (const host of ['mail.google.com', 'mail.mon-cabinet.fr', 'webmail.ovh-1.net', 'outlook.live.com']) assert.equal(c(host), 'email', host)
+  assert.equal(c('email-marketing.example'), 'referral')
 })

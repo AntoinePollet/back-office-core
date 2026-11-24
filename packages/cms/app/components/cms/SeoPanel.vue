@@ -63,11 +63,14 @@ const live = useCmsLiveFrame({
   type, doc: () => props.doc, locale: () => props.loc, defaultLocale: () => props.defaultLocale,
   enabled: computed(() => props.active && !outlineOff.value), frame: probe,
 })
-const { src: probeSrc, frameKey: probeKey, unavailable: outlineUnavailable } = live
+const { src: probeSrc, frameKey: probeKey, unavailable: outlineUnavailable, problem: outlineProblem, status: outlineStatus } = live
+/** La préparation a réussi, mais le contenu n'a pas d'adresse dans cette langue : aucune page à lire. */
+const outlineNoPage = computed(() => outlineStatus.value === 'live' && !probeSrc.value && !outlineUnavailable.value)
 const outline = computed(() => {
   const o = live.outline.value
   return o && o.id === props.doc.id && o.locale === props.loc ? o.headings : null
 })
+const outlineState = computed(() => outlineOff.value || (outlineUnavailable.value ? 'unavailable' : outline.value ? 'ready' : outlineProblem.value ? 'error' : outlineNoPage.value ? 'page' : 'loading'))
 const outlineTips = computed(() => (outline.value ? seoOutlineTips(outline.value, { baseTitle: view.value.baseTitle, noindex: view.value.noindex }) : []))
 const placeLabels: Record<string, string> = { header: 'en-tête du site', nav: 'menu', footer: 'pied de page', aside: 'encadré' }
 
@@ -153,7 +156,7 @@ const shareImage = computed(() => {
         </fieldset>
 
         <!-- Titres de la page, lus dans la page rendue -->
-        <section class="space-y-2 pt-2 border-t border-base-300" data-seo-outline :data-state="outlineOff || (outlineUnavailable ? 'unavailable' : outline ? 'ready' : 'loading')">
+        <section class="space-y-2 pt-2 border-t border-base-300" data-seo-outline :data-state="outlineState">
           <h3 class="text-sm font-semibold pt-3">Titres de la page</h3>
           <p class="text-xs text-base-content/60">
             Les titres tels que Google les lit sur la page, avec votre saisie. Le titre principal (H1) annonce le sujet de la page ;
@@ -163,6 +166,11 @@ const shareImage = computed(() => {
           <p v-if="outlineOff === 'page'" class="text-sm text-base-content/60">Ce contenu n'a pas de page à lui sur le site.</p>
           <p v-else-if="outlineOff === 'own'" class="text-sm text-base-content/60">Non disponible avec vos droits : la page affiche aussi des contenus d'autres personnes.</p>
           <p v-else-if="outlineUnavailable" class="text-sm text-base-content/60" data-seo-outline-unavailable>Les titres de la page seront lisibles après le premier enregistrement de ce contenu dans cette langue.</p>
+          <p v-else-if="!outline && outlineProblem" class="text-sm text-warning flex flex-wrap items-center gap-2" role="alert" data-seo-outline-error>
+            Les titres de la page n'ont pas pu être lus : {{ outlineProblem }}
+            <button type="button" class="btn btn-xs" @click="live.prepare()">Réessayer</button>
+          </p>
+          <p v-else-if="!outline && outlineNoPage" class="text-sm text-base-content/60">Ce contenu n'a pas de page à lui sur le site dans cette langue.</p>
           <p v-else-if="!outline" class="text-sm text-base-content/60 flex items-center gap-2"><span class="loading loading-spinner loading-xs" />Lecture de la page…</p>
           <p v-else-if="!outline.length" class="text-sm text-base-content/60" data-seo-outline-empty>Aucun titre sur cette page.</p>
           <ol v-else class="rounded-box border border-base-300 bg-base-100 p-3 space-y-1 text-sm">
@@ -213,7 +221,8 @@ const shareImage = computed(() => {
           <template v-if="points">{{ points }} point{{ points > 1 ? 's' : '' }} à voir</template>
           <template v-else>Conseils</template>
         </div>
-        <p v-if="!allTips.length" class="flex gap-2 text-base-content/70" data-seo-ok><CircleCheck :size="16" class="shrink-0 mt-0.5 text-success" />Rien à signaler : cette page est prête.</p>
+        <p v-if="!allTips.length && (outlineState === 'loading' || outlineState === 'error')" class="flex gap-2 text-base-content/70" data-seo-partial><Info :size="16" class="shrink-0 mt-0.5" />Rien à signaler pour l'instant ; les titres de la page ne sont pas encore vérifiés.</p>
+        <p v-else-if="!allTips.length" class="flex gap-2 text-base-content/70" data-seo-ok><CircleCheck :size="16" class="shrink-0 mt-0.5 text-success" />Rien à signaler : cette page est prête.</p>
         <ul class="space-y-3">
           <li v-for="tip in allTips" :key="tip.id" class="flex gap-2" :data-seo-tip="tip.id">
             <component :is="tipIcon[tip.level]" :size="16" class="shrink-0 mt-0.5" :class="tipClass[tip.level]" />

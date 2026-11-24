@@ -489,19 +489,22 @@ export function seoOutlineTips(headings: SeoHeading[], page: { baseTitle: string
   else if (h1.length > 1) {
     tips.push({
       id: 'h1-multiple', level: 'conseil', field: 'structure', title: `${h1.length} titres principaux (H1)`,
-      advice: `Gardez un seul H1, qui dit le sujet de la page (${h1.map(h => quote(h.text || 'vide')).join(', ')}) : les autres peuvent devenir des titres de section (H2).`,
+      advice: `Gardez un seul H1, qui dit le sujet de la page (${h1.map(h => quote(h.text || 'vide')).join(', ')}) : les autres peuvent devenir des titres de section (H2).${h1.some(h => h.place !== 'main') ? ' L\'un d\'eux est dans l\'en-tête ou le pied de page du site : c\'est le gabarit qui est à revoir.' : ''}`,
     })
   }
   if (h1.length && h1.every(h => !h.text)) {
     tips.push({ id: 'h1-empty', level: 'important', field: 'structure', title: 'Titre principal (H1) vide', advice: 'Le titre principal s\'affiche sans texte : remplissez le champ dont il vient (titre, accroche).' })
   }
-  const empty = headings.filter(h => h.level > 1 && !h.text).length
+  // Titres vides et niveaux sautés : dans le contenu seulement. Ceux de l'en-tête, du menu et du pied de page sont
+  // les mêmes sur toutes les pages, et la personne qui écrit n'y peut rien.
+  const content = headings.filter(h => h.place === 'main')
+  const empty = content.filter(h => h.level > 1 && !h.text).length
   if (empty) {
     tips.push({ id: 'heading-empty', level: 'conseil', field: 'structure', title: `${plural(empty, 'titre vide', 'titres vides')}`, advice: 'Un titre sans texte n\'apporte rien et gêne les lecteurs d\'écran : retirez la mise en forme de titre de cette ligne, ou écrivez-le.' })
   }
   // Niveau sauté en descendant (H2 puis H4) : en remontant (H4 puis H2), c'est normal.
-  for (let i = 1; i < headings.length; i++) {
-    const before = headings[i - 1]!, here = headings[i]!
+  for (let i = 1; i < content.length; i++) {
+    const before = content[i - 1]!, here = content[i]!
     if (here.level > before.level + 1) {
       tips.push({
         id: 'heading-skip', level: 'conseil', field: 'structure', title: `Niveau de titre sauté (H${before.level} puis H${here.level})`,

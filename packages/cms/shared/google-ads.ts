@@ -167,14 +167,17 @@ export function adsFailure(status: number, body: unknown): AdsFailure {
 // ───────────────────────── Rapprochement avec les contacts du site ─────────────────────────
 
 /** Un contact du site venu de Google Ads : un message reçu, ou un paiement réussi (`amount` en centimes). */
-export type AdsLead = { kind: 'message' | 'payment'; origin: StoredOrigin | null; amount?: number }
+export type AdsLead = { kind: 'message' | 'payment'; origin: StoredOrigin | null; amount?: number; /** Devise du paiement (« eur »). */ currency?: string }
 
 export type AdsReportRow = AdsCampaign & {
   messages: number
   payments: number
   /** Messages et paiements. */
   contacts: number
-  /** Montant encaissé par les paiements rattachés (centimes). */
+  /**
+   * Montant encaissé par les paiements rattachés, en plus petite unité de la devise du compte Google Ads. Un paiement
+   * fait dans une autre devise compte comme contact, mais son montant n'est pas additionné.
+   */
   revenue: number
   /** Dépense divisée par le nombre de contacts (millionièmes) ; null sans contact. */
   costPerContactMicros: number | null
@@ -194,7 +197,7 @@ const same = (a: string, b: string) => a.trim().toLocaleLowerCase('fr') === b.tr
  * `gclid`), sinon par le nom (`utm_campaign` égal au nom de la campagne). Seules les campagnes qui ont eu de
  * l'activité ou un contact sur la période sont gardées, de la plus coûteuse à la moins coûteuse.
  */
-export function buildAdsReport(campaigns: AdsCampaign[], leads: AdsLead[]): AdsReport {
+export function buildAdsReport(campaigns: AdsCampaign[], leads: AdsLead[], currency = ''): AdsReport {
   const rows = new Map<string, AdsReportRow>(campaigns.map(c => [c.id, { ...c, messages: 0, payments: 0, contacts: 0, revenue: 0, costPerContactMicros: null }]))
   const unassigned = { messages: 0, payments: 0, contacts: 0 }
   for (const lead of leads) {
@@ -205,7 +208,7 @@ export function buildAdsReport(campaigns: AdsCampaign[], leads: AdsLead[]): AdsR
     if (lead.kind === 'message') target.messages++
     else target.payments++
     target.contacts++
-    if (row && lead.kind === 'payment') row.revenue += lead.amount ?? 0
+    if (row && lead.kind === 'payment' && (lead.currency ?? '').toLowerCase() === currency.toLowerCase()) row.revenue += lead.amount ?? 0
   }
   const kept = [...rows.values()].filter(r => r.impressions || r.clicks || r.costMicros || r.contacts)
   for (const r of kept) r.costPerContactMicros = r.contacts ? Math.round(r.costMicros / r.contacts) : null

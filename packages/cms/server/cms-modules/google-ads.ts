@@ -52,11 +52,12 @@ async function accessToken(event: H3Event, settings: ModuleSettings) {
 
 /** Une requête GAQL sur le compte réglé ; toutes les pages de la réponse (10 000 lignes par page, 5 pages au plus). */
 async function search(event: H3Event, settings: ModuleSettings, query: string): Promise<unknown[]> {
-  const token = await accessToken(event, settings)
+  let token = await accessToken(event, settings)
   const login = adsCustomerId(settings.loginCustomerId)
   const pages: unknown[] = []
   let pageToken: string | undefined
-  for (let i = 0; i < 5; i++) {
+  let renewed = false
+  for (let i = 0; i < 6 && pages.length < 5; i++) {
     const response = await fetch(`${apiUrl(event)}/customers/${adsCustomerId(settings.customerId)}/googleAds:search`, {
       method: 'POST',
       headers: { 'authorization': `Bearer ${token}`, 'content-type': 'application/json', 'accept': 'application/json', ...(login ? { 'login-customer-id': login } : {}) },
@@ -65,8 +66,13 @@ async function search(event: H3Event, settings: ModuleSettings, query: string): 
     }).catch(unreachable('Google Ads'))
     const body = await response.json().catch(() => null) as { nextPageToken?: string } | null
     if (!response.ok) {
-      // Jeton d'accès refusé alors qu'il venait de la mémoire : il sera redemandé au prochain appel.
-      if (response.status === 401) tokens.clear()
+      // Jeton d'accès refusé (invalidé plus tôt que prévu chez Google) : on en redemande un, une seule fois.
+      if (response.status === 401 && !renewed) {
+        renewed = true
+        tokens.clear()
+        token = await accessToken(event, settings)
+        continue
+      }
       throw new AdsError(adsFailure(response.status, body))
     }
     pages.push(body)
@@ -123,6 +129,8 @@ export const googleAdsModule: CmsModuleDefinition = {
     if (invalid.length) throw new Error(invalid.join(' '))
     tokens.clear()
     cache.clear()
+    clickTried.clear()
+    clicksRefusedAt = 0
     const found = await account(event, settings)
     return `Connexion réussie au compte Google Ads « ${found.name || adsCustomerId(settings.customerId)} » (${found.currency}).`
   },
@@ -138,7 +146,7 @@ export type AdsAnswer =
   | { state: 'ok'; account: AdsAccount; from: string; to: string; report: AdsReport; updatedAt: string }
   | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string }
 
-type LeadRow = { table: 'message' | 'payment'; id: string; origin: StoredOrigin | null; createdAt: Date; amount?: number }
+type LeadRow = { table: 'message' | 'payment'; id: string; origin: StoredOrigin | null; createdAt: Date; amount?: number; currency?: string }
 
 /** Messages et paiements réussis de la période venus de Google Ads. */
 async function leadRows(event: H3Event, since: Date): Promise<LeadRow[]> {
@@ -146,17 +154,25 @@ async function leadRows(event: H3Event, since: Date): Promise<LeadRow[]> {
   const { formSubmissions, payments } = schema
   const [messages, paid] = await Promise.all([
     db.select({ id: formSubmissions.id, origin: formSubmissions.origin, createdAt: formSubmissions.createdAt }).from(formSubmissions).where(gte(formSubmissions.createdAt, since)),
-    db.select({ id: payments.id, origin: payments.origin, createdAt: payments.createdAt, amount: payments.amount, refunded: payments.refundedAmount }).from(payments)
+    db.select({ id: payments.id, origin: payments.origin, createdAt: payments.createdAt, amount: payments.amount, refunded: payments.refundedAmount, currency: payments.currency }).from(payments)
       .where(and(gte(payments.createdAt, since), eq(payments.status, 'paid'), eq(payments.livemode, true))),
   ])
   return [
     ...messages.map(m => ({ table: 'message' as const, ...m })),
-    ...paid.map(p => ({ table: 'payment' as const, id: p.id, origin: p.origin, createdAt: p.createdAt, amount: p.amount - p.refunded })),
+    ...paid.map(p => ({ table: 'payment' as const, id: p.id, origin: p.origin, createdAt: p.createdAt, amount: p.amount - p.refunded, currency: p.currency })),
   ].filter(r => r.origin?.channel === 'google-ads')
 }
 
 /** Recherches de clic faites par affichage du rapport : chacune est un appel à Google, compté dans le quota du jour. */
 const MAX_CLICK_LOOKUPS = 15
+/**
+ * Un clic cherché sans succès n'est pas redemandé avant une heure (en mémoire, comme les chiffres) : les contacts
+ * suivants passent à leur tour, et l'écran ne dépense pas le quota à chaque affichage. Après un refus de Google,
+ * plus aucune recherche pendant ce même délai.
+ */
+const CLICK_RETRY_MS = 60 * 60_000
+const clickTried = new Map<string, number>()
+let clicksRefusedAt = 0
 
 /**
  * Retrouve la campagne des contacts qui n'ont qu'un `gclid` (cas le plus courant : le balisage automatique de Google
@@ -165,9 +181,12 @@ const MAX_CLICK_LOOKUPS = 15
  */
 async function resolveClicks(event: H3Event, settings: ModuleSettings, rows: LeadRow[], timeZone: string) {
   const now = Date.now()
+  if (now - clicksRefusedAt < CLICK_RETRY_MS) return
+  for (const [id, at] of clickTried) if (now - at >= CLICK_RETRY_MS) clickTried.delete(id)
   const todo = rows.filter((r) => {
     const o = r.origin!
-    return o.click === 'gclid' && o.clickId && !o.campaignId && !o.clickChecked && now - (o.at ?? r.createdAt.getTime()) < ADS_CLICK_LOOKBACK_DAYS * 86_400_000
+    return o.click === 'gclid' && o.clickId && !o.campaignId && !o.clickChecked && !clickTried.has(r.id)
+      && now - (o.at ?? r.createdAt.getTime()) < ADS_CLICK_LOOKBACK_DAYS * 86_400_000
   }).slice(0, MAX_CLICK_LOOKUPS)
   const db = useDb(event)
   await Promise.all(todo.map(async (row) => {
@@ -175,6 +194,8 @@ async function resolveClicks(event: H3Event, settings: ModuleSettings, rows: Lea
     const at = origin.at ?? row.createdAt.getTime()
     const query = adsClickQuery(origin.clickId!, dayIn(timeZone, at))
     try {
+      if (now - clicksRefusedAt < CLICK_RETRY_MS) return
+      clickTried.set(row.id, now)
       const found = query ? readAdsClick((await search(event, settings, query))[0]) : null
       if (!found && query && now - at < 86_400_000) return
       const next: StoredOrigin = found ? { ...origin, campaignId: found.campaignId, campaign: origin.campaign ?? (found.campaignName || undefined) } : { ...origin, clickChecked: true }
@@ -183,7 +204,9 @@ async function resolveClicks(event: H3Event, settings: ModuleSettings, rows: Lea
       else await db.update(schema.payments).set({ origin: next }).where(eq(schema.payments.id, row.id))
     }
     catch (error) {
-      if (!(error instanceof AdsError)) console.error('[cms] google ads : campagne du clic introuvable', error)
+      // Refus ou quota atteint : inutile d'insister pour les autres contacts.
+      if (error instanceof AdsError) clicksRefusedAt = now
+      else console.error('[cms] google ads : campagne du clic introuvable', error)
     }
   }))
 }
@@ -207,8 +230,8 @@ export async function readGoogleAds(event: H3Event, days: AdsPeriod): Promise<Ad
     const zone = hit.account.timeZone
     const rows = (await leadRows(event, new Date(Date.now() - (days + 1) * 86_400_000))).filter(r => dayIn(zone, r.createdAt) >= hit!.from)
     await resolveClicks(event, settings, rows, zone)
-    const leads: AdsLead[] = rows.map(r => ({ kind: r.table, origin: r.origin, amount: r.amount }))
-    return { state: 'ok', account: hit.account, from: hit.from, to: hit.to, report: buildAdsReport(hit.campaigns, leads), updatedAt: new Date(hit.at).toISOString() }
+    const leads: AdsLead[] = rows.map(r => ({ kind: r.table, origin: r.origin, amount: r.amount, currency: r.currency }))
+    return { state: 'ok', account: hit.account, from: hit.from, to: hit.to, report: buildAdsReport(hit.campaigns, leads, hit.account.currency), updatedAt: new Date(hit.at).toISOString() }
   }
   catch (error) {
     if (error instanceof AdsError) return { state: error.failure.kind, message: error.failure.message }

@@ -140,7 +140,7 @@ const hasPayments = computed(() => !!report.value && report.value.totals.payment
                 <td class="text-right tabular-nums hidden md:table-cell">{{ c.conversions.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) }}</td>
                 <td class="text-right tabular-nums" data-ads-contacts>
                   <span class="font-semibold">{{ count(c.contacts) }}</span>
-                  <div v-if="c.payments" class="text-xs text-base-content/60">dont {{ plural(c.payments, 'paiement', 'paiements') }} ({{ formatAmount(c.revenue, currency.toLowerCase()) }})</div>
+                  <div v-if="c.payments" class="text-xs text-base-content/60">dont {{ plural(c.payments, 'paiement', 'paiements') }}<template v-if="c.revenue"> ({{ formatAmount(c.revenue, currency.toLowerCase()) }})</template></div>
                 </td>
                 <td class="text-right tabular-nums font-medium" data-ads-cpc>{{ perContact(c.costPerContactMicros) }}</td>
               </tr>

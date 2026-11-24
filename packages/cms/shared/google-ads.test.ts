@@ -69,7 +69,7 @@ test('rapprochement : par identifiant de campagne, sinon par nom ; coût par con
     { id: '102', name: 'Marque', status: 'PAUSED', impressions: 2000, clicks: 50, costMicros: 20_000_000, conversions: 1 },
     { id: '103', name: 'Ancienne', status: 'REMOVED', impressions: 0, clicks: 0, costMicros: 0, conversions: 0 },
   ]
-  const lead = (kind: AdsLead['kind'], origin: Record<string, unknown>, amount?: number): AdsLead => ({ kind, origin: cleanOrigin(origin, NOW), amount })
+  const lead = (kind: AdsLead['kind'], origin: Record<string, unknown>, amount?: number, currency = 'eur'): AdsLead => ({ kind, origin: cleanOrigin(origin, NOW), amount, ...(kind === 'payment' ? { currency } : {}) })
   const report = buildAdsReport(campaigns, [
     lead('message', { click: 'gclid', clickId: 'a', campaignId: '101' }),
     lead('message', { click: 'gclid', clickId: 'b', campaign: ' printemps ' }),
@@ -80,13 +80,16 @@ test('rapprochement : par identifiant de campagne, sinon par nom ; coût par con
     lead('message', { source: 'facebook', medium: 'cpc', campaign: 'Printemps' }),
     lead('message', { referrer: 'www.google.com' }),
     { kind: 'message', origin: null },
-  ])
+  ], 'EUR')
   assert.deepEqual(report.campaigns.map(c => [c.id, c.messages, c.payments, c.contacts, c.revenue, c.costPerContactMicros]), [
     ['101', 2, 1, 3, 9980, 50_000_000],
     ['102', 0, 0, 0, 0, null],
   ])
   assert.deepEqual(report.unassigned, { messages: 1, payments: 1, contacts: 2 })
   assert.deepEqual(report.totals, { impressions: 14000, clicks: 350, costMicros: 170_000_000, conversions: 5.5, messages: 3, payments: 2, contacts: 5, revenue: 9980, costPerContactMicros: 34_000_000 })
+  // Paiement dans une autre devise que le compte : compté comme contact, montant non additionné.
+  const mixed = buildAdsReport(campaigns, [lead('payment', { campaignId: '101', click: 'gclid', clickId: 'e' }, 5000, 'usd'), lead('payment', { campaignId: '101', click: 'gclid', clickId: 'f' }, 700)], 'EUR')
+  assert.deepEqual([mixed.campaigns[0]!.payments, mixed.campaigns[0]!.revenue], [2, 700])
   assert.equal(buildAdsReport([], []).totals.costPerContactMicros, null)
   assert.equal(formatMicros(34_000_000, 'EUR').replace(/\s/g, ' '), '34,00 €')
 })

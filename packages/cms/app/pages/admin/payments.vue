@@ -72,8 +72,6 @@ function exportCsv() {
 onMounted(() => {
   const wanted = data.value.payments.find(p => p.id === route.query.payment)
   if (wanted) { mode.value = wanted.livemode ? 'live' : 'test'; selected.value = wanted }
-  // Sans paiement à ouvrir : les 30 derniers jours.
-  else days.value = 30
 })
 </script>
 
@@ -88,15 +86,15 @@ onMounted(() => {
     </div>
 
     <div role="tablist" class="tabs tabs-border mb-3">
-      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'live' }" @click="mode = 'live'; selected = null; channel = null">Vrais paiements<span class="badge badge-sm ml-2">{{ count(true) }}</span></a>
-      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'test' }" @click="mode = 'test'; selected = null; channel = null">Essais (mode test)<span class="badge badge-sm ml-2">{{ count(false) }}</span></a>
+      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'live' }" @click="mode = 'live'; selected = null; channel = null; days = null">Vrais paiements<span class="badge badge-sm ml-2">{{ count(true) }}</span></a>
+      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'test' }" @click="mode = 'test'; selected = null; channel = null; days = null">Essais (mode test)<span class="badge badge-sm ml-2">{{ count(false) }}</span></a>
     </div>
     <div v-if="mode === 'test'" class="alert alert-warning alert-soft text-sm mb-3">Paiements de test : aucun argent n'a circulé.</div>
     <CmsOriginStats
       v-if="paidRows.length" v-model:days="days" v-model:channel="channel" :rows="paidRows" :noun="['paiement réussi', 'paiements réussis']" class="mb-4"
       :amount="oneCurrency ? (p: Payment) => p.amount - p.refundedAmount : undefined" :format-amount="oneCurrency ? (n: number) => formatAmount(n, oneCurrency!) : undefined"
     />
-    <p v-if="totals.length" class="text-sm mb-3">Encaissé : <strong>{{ totals.join(' · ') }}</strong> <span class="text-base-content/60">(paiements réussis, remboursements déduits)</span></p>
+    <p v-if="totals.length" class="text-sm mb-3">Encaissé : <strong>{{ totals.join(' · ') }}</strong> <span class="text-base-content/60">(paiements réussis, remboursements déduits<template v-if="days !== null || channel"> ; seulement la période et le canal choisis ci-dessus, comme l'export</template>)</span></p>
 
     <div class="grid lg:grid-cols-[1fr_24rem] gap-6 items-start">
       <div class="card bg-base-100 border border-base-300 overflow-hidden">

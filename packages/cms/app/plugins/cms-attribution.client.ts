@@ -13,7 +13,10 @@ export default defineNuxtPlugin(() => {
 
   const first = router.currentRoute.value
   if (watched(first.path, first.query)) {
-    const origin = readVisitOrigin(location.href, document.referrer)
+    // Page rechargée ou retrouvée par « Précédent » : le site précédent date de la première arrivée, et la page n'a
+    // peut-être plus ses paramètres. Seule l'adresse compte alors.
+    const kind = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type
+    const origin = readVisitOrigin(location.href, kind === 'reload' || kind === 'back_forward' ? '' : document.referrer)
     if (origin) cmsRecordVisit(origin)
   }
   // Navigation dans le site : seul un lien interne qui porte lui-même des paramètres de campagne compte.

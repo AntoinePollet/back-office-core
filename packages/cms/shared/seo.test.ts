@@ -297,4 +297,11 @@ test('titres de la page : H1 absent, en double, vide, niveaux sautés, sans rapp
   assert.deepEqual(tipsOf([h(1, 'Le A et le B')]), [])
   // Page masquée des moteurs : rien.
   assert.deepEqual(tipsOf([], { baseTitle: 'x', noindex: true }), [])
+  // Titres du gabarit (en-tête, pied de page) : ni niveau sauté ni titre vide à reprocher à la page.
+  assert.deepEqual(tipsOf([h(3, 'Menu', 'header'), h(1, 'Droit des affaires'), h(2, 'Contrats'), h(4, 'Contact', 'footer'), h(5, '', 'footer')]), [])
+  assert.deepEqual(tipsOf([h(1, 'Droit des affaires'), h(2, 'Contrats'), h(2, 'Menu', 'aside'), h(4, 'Clauses')]), ['heading-skip'])
+  // Deux H1 dont un dans l'en-tête : signalé, en disant que le gabarit est en cause.
+  const two = seoOutlineTips([h(1, 'Cabinet Durand', 'header'), h(1, 'Droit des affaires')], page)
+  assert.deepEqual(two.map(t => t.id), ['h1-multiple'])
+  assert.match(two[0]!.advice, /gabarit/)
 })

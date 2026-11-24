@@ -1,4 +1,4 @@
-import type { VisitOrigin } from '../../shared/attribution'
+import { type VisitOrigin, isCampaignOrigin } from '../../shared/attribution'
 
 /**
  * Provenance du visiteur (voir `shared/attribution.ts`) : relevée à son arrivée par le plugin
@@ -27,8 +27,11 @@ function writeStored(origin: VisitOrigin) {
   catch { /* stockage indisponible : la provenance reste en mémoire */ }
 }
 
-/** Retient une arrivée (la dernière arrivée qui dit d'où vient le visiteur remplace la précédente). */
+/** Retient une arrivée : la dernière campagne ou annonce remplace la précédente. */
 export function cmsRecordVisit(origin: VisitOrigin) {
+  // Un simple site précédent ne remplace pas une campagne ou un clic d'annonce déjà retenus (retour d'un autre onglet,
+  // d'une page de paiement…) : c'est la campagne qui a amené le visiteur.
+  if (!isCampaignOrigin(origin) && isCampaignOrigin(cmsVisitOrigin())) return
   current = origin
   if (consent && rememberDays()) writeStored(origin)
 }

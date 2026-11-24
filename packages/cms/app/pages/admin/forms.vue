@@ -85,8 +85,6 @@ function exportCsv() {
 onMounted(() => {
   const wanted = data.value.submissions.find(s => s.id === route.query.message)
   if (wanted) { tab.value = wanted.form; open(wanted) }
-  // Sans message à ouvrir : les 30 derniers jours.
-  else days.value = 30
 })
 </script>
 
@@ -107,6 +105,10 @@ onMounted(() => {
     </div>
 
     <CmsOriginStats v-if="ofForm.length" v-model:days="days" v-model:channel="channel" :rows="ofForm" :noun="['message', 'messages']" class="mb-4" />
+
+    <p v-if="ofForm.length && (days !== null || channel)" class="text-xs text-base-content/60 mb-2" data-origin-filtered>
+      {{ list.length }} message{{ list.length > 1 ? 's' : '' }} sur {{ ofForm.length }} : seulement la période et le canal choisis ci-dessus (l'export aussi).
+    </p>
 
     <div class="grid lg:grid-cols-[1fr_24rem] gap-6 items-start">
       <div class="card bg-base-100 border border-base-300 overflow-hidden">
