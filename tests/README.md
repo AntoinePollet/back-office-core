@@ -26,6 +26,13 @@ Le code de sortie est non nul dès qu'une étape échoue. Un résumé clôt la s
 En cas d'échec, regarder `tests/resultats/` (ignoré par git, vidé à chaque lancement) :
 `<suite>-echec-<n>-<étape>.png` (capture de chaque onglet ouvert au moment de l'échec) et `<suite>-serveur.log`.
 
+## Sur GitHub
+
+Le flux `.github/workflows/verifier.yml` tourne sur chaque demande de fusion et sur `main`. Il lance les tests unitaires,
+puis, en parallèle et pour chacune des deux cibles (`cloudflare` sous Node 22, `node` sous Node 24), la vérification des
+types et toutes les suites. Une cible en échec n'arrête pas l'autre. Les captures et journaux de `tests/resultats/`
+sont alors joints à l'exécution (« Artifacts », gardés 7 jours).
+
 ## Réglages
 
 | Variable | Défaut | Rôle |
