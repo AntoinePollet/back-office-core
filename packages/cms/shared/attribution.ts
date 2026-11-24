@@ -40,6 +40,11 @@ export type VisitOrigin = {
   landing?: string
   /** Moment de l'arrivée (millisecondes). */
   at: number
+  /**
+   * Le visiteur avait accepté la mesure de la publicité (module `consent`) au moment de l'envoi. Sans cet accord,
+   * le contact n'est jamais transmis à une régie publicitaire.
+   */
+  consent?: boolean
 }
 
 /** Identifiants de clic ajoutés par les régies publicitaires à l'adresse de la page. */
@@ -146,6 +151,7 @@ export function cleanOrigin(input: unknown, now = Date.now()): StoredOrigin | nu
   // Arrivée datée de plus d'un an, ou dans le futur : la date est ignorée, le reste est gardé.
   if (typeof raw.at === 'number' && raw.at > now - 400 * 86_400_000 && raw.at < now + 86_400_000) out.at = Math.round(raw.at)
   if (!out.source && !out.medium && !out.campaign && !out.campaignId && !out.click && !out.referrer) return null
+  if (raw.consent === true || raw.consent === 'true') out.consent = true
   return { ...out, channel: channelOf(out) }
 }
 
@@ -228,7 +234,7 @@ export function originStats(rows: { origin?: StoredOrigin | null }[]): OriginSta
 // ───────────── Paiements : la provenance passe par les métadonnées de Stripe ─────────────
 
 /** Clés des métadonnées Stripe (500 caractères au plus par valeur, d'où une clé par champ). */
-const META = { source: 'cms_o_source', medium: 'cms_o_medium', campaign: 'cms_o_campaign', campaignId: 'cms_o_campaign_id', term: 'cms_o_term', content: 'cms_o_content', click: 'cms_o_click', clickId: 'cms_o_click_id', referrer: 'cms_o_referrer', landing: 'cms_o_landing', at: 'cms_o_at' } as const
+const META = { source: 'cms_o_source', medium: 'cms_o_medium', campaign: 'cms_o_campaign', campaignId: 'cms_o_campaign_id', term: 'cms_o_term', content: 'cms_o_content', click: 'cms_o_click', clickId: 'cms_o_click_id', referrer: 'cms_o_referrer', landing: 'cms_o_landing', at: 'cms_o_at', consent: 'cms_o_consent' } as const
 
 export function originToMetadata(origin: StoredOrigin | null): Record<string, string> {
   if (!origin) return {}

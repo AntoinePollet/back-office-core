@@ -39,7 +39,7 @@ export default async function (t) {
   await step('tous les modules sont listés : déclarés activés, les autres désactivés, avec leur famille', async () => {
     const list = await modules()
     const state = Object.fromEntries(list.map(m => [m.id, `${m.category}:${m.enabled ? 'on' : 'off'}`]))
-    const expected = { brevo: 'email:on', resend: 'email:on', analytics: 'audience:on', plausible: 'audience:off', forms: 'forms:on', stripe: 'payment:on', turnstile: 'security:on', 'google-ads': 'ads:off' }
+    const expected = { brevo: 'email:on', resend: 'email:on', analytics: 'audience:on', plausible: 'audience:off', forms: 'forms:on', stripe: 'payment:on', turnstile: 'security:on', 'google-ads': 'ads:off', consent: 'privacy:off' }
     for (const [id, value] of Object.entries(expected)) check(state[id] === value, `${id} : ${state[id]} au lieu de ${value}`)
     check(list.every(m => m.canEnable && m.needsCode === null), 'un module déclaré annoncé comme à déclarer')
     check((await claire.get('/api/cms/modules/plausible')).status === 200, 'réglages d\'un module désactivé inaccessibles')
@@ -126,7 +126,7 @@ export default async function (t) {
     await login(page, B)
     await page.goto(B + '/admin/modules', { waitUntil: 'networkidle0' })
     const headings = await page.$$eval('main h2', hs => hs.map(h => h.textContent.trim()))
-    check(headings.join() === 'Envoi d\'e-mails,Mesure d\'audience,Formulaires,Paiement,Publicité,Sécurité', 'familles : ' + headings.join())
+    check(headings.join() === 'Envoi d\'e-mails,Mesure d\'audience,Formulaires,Paiement,Publicité,Vie privée,Sécurité', 'familles : ' + headings.join())
     check(!(await menuLabels(page)).includes('Audience'), 'menu Audience alors que la mesure est désactivée')
     await t.shot(page, 'liste')
     await page.click('[data-module="plausible"] input[type=checkbox]')

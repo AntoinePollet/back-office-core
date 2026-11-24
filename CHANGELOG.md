@@ -40,6 +40,11 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   client OAuth, jeton) est décrite dans le README du site. L'administrateur peut y mettre une campagne en pause, la
   relancer et changer son budget par jour (avec confirmation, et inscription au journal d'activité) ; rien d'autre
   n'est modifié dans Google Ads.
+- **Module Consentement.** Bandeau de consentement posé par le core sur les pages du site : refuser aussi simple
+  qu'accepter, rien avant le choix, choix gardé six mois, français et anglais. `<CmsConsentLink />` (à placer dans le
+  pied de page) le rouvre, `useCmsConsent().allows('…')` dit à une page si une finalité est acceptée, et
+  `consent({ purposes })` déclare les finalités propres au site. L'accord pour la mesure de la publicité est joint à
+  la provenance des contacts. À activer dans l'écran Modules.
 
 ## 0.11.0 — 2026-11-23
 

@@ -42,6 +42,12 @@ export function cmsVisitOrigin(): VisitOrigin | null {
   return import.meta.client && consent && rememberDays() ? readStored() : null
 }
 
+/** La provenance telle qu'elle part avec un formulaire ou un paiement : avec l'accord du visiteur, s'il l'a donné. */
+export function cmsOriginToSend(): VisitOrigin | null {
+  const origin = cmsVisitOrigin()
+  return origin && consent ? { ...origin, consent: true } : origin
+}
+
 /**
  * Accord du visiteur pour garder sa provenance d'une visite à l'autre, à appeler par le bandeau de consentement du
  * site (à chaque chargement de page où l'accord est connu). Sans effet si `site.attribution.rememberDays` n'est pas

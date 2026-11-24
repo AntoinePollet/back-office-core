@@ -249,7 +249,7 @@ export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K
     let consumed = protection.active.value
     try {
       // Provenance du visiteur (annonce, e-mail, autre site…) : voir `useCmsAttribution.ts`.
-      const origin = cmsVisitOrigin()
+      const origin = cmsOriginToSend()
       await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value, ...(origin ? { origin } : {}), ...(protection.active.value ? { turnstile: protection.token.value } : {}) } })
       sent.value = true
       for (const key of Object.keys(values)) delete (values as Record<string, unknown>)[key]

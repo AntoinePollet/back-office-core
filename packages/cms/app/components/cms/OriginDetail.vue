@@ -16,6 +16,7 @@ const rows = computed(() => {
     ['Page d\'arrivée', o.landing],
     ['Arrivée', o.at ? new Date(o.at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : ''],
     ['Clic d\'annonce', o.click ? `${o.click} (identifiant reçu)` : ''],
+    ['Accord du visiteur', o.consent ? 'mesure de la publicité acceptée' : ''],
   ] as [string, string | undefined][]).filter(([, v]) => v)
 })
 </script>

@@ -380,10 +380,57 @@ provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign
   rien n'est écrit sur l'appareil du visiteur, aucun bandeau n'est nécessaire pour cela. Un visiteur qui revient plus
   tard compte en « Accès direct ».
 - **La garder plusieurs jours** demande l'accord du visiteur : `site: { attribution: { rememberDays: 30 } }` dans
-  `cms.config.ts`, puis, dans le bandeau de consentement du site, `cmsAttributionConsent(true)` quand le visiteur
-  accepte (à chaque chargement de page où son accord est connu) et `cmsAttributionConsent(false)` s'il le retire.
-  Sans cet appel, rien n'est écrit.
+  `cms.config.ts`, et le module **Consentement** (ci-dessous), qui demande cet accord. Sans accord, rien n'est écrit.
+  Avec un autre bandeau que celui du core, appelez `cmsAttributionConsent(true)` quand le visiteur accepte (à chaque
+  chargement de page où son accord est connu) et `cmsAttributionConsent(false)` s'il le retire.
 - **Désactiver** : `site: { attribution: false }`.
+
+### Consentement des visiteurs (bandeau)
+
+Le module **Consentement** s'active dans l'écran Modules. Le core pose alors un bandeau en bas des pages du site
+(jamais dans le back-office ni dans un aperçu) : « Tout refuser » et « Tout accepter » ont la même forme, côte à côte,
+« Personnaliser » montre chaque finalité sans rien cocher d'avance. Rien n'est écrit sur l'appareil avant le choix ; le
+choix est gardé six mois, puis redemandé (ou dès qu'une finalité s'ajoute). Le bandeau est en français ou en anglais
+selon la langue de la page.
+
+**À faire dans le site** : placer le lien qui permet de changer d'avis, dans le pied de page par exemple. Il n'affiche
+rien tant que le module n'est pas actif.
+
+```vue
+<CmsConsentLink />                                  <!-- « Gérer mes cookies » -->
+<CmsConsentLink>Mes choix de confidentialité</CmsConsentLink>
+```
+
+Dans **Modules → Consentement**, saisir l'adresse de la page « politique de confidentialité » : le bandeau y renvoie.
+
+- **Finalité « Mesure de la publicité »** : proposée par le core dès que la provenance des contacts est relevée. Avec
+  l'accord du visiteur, sa provenance peut être gardée d'une visite à l'autre (`site.attribution.rememberDays`) et
+  l'accord est enregistré avec son message ou son paiement. Vous n'avez alors plus à appeler vous-même
+  `cmsAttributionConsent` : le bandeau s'en charge.
+- **Vos propres finalités** (vidéos YouTube, carte, discussion en ligne…) se déclarent dans `cms.config.ts`, et la page
+  les respecte elle-même :
+
+  ```ts
+  consent({ purposes: { video: { label: 'Vidéos YouTube', description: 'Afficher les vidéos hébergées par YouTube.' } } })
+  ```
+
+  ```vue
+  <script setup lang="ts">
+  const consent = useCmsConsent()
+  </script>
+  <template>
+    <iframe v-if="consent.allows('video')" src="https://www.youtube-nocookie.com/embed/…" />
+    <button v-else @click="consent.open()">Accepter les vidéos YouTube pour l'afficher</button>
+  </template>
+  ```
+
+  Tant que le visiteur n'a pas choisi, `allows()` répond non. Chaque changement est aussi annoncé par l'événement
+  `cms:consent` de `window`, pour un script qui n'est pas dans une page Vue.
+- **Couleurs** : `--cms-consent-accent` (boutons) et `--cms-consent-accent-text` (leur texte), à poser sur `:root`.
+  Le bandeau suit le mode clair ou sombre de l'appareil.
+- **Quand l'activer** : seulement s'il y a quelque chose à demander. La mesure d'audience du core (Cloudflare Web
+  Analytics, Plausible) est sans cookie et n'en a pas besoin, pas plus que la provenance gardée le temps de la visite.
+- Le choix reste sur l'appareil du visiteur : le serveur n'en tient pas de registre.
 
 ### Google Ads : dépense des campagnes et coût par contact
 

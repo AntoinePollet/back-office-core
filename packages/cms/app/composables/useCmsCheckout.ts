@@ -24,7 +24,7 @@ export function useCmsCheckout() {
     try {
       const { url } = await cmsApi<{ url: string }>('/api/stripe/checkout', {
         method: 'POST',
-        body: { collection, id, quantity: options.quantity ?? 1, locale: options.locale, returnPath: options.returnPath ?? window.location.pathname, origin: cmsVisitOrigin() },
+        body: { collection, id, quantity: options.quantity ?? 1, locale: options.locale, returnPath: options.returnPath ?? window.location.pathname, origin: cmsOriginToSend() },
       })
       window.location.assign(url)
       // La page part chez Stripe : le bouton reste désactivé jusque-là.
