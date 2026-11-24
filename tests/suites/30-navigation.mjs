@@ -76,7 +76,9 @@ export default async function (t) {
 
   await step('recherche (⌘K) : les écrans des dossiers y sont, avec le nom du dossier', async () => {
     await page.goto(B + '/admin/media', { waitUntil: 'networkidle0' })
-    await page.keyboard.down('Meta'); await page.keyboard.press('k'); await page.keyboard.up('Meta')
+    // ⌘K sur Mac, Ctrl+K ailleurs (la CI tourne sous Linux) : la même touche que l'application attend.
+    const command = process.platform === 'darwin' ? 'Meta' : 'Control'
+    await page.keyboard.down(command); await page.keyboard.press('k'); await page.keyboard.up(command)
     await page.waitForSelector('dialog[open] input, .modal-open input')
     await page.keyboard.type('sauveg')
     await page.waitForFunction(() => [...document.querySelectorAll('[role=option], li')].some(e => e.textContent.includes('Sauvegardes') && e.textContent.includes('Administration')))
