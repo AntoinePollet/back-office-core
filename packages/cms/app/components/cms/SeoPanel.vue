@@ -2,7 +2,7 @@
 import { CircleCheck, Info, Lightbulb, Monitor, Smartphone, TriangleAlert } from '@lucide/vue'
 import { slugify } from '../../../shared/content'
 import { cmsImageUrl } from '../../../shared/media'
-import { SEO_LIMITS, seoPath, seoPoints, seoTips, seoView, textWidth, truncateToChars, truncateToWidth, type SeoOther, type SeoSite } from '../../../shared/seo'
+import { SEO_LIMITS, seoOutlineTips, seoPath, seoPoints, seoTips, seoView, textWidth, truncateToChars, truncateToWidth, type SeoOther, type SeoSite } from '../../../shared/seo'
 
 /**
  * Onglet Référencement d'un contenu, pour une langue : champs, aperçus (résultat Google, carte de partage) et conseils.
@@ -11,7 +11,7 @@ import { SEO_LIMITS, seoPath, seoPoints, seoTips, seoView, textWidth, truncateTo
  */
 const props = defineProps<{
   def: Record<string, any>
-  doc: { id?: string | null; shared: Record<string, any>; locales: Record<string, { slug: string; status: string | null; values: Record<string, any> }> }
+  doc: { id?: string | null; version?: number; shared: Record<string, any>; locales: Record<string, { slug: string; status: string | null; values: Record<string, any> }> }
   loc: string
   defaultLocale: string
   /** L'onglet est affiché : les données des autres pages ne sont chargées qu'à ce moment. */
@@ -51,7 +51,28 @@ const tips = computed(() => seoTips({
   shared: props.doc.shared, values: state.value.values, slug: state.value.slug,
   published: !!state.value.status && state.value.status !== 'draft', media, others: others.value,
 }))
-const points = computed(() => seoPoints(tips.value))
+
+// ───── Titres de la page (H1 à H6) ─────
+// Lus dans la page elle-même, affichée dans un cadre caché avec la saisie en cours : le titre principal est placé par
+// le gabarit du site, et seule la page dit lesquels de ses textes sont des titres, et de quel niveau.
+const access = useCmsAccess(type)
+const probe = ref<HTMLIFrameElement>()
+/** Pas de page à lire : contenu sans adresse, ou droits limités à ses propres contenus (comme l'aperçu en direct). */
+const outlineOff = computed(() => (!props.def.path ? 'page' : access.own ? 'own' : null))
+const live = useCmsLiveFrame({
+  type, doc: () => props.doc, locale: () => props.loc, defaultLocale: () => props.defaultLocale,
+  enabled: computed(() => props.active && !outlineOff.value), frame: probe,
+})
+const { src: probeSrc, frameKey: probeKey, unavailable: outlineUnavailable } = live
+const outline = computed(() => {
+  const o = live.outline.value
+  return o && o.id === props.doc.id && o.locale === props.loc ? o.headings : null
+})
+const outlineTips = computed(() => (outline.value ? seoOutlineTips(outline.value, { baseTitle: view.value.baseTitle, noindex: view.value.noindex }) : []))
+const placeLabels: Record<string, string> = { header: 'en-tête du site', nav: 'menu', footer: 'pied de page', aside: 'encadré' }
+
+const allTips = computed(() => [...tips.value, ...outlineTips.value])
+const points = computed(() => seoPoints(allTips.value))
 const tipIcon = { important: TriangleAlert, conseil: Lightbulb, rappel: Info }
 const tipClass = { important: 'text-warning', conseil: 'text-info', rappel: 'text-base-content/50' }
 
@@ -131,6 +152,33 @@ const shareImage = computed(() => {
           </p>
         </fieldset>
 
+        <!-- Titres de la page, lus dans la page rendue -->
+        <section class="space-y-2 pt-2 border-t border-base-300" data-seo-outline :data-state="outlineOff || (outlineUnavailable ? 'unavailable' : outline ? 'ready' : 'loading')">
+          <h3 class="text-sm font-semibold pt-3">Titres de la page</h3>
+          <p class="text-xs text-base-content/60">
+            Les titres tels que Google les lit sur la page, avec votre saisie. Le titre principal (H1) annonce le sujet de la page ;
+            les titres de section (H2) et les sous-titres (H3) la découpent. Dans les textes mis en forme, ce sont les boutons
+            « Titre de section » et « Sous-titre ».
+          </p>
+          <p v-if="outlineOff === 'page'" class="text-sm text-base-content/60">Ce contenu n'a pas de page à lui sur le site.</p>
+          <p v-else-if="outlineOff === 'own'" class="text-sm text-base-content/60">Non disponible avec vos droits : la page affiche aussi des contenus d'autres personnes.</p>
+          <p v-else-if="outlineUnavailable" class="text-sm text-base-content/60" data-seo-outline-unavailable>Les titres de la page seront lisibles après le premier enregistrement de ce contenu dans cette langue.</p>
+          <p v-else-if="!outline" class="text-sm text-base-content/60 flex items-center gap-2"><span class="loading loading-spinner loading-xs" />Lecture de la page…</p>
+          <p v-else-if="!outline.length" class="text-sm text-base-content/60" data-seo-outline-empty>Aucun titre sur cette page.</p>
+          <ol v-else class="rounded-box border border-base-300 bg-base-100 p-3 space-y-1 text-sm">
+            <li
+              v-for="(h, i) in outline" :key="i" class="flex items-baseline gap-2 min-w-0" :style="{ paddingLeft: `${Math.min(h.level - 1, 5) * 1.1}rem` }"
+              :data-seo-heading="h.level" :data-place="h.place"
+            >
+              <span class="badge badge-sm shrink-0 font-mono" :class="h.level === 1 ? 'badge-primary' : 'badge-ghost'">H{{ h.level }}</span>
+              <span class="min-w-0 break-words" :class="{ 'italic text-base-content/50': !h.text, 'text-base-content/60': h.place !== 'main' }">{{ h.text || 'titre vide' }}</span>
+              <span v-if="h.place !== 'main'" class="text-xs text-base-content/40 shrink-0">{{ placeLabels[h.place] }}</span>
+            </li>
+          </ol>
+          <!-- La page du site, invisible, à la largeur d'un ordinateur : seuls ses titres sont lus. -->
+          <iframe v-if="probeSrc" :key="probeKey" ref="probe" :src="probeSrc" title="Lecture des titres de la page" aria-hidden="true" tabindex="-1" class="cms-outline-probe" data-seo-probe />
+        </section>
+
         <!-- Carte de partage -->
         <section class="space-y-2 pt-2 border-t border-base-300">
           <h3 class="text-sm font-semibold pt-3">Aperçu d'un partage</h3>
@@ -165,9 +213,9 @@ const shareImage = computed(() => {
           <template v-if="points">{{ points }} point{{ points > 1 ? 's' : '' }} à voir</template>
           <template v-else>Conseils</template>
         </div>
-        <p v-if="!tips.length" class="flex gap-2 text-base-content/70" data-seo-ok><CircleCheck :size="16" class="shrink-0 mt-0.5 text-success" />Rien à signaler : cette page est prête.</p>
+        <p v-if="!allTips.length" class="flex gap-2 text-base-content/70" data-seo-ok><CircleCheck :size="16" class="shrink-0 mt-0.5 text-success" />Rien à signaler : cette page est prête.</p>
         <ul class="space-y-3">
-          <li v-for="tip in tips" :key="tip.id" class="flex gap-2" :data-seo-tip="tip.id">
+          <li v-for="tip in allTips" :key="tip.id" class="flex gap-2" :data-seo-tip="tip.id">
             <component :is="tipIcon[tip.level]" :size="16" class="shrink-0 mt-0.5" :class="tipClass[tip.level]" />
             <div class="min-w-0">
               <div class="font-medium">{{ tip.title }}</div>
@@ -185,6 +233,8 @@ const shareImage = computed(() => {
 </template>
 
 <style scoped>
+.cms-outline-probe { position: fixed; left: -20000px; top: 0; width: 1280px; height: 900px; border: 0; opacity: 0; pointer-events: none; }
+
 /* Résultat de recherche : mêmes polices, tailles et couleurs que dans un moteur de recherche, sans logo ni marque. */
 .cms-serp { background: #fff; border: 1px solid var(--color-base-300); border-radius: var(--radius-box); padding: 1rem 1.25rem; font-family: Arial, Helvetica, sans-serif; color: #4d5156; overflow: hidden; }
 .cms-serp-mobile { max-width: 24rem; padding: 0.875rem 1rem; }

@@ -29,6 +29,50 @@ export type LiveMessage =
   | { tag: typeof LIVE_PREVIEW_TAG; kind: 'draft'; draft: LiveDraft }
   /** Cadre → formulaire : la page est chargée et prête à recevoir le contenu. */
   | { tag: typeof LIVE_PREVIEW_TAG; kind: 'ready'; path: string }
+  /** Cadre → formulaire : les titres (h1 à h6) de la page telle qu'elle s'affiche, à chaque changement. */
+  | { tag: typeof LIVE_PREVIEW_TAG; kind: 'outline'; path: string; headings: PageHeading[] }
+
+/** Partie de la page où se trouve un titre : le contenu, ou les parties communes à tout le site. */
+export type HeadingPlace = 'main' | 'header' | 'nav' | 'footer' | 'aside'
+/** Un titre de la page : son niveau (1 pour `<h1>`…), son texte, et où il se trouve. */
+export type PageHeading = { level: number; text: string; place: HeadingPlace }
+
+/** Au-delà, les titres suivants sont ignorés : une page normale en a quelques dizaines au plus. */
+export const OUTLINE_MAX_HEADINGS = 300
+/** Longueur gardée du texte d'un titre. */
+export const OUTLINE_MAX_TEXT = 200
+const PLACES: HeadingPlace[] = ['header', 'nav', 'footer', 'aside']
+
+type OutlineNode = { tagName: string; textContent: string | null; closest: (selector: string) => unknown; querySelectorAll: (selector: string) => ArrayLike<{ getAttribute: (name: string) => string | null }> }
+
+/**
+ * Titres d'une page, dans l'ordre du document, tels qu'un moteur de recherche les lit. Un titre fait seulement
+ * d'une image prend son texte alternatif. Le bandeau du mode aperçu, ajouté par le core, n'en fait pas partie.
+ */
+export function readOutline(root: { querySelectorAll: (selector: string) => ArrayLike<unknown> }): PageHeading[] {
+  const out: PageHeading[] = []
+  for (const node of Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6')) as OutlineNode[]) {
+    if (out.length >= OUTLINE_MAX_HEADINGS) break
+    if (node.closest('[data-cms-preview-banner]')) continue
+    let text = (node.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (!text) text = Array.from(node.querySelectorAll('img[alt]')).map(img => img.getAttribute('alt') ?? '').join(' ').replace(/\s+/g, ' ').trim()
+    // Titre dans un en-tête, un menu ou un pied de page qui n'est pas celui d'un article du contenu.
+    const place = PLACES.find(p => node.closest(p) && !node.closest(`main ${p}, article ${p}`)) ?? 'main'
+    out.push({ level: Number(node.tagName.slice(1)), text: text.slice(0, OUTLINE_MAX_TEXT), place })
+  }
+  return out
+}
+
+function readHeadings(value: unknown): PageHeading[] | null {
+  if (!Array.isArray(value) || value.length > OUTLINE_MAX_HEADINGS) return null
+  const out: PageHeading[] = []
+  for (const h of value) {
+    if (!isRecord(h) || !Number.isInteger(h.level) || (h.level as number) < 1 || (h.level as number) > 6) return null
+    if (typeof h.text !== 'string' || h.text.length > OUTLINE_MAX_TEXT || !(['main', ...PLACES] as unknown[]).includes(h.place)) return null
+    out.push({ level: h.level as number, text: h.text, place: h.place as HeadingPlace })
+  }
+  return out
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const isText = (v: unknown): v is string => typeof v === 'string' && v !== ''
@@ -47,6 +91,10 @@ export function readLiveMessage(
   const data = event.data
   if (!isRecord(data) || data.tag !== LIVE_PREVIEW_TAG) return null
   if (data.kind === 'ready') return isText(data.path) ? { tag: LIVE_PREVIEW_TAG, kind: 'ready', path: data.path } : null
+  if (data.kind === 'outline') {
+    const headings = readHeadings(data.headings)
+    return isText(data.path) && headings ? { tag: LIVE_PREVIEW_TAG, kind: 'outline', path: data.path, headings } : null
+  }
   if (data.kind !== 'draft') return null
   const draft = data.draft
   if (!isRecord(draft) || !isText(draft.type) || !isText(draft.id) || !isText(draft.locale) || !isText(draft.defaultLocale) || !isRecord(draft.entry)) return null

@@ -1,4 +1,4 @@
-import { LIVE_PREVIEW_TAG, type LiveMessage, readLiveMessage } from '../../shared/live-preview'
+import { LIVE_PREVIEW_TAG, type LiveMessage, readLiveMessage, readOutline } from '../../shared/live-preview'
 
 /**
  * Aperçu en direct, côté page du site : quand la page est affichée dans le cadre du formulaire du back-office,
@@ -49,10 +49,30 @@ export default defineNuxtPlugin((nuxtApp) => {
     onNuxtReady(applyAll)
   })
 
+  /**
+   * Titres de la page (onglet Référencement du formulaire) : envoyés une fois la page prête, puis chaque fois qu'ils
+   * changent (saisie, contenu chargé après coup), au plus tous les quarts de seconde.
+   */
+  let sentOutline = ''
+  let outlineTimer: ReturnType<typeof setTimeout> | undefined
+  function sendOutline() {
+    const headings = readOutline(document)
+    const json = JSON.stringify(headings)
+    if (json === sentOutline) return
+    sentOutline = json
+    const message: LiveMessage = { tag: LIVE_PREVIEW_TAG, kind: 'outline', path: location.pathname, headings }
+    window.parent.postMessage(message, location.origin)
+  }
+
   // Signale au formulaire que la page est prête. Le message n'est remis qu'à une fenêtre parente de la même origine.
   onNuxtReady(() => {
     if (!active()) return
     const ready: LiveMessage = { tag: LIVE_PREVIEW_TAG, kind: 'ready', path: location.pathname }
     window.parent.postMessage(ready, location.origin)
+    sendOutline()
+    new MutationObserver(() => {
+      clearTimeout(outlineTimer)
+      outlineTimer = setTimeout(sendOutline, 250)
+    }).observe(document.body, { subtree: true, childList: true, characterData: true })
   })
 })

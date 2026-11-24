@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ExternalLink, Monitor, MonitorPlay, RefreshCw, Smartphone, Tablet, X } from '@lucide/vue'
-import { LIVE_DEVICES, LIVE_PREVIEW_TAG, type LiveDeviceId, type LiveDraft, type LiveMessage, clampLiveShare, liveFrameUrl, liveScale, readLiveMessage } from '../../../shared/live-preview'
+import { LIVE_DEVICES, type LiveDeviceId, clampLiveShare, liveScale } from '../../../shared/live-preview'
 
 /**
  * Aperçu en direct : la page du site dans un volet à côté du formulaire, mise à jour pendant la saisie, sans enregistrer.
@@ -18,8 +18,6 @@ const props = defineProps<{
   defaultLocale: string
 }>()
 
-/** Délai après la dernière frappe avant de préparer l'aperçu. */
-const DELAY = 300
 const icons = { desktop: Monitor, tablet: Tablet, phone: Smartphone }
 
 // Le volet reste ouvert d'un contenu à l'autre (et après le premier enregistrement d'un nouveau contenu).
@@ -35,96 +33,10 @@ const stageSize = reactive({ width: 0, height: 0 })
 const panelWidth = ref(0)
 const dragging = ref(false)
 
-/** Adresse chargée dans le cadre ; null tant qu'il n'y a pas de page à afficher. */
-const src = ref<string | null>(null)
-const frameKey = ref(0)
-const status = ref<'wait' | 'updating' | 'live' | 'late'>('wait')
-/** Pourquoi l'aperçu n'est pas disponible (contenu jamais enregistré…), ou pourquoi il est en retard. */
-const unavailable = ref<string | null>(null)
-const problem = ref<string | null>(null)
-
-let draft: LiveDraft | null = null
-let frameReady = false
-let controller: AbortController | null = null
-let request = 0
-let timer: ReturnType<typeof setTimeout> | undefined
-
-// ───── Préparation et envoi du contenu en cours de saisie ─────
-
-const body = () => ({ locale: props.locale, shared: props.doc.shared, values: props.doc.locales[props.locale]?.values ?? {} })
-/** Tout ce dont l'aperçu dépend : la saisie, la langue, et l'enregistrement (qui peut changer l'adresse de la page). */
-const watched = computed(() => (open.value ? JSON.stringify({ id: props.doc.id, version: props.doc.version, ...body() }) : ''))
-
-function send() {
-  const target = frame.value?.contentWindow
-  if (!frameReady || !draft || !target) return
-  const message: LiveMessage = { tag: LIVE_PREVIEW_TAG, kind: 'draft', draft }
-  // Remis seulement si le cadre affiche toujours une page de ce site.
-  target.postMessage(message, location.origin)
-}
-
-async function prepare() {
-  clearTimeout(timer)
-  controller?.abort()
-  if (!open.value) return
-  if (!props.doc.id) {
-    src.value = null
-    unavailable.value = 'L\'aperçu en direct sera disponible après le premier enregistrement de ce contenu.'
-    return
-  }
-  const mine = ++request
-  controller = new AbortController()
-  status.value = 'updating'
-  try {
-    const { entry } = await cmsApi<{ entry: Record<string, unknown> & { path: string | null } }>(
-      `/api/cms/entries/${props.type}/${props.doc.id}/live-preview`, { method: 'POST', body: body(), signal: controller.signal })
-    if (mine !== request) return
-    unavailable.value = problem.value = null
-    draft = { type: props.type, id: props.doc.id, locale: props.locale, defaultLocale: props.defaultLocale, entry }
-    const url = entry.path ? liveFrameUrl(entry.path) : null
-    if (url !== src.value) {
-      // Autre page (langue, nouvelle adresse) : le cadre la charge, et le contenu part quand elle se dit prête.
-      frameReady = false
-      src.value = url
-    }
-    else send()
-    status.value = 'live'
-  }
-  catch (e: any) {
-    // Appel dépassé par une saisie plus récente : sa réponse ne compte plus.
-    if (mine !== request) return
-    if (e?.statusCode === 409) {
-      src.value = null
-      draft = null
-      unavailable.value = cmsErrorMessage(e, 'L\'aperçu en direct n\'est pas encore disponible pour ce contenu.')
-    }
-    else {
-      status.value = 'late'
-      problem.value = cmsErrorMessage(e, 'L\'aperçu n\'a pas pu être mis à jour.')
-    }
-  }
-}
-
-watch(watched, (now, before) => {
-  if (!now) return
-  clearTimeout(timer)
-  // À l'ouverture : tout de suite. Pendant la saisie : après une pause, pour ne pas appeler le serveur à chaque frappe.
-  if (!before) prepare()
-  else timer = setTimeout(prepare, DELAY)
+const { src, frameKey, status, unavailable, problem, prepare, reload } = useCmsLiveFrame({
+  type: props.type, doc: () => props.doc, locale: () => props.locale, defaultLocale: () => props.defaultLocale, enabled: open, frame,
 })
 
-function onMessage(event: MessageEvent) {
-  const message = readLiveMessage(event, { origin: location.origin, source: frame.value?.contentWindow })
-  if (message?.kind !== 'ready') return
-  frameReady = true
-  send()
-}
-
-function reload() {
-  frameReady = false
-  frameKey.value++
-  prepare()
-}
 function openTab() {
   if (src.value) window.open(src.value, '_blank')
 }
@@ -206,17 +118,6 @@ watch(stage, (el) => {
   observer.observe(el)
   measure()
 })
-watch(open, (now) => {
-  if (now) return
-  // Volet fermé : plus aucun appel, et le cadre disparaît.
-  clearTimeout(timer)
-  controller?.abort()
-  request++
-  src.value = null
-  draft = null
-  frameReady = false
-  status.value = 'wait'
-})
 
 onMounted(() => {
   try { share.value = clampLiveShare(Number(localStorage.getItem('cms-live-share') ?? 0.5)) }
@@ -224,19 +125,12 @@ onMounted(() => {
   media = window.matchMedia('(min-width: 1024px)')
   media.addEventListener('change', onMedia)
   onMedia()
-  window.addEventListener('message', onMessage)
   window.addEventListener('resize', layout)
   layout()
-  // Volet resté ouvert depuis le contenu précédent.
-  if (open.value) prepare()
 })
 onBeforeUnmount(() => {
-  clearTimeout(timer)
-  controller?.abort()
-  request++
   observer?.disconnect()
   media?.removeEventListener('change', onMedia)
-  window.removeEventListener('message', onMessage)
   window.removeEventListener('resize', layout)
   // La mise en page du back-office est rendue telle quelle à l'écran suivant.
   const host = column()

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { f } from './format'
 import {
-  SEO_LIMITS, contentImageIds, contentWordCount, seoPageTitle, seoPath, seoPoints, seoState, seoTips, seoView, textWidth,
+  SEO_LIMITS, contentImageIds, contentWordCount, seoOutlineTips, seoPageTitle, seoPath, seoPoints, seoState, seoTips, seoView, textWidth,
   truncateToChars, truncateToWidth, type SeoInput, type SeoMedia,
 } from './seo'
 
@@ -257,4 +257,44 @@ test('texte très court : seulement si le contenu a un texte mis en forme', () =
   // Les textes des répéteurs comptent ; une page sans champ de texte mis en forme n'est pas jugée.
   assert.deepEqual(ids(input({ values: { ...few, cases: [{ text: 'quatre mots de plus' }] } })), [])
   assert.deepEqual(ids(input({ def: home, values: { seo: { title: 'Accueil du cabinet', description: good } } })), [])
+})
+
+test('texte long sans intertitre : conseillé, sauf s\'il a des titres de section ou si l\'éditeur n\'en propose pas', () => {
+  const long = (body: string) => ids(input({ values: { title: 'Droit des affaires', body, seo: { description: good } } }))
+  assert.ok(long(`<p>${words(320)}</p>`).includes('headings-none'))
+  assert.ok(!long(`<p>${words(150)}</p>`).includes('headings-none'))
+  assert.ok(!long(`<h2>Nos domaines</h2><p>${words(320)}</p>`).includes('headings-none'))
+  assert.ok(!long(`<h3 class="x">Contrats</h3><p>${words(320)}</p>`).includes('headings-none'))
+  // Texte mis en forme sans le bouton de titre : rien à conseiller, la personne ne pourrait pas le faire.
+  const plainBody = { ...service, fields: { ...service.fields, body: { ...f.richText({ label: 'Contenu', features: ['bold', 'list'] }), localized: true } } }
+  assert.ok(!ids(input({ def: plainBody as never, values: { title: 'Droit des affaires', body: `<p>${words(320)}</p>`, seo: { description: good } } })).includes('headings-none'))
+  // Page masquée des moteurs : pas de conseil sur le texte.
+  assert.ok(!ids(input({ values: { title: 'Droit des affaires', body: `<p>${words(320)}</p>`, seo: { description: good } } }, {}, { image: 'large', noindex: true })).includes('headings-none'))
+})
+
+test('titres de la page : H1 absent, en double, vide, niveaux sautés, sans rapport avec le titre', () => {
+  const h = (level: number, text: string, place = 'main') => ({ level, text, place })
+  const page = { baseTitle: 'Droit des affaires', noindex: false }
+  const tipsOf = (headings: ReturnType<typeof h>[], p = page) => seoOutlineTips(headings, p).map(t => t.id)
+  // Une page bien construite : rien à dire. Remonter d'un H3 à un H2 est normal.
+  assert.deepEqual(tipsOf([h(2, 'Menu', 'header'), h(1, 'Droit des affaires à Lyon'), h(2, 'Contrats'), h(3, 'Cessions'), h(2, 'Baux'), h(2, 'Contact', 'footer')]), [])
+  assert.deepEqual(tipsOf([h(2, 'Contrats'), h(3, 'Cessions')]), ['h1-missing'])
+  assert.deepEqual(tipsOf([]), ['h1-missing'])
+  assert.deepEqual(tipsOf([h(1, 'Droit des affaires'), h(1, 'Nos tarifs')]), ['h1-multiple'])
+  assert.deepEqual(tipsOf([h(1, '')]), ['h1-empty'])
+  assert.deepEqual(tipsOf([h(1, 'Droit des affaires'), h(2, ''), h(2, '')]), ['heading-empty'])
+  assert.match(seoOutlineTips([h(1, 'Droit des affaires'), h(2, '')], page)[0]!.title, /^1 titre vide$/)
+  const skip = seoOutlineTips([h(1, 'Droit des affaires'), h(2, 'Contrats'), h(4, 'Clauses'), h(2, 'Baux'), h(5, 'Loyer')], page)
+  assert.deepEqual(skip.map(t => t.id), ['heading-skip'])
+  assert.match(skip[0]!.title, /H2 puis H4/)
+  assert.match(skip[0]!.advice, /« Clauses »/)
+  // Le H1 et le titre de la page : un mot important en commun suffit, accents et majuscules près.
+  assert.deepEqual(tipsOf([h(1, 'Bienvenue chez nous')]), ['h1-unrelated'])
+  assert.deepEqual(tipsOf([h(1, 'Avocat en DROIT des sociétés')], { baseTitle: 'Le droit des entreprises', noindex: false }), [])
+  assert.deepEqual(tipsOf([h(1, 'Équipe')], { baseTitle: 'Notre equipe', noindex: false }), [])
+  // Sans titre de page, ou avec des mots trop courts pour comparer : pas de conseil.
+  assert.deepEqual(tipsOf([h(1, 'Bienvenue')], { baseTitle: '', noindex: false }), [])
+  assert.deepEqual(tipsOf([h(1, 'Le A et le B')]), [])
+  // Page masquée des moteurs : rien.
+  assert.deepEqual(tipsOf([], { baseTitle: 'x', noindex: true }), [])
 })
