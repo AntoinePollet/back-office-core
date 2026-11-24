@@ -8,7 +8,7 @@ const rows = computed(() => {
   const o = props.origin
   if (!o) return []
   return ([
-    ['Campagne', o.campaign],
+    ['Campagne', o.campaign || (o.campaignId ? `n° ${o.campaignId}` : '')],
     ['Mot-clé', o.term],
     ['Variante de l\'annonce', o.content],
     ['Source', [o.source, o.medium].filter(Boolean).join(' / ')],

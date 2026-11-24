@@ -22,6 +22,11 @@ export type VisitOrigin = {
   medium?: string
   /** `utm_campaign` : nom de la campagne. */
   campaign?: string
+  /**
+   * `utm_id` : identifiant de la campagne chez la régie. Google Ads le remplit tout seul avec le suffixe d'URL finale
+   * `utm_id={campaignid}` ; à défaut, le serveur le retrouve à partir du `gclid` (module Google Ads).
+   */
+  campaignId?: string
   /** `utm_term` : mot-clé de l'annonce. */
   term?: string
   /** `utm_content` : variante de l'annonce. */
@@ -62,9 +67,14 @@ export type Channel = keyof typeof CHANNELS
 export const PAID_CHANNELS: Channel[] = ['google-ads', 'microsoft-ads', 'meta-ads', 'linkedin-ads', 'tiktok-ads', 'other-ads']
 
 /** Ce qui est enregistré avec un message ou un paiement : la provenance contrôlée, et son canal. */
-export type StoredOrigin = Omit<VisitOrigin, 'at'> & { at?: number; channel: Channel }
+export type StoredOrigin = Omit<VisitOrigin, 'at'> & {
+  at?: number
+  channel: Channel
+  /** Le module Google Ads a déjà cherché la campagne de ce clic sans la trouver : il ne la redemande plus. */
+  clickChecked?: boolean
+}
 
-const UTM = { source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign', term: 'utm_term', content: 'utm_content' } as const
+const UTM = { source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign', campaignId: 'utm_id', term: 'utm_term', content: 'utm_content' } as const
 /** Longueur gardée d'un texte de provenance (un nom de campagne, un identifiant de clic tiennent largement). */
 export const ORIGIN_MAX_TEXT = 200
 
@@ -98,7 +108,7 @@ export function readVisitOrigin(href: string, referrer: string, now = Date.now()
   if (click) { out.click = click; out.clickId = text(params.get(click)) }
   const from = hostOf(referrer)
   if (from && from !== url.hostname.toLowerCase()) out.referrer = from
-  if (!out.source && !out.medium && !out.campaign && !out.click && !out.referrer) return null
+  if (!out.source && !out.medium && !out.campaign && !out.campaignId && !out.click && !out.referrer) return null
   out.landing = url.pathname.slice(0, ORIGIN_MAX_TEXT)
   return out
 }
@@ -111,7 +121,7 @@ export function cleanOrigin(input: unknown, now = Date.now()): StoredOrigin | nu
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
   const raw = input as Record<string, unknown>
   const out: Omit<VisitOrigin, 'at'> & { at?: number } = {}
-  for (const key of ['source', 'medium', 'campaign', 'term', 'content'] as const) {
+  for (const key of ['source', 'medium', 'campaign', 'campaignId', 'term', 'content'] as const) {
     const value = text(raw[key])
     if (value) out[key] = value
   }
@@ -125,7 +135,7 @@ export function cleanOrigin(input: unknown, now = Date.now()): StoredOrigin | nu
   if (landing?.startsWith('/')) out.landing = landing
   // Arrivée datée de plus d'un an, ou dans le futur : la date est ignorée, le reste est gardé.
   if (typeof raw.at === 'number' && raw.at > now - 400 * 86_400_000 && raw.at < now + 86_400_000) out.at = Math.round(raw.at)
-  if (!out.source && !out.medium && !out.campaign && !out.click && !out.referrer) return null
+  if (!out.source && !out.medium && !out.campaign && !out.campaignId && !out.click && !out.referrer) return null
   return { ...out, channel: channelOf(out) }
 }
 
@@ -158,7 +168,7 @@ export function channelOf(origin: Omit<VisitOrigin, 'at'>): Channel {
   if (EMAIL_MEDIUMS.has(medium)) return 'email'
   if (SOCIAL_MEDIUMS.has(medium) || SOCIAL_SOURCES.test(source) || origin.click === 'fbclid') return 'social'
   if (SEARCH_MEDIUMS.has(medium)) return 'search'
-  if (origin.source || origin.medium || origin.campaign) return 'campaign'
+  if (origin.source || origin.medium || origin.campaign || origin.campaignId) return 'campaign'
   const host = origin.referrer ?? ''
   // Messagerie d'abord : mail.google.com n'est pas le moteur de recherche.
   if (MAIL_HOSTS.test(host)) return 'email'
@@ -207,7 +217,7 @@ export function originStats(rows: { origin?: StoredOrigin | null }[]): OriginSta
 // ───────────── Paiements : la provenance passe par les métadonnées de Stripe ─────────────
 
 /** Clés des métadonnées Stripe (500 caractères au plus par valeur, d'où une clé par champ). */
-const META = { source: 'cms_o_source', medium: 'cms_o_medium', campaign: 'cms_o_campaign', term: 'cms_o_term', content: 'cms_o_content', click: 'cms_o_click', clickId: 'cms_o_click_id', referrer: 'cms_o_referrer', landing: 'cms_o_landing', at: 'cms_o_at' } as const
+const META = { source: 'cms_o_source', medium: 'cms_o_medium', campaign: 'cms_o_campaign', campaignId: 'cms_o_campaign_id', term: 'cms_o_term', content: 'cms_o_content', click: 'cms_o_click', clickId: 'cms_o_click_id', referrer: 'cms_o_referrer', landing: 'cms_o_landing', at: 'cms_o_at' } as const
 
 export function originToMetadata(origin: StoredOrigin | null): Record<string, string> {
   if (!origin) return {}

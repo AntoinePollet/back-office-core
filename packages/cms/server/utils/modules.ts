@@ -11,6 +11,7 @@ import { formsModule } from '../cms-modules/forms'
 import { stripeModule } from '../cms-modules/stripe'
 import { analyticsModule } from '../cms-modules/analytics'
 import { turnstileModule } from '../cms-modules/turnstile'
+import { googleAdsModule } from '../cms-modules/google-ads'
 
 /**
  * Modules : ce qu'un module apporte au serveur, et le registre où ils sont inscrits.
@@ -113,7 +114,7 @@ export type CmsModuleDefinition = {
 
 /** Construit au premier usage : les modules intégrés utilisent eux-mêmes ce fichier, ils ne sont pas encore chargés à son import. */
 let builtin: Map<string, CmsModuleDefinition> | undefined
-const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, stripeModule, turnstileModule].map(m => [m.id, m])))
+const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, stripeModule, turnstileModule, googleAdsModule].map(m => [m.id, m])))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {

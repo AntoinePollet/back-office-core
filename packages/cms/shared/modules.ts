@@ -33,10 +33,20 @@ export const MODULE_CATEGORIES = {
   audience: 'Mesure d\'audience',
   forms: 'Formulaires',
   payment: 'Paiement',
+  ads: 'Publicité',
   security: 'Sécurité',
   other: 'Autres',
 } as const
 export type ModuleCategory = keyof typeof MODULE_CATEGORIES
+
+// ───────────────────────── Google Ads ─────────────────────────
+
+/**
+ * Google Ads en lecture : dépense des campagnes et contacts du site venus des annonces, dans l'écran
+ * « Annonces Google ». Réglages dans le back-office (ou, pour le client OAuth et le jeton, par les variables
+ * NUXT_GOOGLE_ADS_* de l'hébergement).
+ */
+export const googleAds = () => ({ id: 'google-ads' as const })
 
 // ───────────────────────── Brevo ─────────────────────────
 

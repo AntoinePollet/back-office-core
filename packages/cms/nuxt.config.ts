@@ -47,6 +47,14 @@ export default defineNuxtConfig({
     cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
     /** Adresse de l'API de statistiques de Plausible. Ne se change que pour les tests : NUXT_PLAUSIBLE_API_URL. Vide : l'adresse réglée dans le module. */
     plausibleApiUrl: '',
+    /** Google Ads (module « google-ads ») : client OAuth et jeton communs à plusieurs sites, s'ils ne sont pas saisis dans le back-office. */
+    googleAdsClientId: '',
+    googleAdsClientSecret: '',
+    googleAdsRefreshToken: '',
+    googleAdsLoginCustomerId: '',
+    /** Adresses de Google. Ne se changent que pour les tests : NUXT_GOOGLE_ADS_API_URL, NUXT_GOOGLE_OAUTH_TOKEN_URL. */
+    googleAdsApiUrl: 'https://googleads.googleapis.com/v26',
+    googleOauthTokenUrl: 'https://oauth2.googleapis.com/token',
     /** Nombre de jours pendant lesquels une sauvegarde est conservée : variable NUXT_BACKUP_RETENTION_DAYS. */
     backupRetentionDays: 30,
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */

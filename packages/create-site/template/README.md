@@ -370,7 +370,7 @@ accès direct, avec le détail par campagne ; un clic sur un canal filtre la lis
 provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign }}`, `{{ origin.term }}` et
 `{{ origin.source }}`.
 
-- **Ce qui est relevé** : les paramètres `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` de la
+- **Ce qui est relevé** : les paramètres `utm_source`, `utm_medium`, `utm_campaign`, `utm_id`, `utm_term`, `utm_content` de la
   page d'arrivée, l'identifiant de clic des régies (`gclid` de Google Ads — à laisser activé dans Google Ads,
   « Balisage automatique » —, `msclkid`, `fbclid`…), le domaine du site précédent (pas son adresse complète, qui peut
   contenir la recherche du visiteur) et la page d'arrivée. Le serveur contrôle tout et décide lui-même du canal.
@@ -384,6 +384,47 @@ provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign
   accepte (à chaque chargement de page où son accord est connu) et `cmsAttributionConsent(false)` s'il le retire.
   Sans cet appel, rien n'est écrit.
 - **Désactiver** : `site: { attribution: false }`.
+
+### Google Ads : dépense des campagnes et coût par contact
+
+Le module **Google Ads** s'active dans l'écran Modules (ou `googleAds()` dans `cms.config.ts`). Il lit les campagnes
+du compte (affichages, clics, dépense, conversions vues par Google) et les rapproche des contacts que le site a
+enregistrés lui-même (messages reçus, paiements réussis venus d'une annonce) : l'écran « Annonces Google » donne les
+contacts et le **coût par contact** de chaque campagne. Il ne modifie rien dans Google Ads.
+
+**Côté Google, une fois** (les mêmes identifiants peuvent servir à tous vos sites) :
+
+1. Dans la [console Google Cloud](https://console.cloud.google.com), créer un projet, y activer **Google Ads API**,
+   puis, sur la page « Google Ads API → Overview », demander le niveau d'accès **Explorer** (le niveau « Test » de
+   départ ne lit que des comptes de test). Il n'y a plus de « jeton développeur » à demander.
+2. « Identifiants » → « Créer des identifiants » → **ID client OAuth** (type « Application Web », avec
+   `https://developers.google.com/oauthplayground` comme URI de redirection). Passer l'écran de consentement OAuth en
+   production : en mode « Test », le jeton créé à l'étape suivante cesse de marcher au bout de 7 jours.
+3. Créer le **jeton d'actualisation** : sur [OAuth Playground](https://developers.google.com/oauthplayground), roue
+   dentée → « Use your own OAuth credentials » (ID client et secret), autorisation
+   `https://www.googleapis.com/auth/adwords`, se connecter avec un compte Google qui a accès au compte Google Ads
+   (directement, ou par un compte administrateur), puis « Exchange authorization code for tokens » : copier le
+   *Refresh token*.
+
+**Dans le back-office**, **Modules → Google Ads** : numéro du compte Google Ads (dix chiffres), numéro du compte
+administrateur (MCC) si l'accès passe par lui, ID client, secret et jeton d'actualisation, puis « Vérifier la
+connexion ». Pour une agence, ces trois derniers et le compte administrateur peuvent venir de l'hébergement
+(`NUXT_GOOGLE_ADS_CLIENT_ID`, `NUXT_GOOGLE_ADS_CLIENT_SECRET`, `NUXT_GOOGLE_ADS_REFRESH_TOKEN`,
+`NUXT_GOOGLE_ADS_LOGIN_CUSTOMER_ID`) : il ne reste alors que le numéro du compte à saisir pour chaque site.
+
+**Rattacher les contacts aux campagnes.** Trois moyens, du plus sûr au moins sûr :
+
+- le **suffixe d'URL finale** du compte Google Ads (Administration → Paramètres du compte → Suivi) :
+  `utm_source=google&utm_medium=cpc&utm_id={campaignid}&utm_term={keyword}`. Google remplit lui-même l'identifiant de
+  la campagne, et le site le retient ;
+- sans suffixe, avec le seul **balisage automatique** (`gclid`), le module demande à Google à quelle campagne
+  appartient le clic et l'enregistre avec le contact. Google ne garde ce détail que 90 jours, et quelques heures
+  peuvent passer avant qu'il soit disponible ;
+- à défaut, un `utm_campaign` égal au nom de la campagne.
+
+Les contacts venus de Google Ads dont la campagne reste inconnue sont comptés à part. Les chiffres de Google sont
+relus au plus toutes les cinq minutes ; chaque lecture compte dans le quota du projet (2 880 opérations par jour au
+niveau « Explorer »). L'écran est ouvert aux administrateurs et aux éditeurs.
 
 ### Protéger un formulaire des robots
 
