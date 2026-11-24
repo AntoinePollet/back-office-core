@@ -187,6 +187,8 @@ export async function runSuite(suite, { name, base, mock, fixture, out = console
     M: mock?.url ?? null,
     /** Appels reçus par le faux service. */
     calls: () => mock.calls(),
+    /** Le faux Google (suites déclarées avec `mock: true`) : `campaigns()`, `setBudget(id, micros)`. */
+    google: mock?.google ?? null,
     admin: config.admin,
     fixture,
 

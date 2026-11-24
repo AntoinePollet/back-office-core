@@ -55,12 +55,22 @@ export function adsRange(days: AdsPeriod, timeZone: string | undefined, now = Da
 export const ADS_ACCOUNT_QUERY = 'SELECT customer.descriptive_name, customer.currency_code, customer.time_zone FROM customer LIMIT 1'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
+/** Ce qu'il faut d'une campagne pour la montrer et la piloter : son état et son budget. */
+const CAMPAIGN_FIELDS = 'campaign.id, campaign.name, campaign.status, campaign.campaign_budget, campaign_budget.amount_micros, '
+  + 'campaign_budget.explicitly_shared, campaign_budget.reference_count, campaign_budget.period, campaign_budget.type'
+
 /** Une ligne par campagne, cumulée sur la période (pas de découpage par jour). */
 export function adsCampaignQuery(from: string, to: string) {
   if (!DAY.test(from) || !DAY.test(to)) throw new Error('Dates attendues au format AAAA-MM-JJ.')
-  return 'SELECT campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions '
+  return `SELECT ${CAMPAIGN_FIELDS}, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions `
     + `FROM campaign WHERE segments.date BETWEEN '${from}' AND '${to}'`
 }
+
+/** Identifiant de campagne : des chiffres seulement. */
+export const isCampaignId = (value: unknown): value is string => typeof value === 'string' && /^\d{1,20}$/.test(value)
+
+/** L'état actuel d'une campagne (sans chiffres), relu juste avant de la modifier. Null si l'identifiant n'en est pas un. */
+export const adsCampaignStateQuery = (id: string) => (isCampaignId(id) ? `SELECT ${CAMPAIGN_FIELDS} FROM campaign WHERE campaign.id = ${id}` : null)
 
 /** Un identifiant de clic (`gclid`) tel que Google les écrit : lettres, chiffres, tiret, souligné. */
 export const isGclid = (value: unknown): value is string => typeof value === 'string' && /^[\w-]{10,200}$/.test(value)
@@ -79,11 +89,27 @@ export const ADS_CLICK_LOOKBACK_DAYS = 90
 // ───────────────────────── Lecture des réponses ─────────────────────────
 
 export type AdsAccount = { name: string; currency: string; timeZone: string }
+/** Budget d'une campagne, tel que Google le décrit. */
+export type AdsBudget = {
+  /** Nom de la ressource chez Google : `customers/123/campaignBudgets/456`. */
+  resourceName: string
+  /** Montant moyen par jour, en millionièmes de la devise ; 0 pour un budget fixé sur toute une période. */
+  amountMicros: number
+  /** Le budget sert à plusieurs campagnes : le changer les changerait toutes. */
+  shared: boolean
+  /** DAILY (par jour) ou CUSTOM_PERIOD (total sur une période). */
+  period: string
+  /** STANDARD, ou un budget propre à un type de campagne (SMART_CAMPAIGN, LOCAL_SERVICES, FIXED_CPA). */
+  type: string
+}
+
 export type AdsCampaign = {
   id: string
   name: string
   /** ENABLED, PAUSED ou REMOVED. */
   status: string
+  /** Budget de la campagne ; null si Google n'en renvoie pas. */
+  budget: AdsBudget | null
   impressions: number
   clicks: number
   /** Dépense en millionièmes de la devise du compte (1 € = 1 000 000). */
@@ -101,13 +127,23 @@ export function readAdsAccount(body: unknown): AdsAccount | null {
   return { name: String(customer.descriptiveName ?? ''), currency: String(customer.currencyCode ?? 'EUR').toUpperCase(), timeZone: String(customer.timeZone ?? '') }
 }
 
+function readAdsBudget(row: Obj): AdsBudget | null {
+  const resourceName = String(row.campaign?.campaignBudget ?? row.campaignBudget?.resourceName ?? '')
+  if (!/^customers\/\d+\/campaignBudgets\/\d+$/.test(resourceName)) return null
+  const b = row.campaignBudget ?? {}
+  return {
+    resourceName, amountMicros: num(b.amountMicros), period: String(b.period ?? ''), type: String(b.type ?? ''),
+    shared: b.explicitlyShared === true || num(b.referenceCount) > 1,
+  }
+}
+
 /** Campagnes d'une réponse (ou de plusieurs pages mises bout à bout), une ligne par campagne. Les grands entiers arrivent en texte. */
 export function readAdsCampaigns(pages: unknown[]): AdsCampaign[] {
   const byId = new Map<string, AdsCampaign>()
   for (const row of pages.flatMap(rowsOf)) {
     const id = String(row.campaign?.id ?? '')
     if (!id) continue
-    const c = byId.get(id) ?? { id, name: String(row.campaign?.name ?? ''), status: String(row.campaign?.status ?? ''), impressions: 0, clicks: 0, costMicros: 0, conversions: 0 }
+    const c = byId.get(id) ?? { id, name: String(row.campaign?.name ?? ''), status: String(row.campaign?.status ?? ''), budget: readAdsBudget(row), impressions: 0, clicks: 0, costMicros: 0, conversions: 0 }
     c.impressions += num(row.metrics?.impressions)
     c.clicks += num(row.metrics?.clicks)
     c.costMicros += num(row.metrics?.costMicros)
@@ -155,6 +191,19 @@ export function adsFailure(status: number, body: unknown): AdsFailure {
   }
   if (has('CUSTOMER_NOT_FOUND') || has('INVALID_CUSTOMER_ID') || status === 404) return { kind: 'refused', message: 'Google ne trouve pas ce numéro de compte Google Ads.' }
   if (has('CUSTOMER_NOT_ENABLED')) return { kind: 'refused', message: 'Ce compte Google Ads est désactivé ou n\'a pas terminé son inscription.' }
+  if (has('ACTION_NOT_PERMITTED') || has('UPDATE_OPERATION_NOT_PERMITTED') || has('MUTATE_NOT_ALLOWED')) {
+    return { kind: 'refused', message: 'Google refuse la modification : le compte Google qui a créé le jeton n\'a qu\'un accès en lecture à ce compte Google Ads. Il lui faut l\'accès « Standard » ou « Administrateur ».' }
+  }
+  if (has('BUDGET_BELOW_PER_DAY_MINIMUM') || has('MONEY_AMOUNT_LESS_THAN_CURRENCY_MINIMUM_CPC')) return { kind: 'refused', message: 'Google refuse ce budget : il est en dessous du minimum accepté pour cette campagne.' }
+  if (has('MONEY_AMOUNT_TOO_LARGE')) return { kind: 'refused', message: 'Google refuse ce budget : le montant est trop élevé.' }
+  if (has('NON_MULTIPLE_OF_MINIMUM_CURRENCY_UNIT')) return { kind: 'refused', message: 'Google refuse ce budget : le montant a trop de décimales pour la devise du compte.' }
+  if (has('CANNOT_MODIFY_FIELD_OF_IMPLICITLY_SHARED_CAMPAIGN_BUDGET') || has('BUDGET_AMOUNT_MUST_BE_UNSET_FOR_CUSTOM_BUDGET_PERIOD')) return { kind: 'refused', message: 'Ce budget ne se change que dans Google Ads.' }
+  if (has('CANNOT_MODIFY_FOR_TRIAL_CAMPAIGN')) return { kind: 'refused', message: 'Cette campagne fait partie d\'une expérience : elle ne se modifie que dans Google Ads.' }
+  if (has('INVALID_OPERATION_IF_SERVING_STATUS_HAS_ENDED')) return { kind: 'refused', message: 'Cette campagne est terminée (sa date de fin est passée) : changez d\'abord sa date de fin dans Google Ads.' }
+  if (has('OPERATION_NOT_PERMITTED_FOR_REMOVED_RESOURCE') || has('CAMPAIGN_BUDGET_REMOVED')) return { kind: 'refused', message: 'Cette campagne ou son budget ont été supprimés dans Google Ads.' }
+  if (has('OPERATION_NOT_PERMITTED_FOR_CAMPAIGN_TYPE') || has('INVALID_STATUS_CHANGE')) return { kind: 'refused', message: 'Google ne permet pas cette modification pour ce type de campagne : passez par Google Ads.' }
+  if (has('EU_POLITICAL_ADVERTISING_DECLARATION_REQUIRED')) return { kind: 'refused', message: 'Google demande d\'abord une déclaration sur la publicité politique dans l\'Union européenne : à faire dans Google Ads (paramètres du compte).' }
+  if (has('AGREEMENT_REQUIRED')) return { kind: 'refused', message: 'Google demande d\'abord d\'accepter des conditions dans Google Ads.' }
   if (has('SERVICE_DISABLED') || has('API has not been used')) return { kind: 'refused', message: 'L\'API Google Ads n\'est pas activée dans le projet Google Cloud du client OAuth.' }
   if (status === 429 || has('RESOURCE_EXHAUSTED')) return { kind: 'unavailable', message: 'Le nombre d\'appels autorisés par Google pour aujourd\'hui est atteint. Réessayez plus tard.' }
   if (status >= 500) return { kind: 'unavailable', message: 'Google Ads ne répond pas pour le moment.' }
@@ -234,3 +283,55 @@ export function formatMicros(micros: number, currency: string) {
 }
 
 export const ADS_STATUS_LABELS: Record<string, string> = { ENABLED: 'Active', PAUSED: 'En pause', REMOVED: 'Supprimée' }
+
+// ───────────────────────── Piloter une campagne : pause, reprise, budget ─────────────────────────
+
+export const ADS_SETTABLE_STATUSES = ['ENABLED', 'PAUSED'] as const
+export type AdsSettableStatus = typeof ADS_SETTABLE_STATUSES[number]
+
+/** Pourquoi l'état d'une campagne ne peut pas être changé d'ici ; null si c'est possible. */
+export function statusLock(campaign: Pick<AdsCampaign, 'status'>): string | null {
+  if (campaign.status === 'REMOVED') return 'Cette campagne est supprimée dans Google Ads.'
+  if (!(ADS_SETTABLE_STATUSES as readonly string[]).includes(campaign.status)) return 'L\'état de cette campagne ne se change que dans Google Ads.'
+  return null
+}
+
+/**
+ * Pourquoi le budget d'une campagne ne peut pas être changé d'ici ; null si c'est possible. Seul le cas simple l'est :
+ * un budget par jour, propre à la campagne. Les autres se règlent dans Google Ads, où l'on voit ce qu'ils entraînent.
+ */
+export function budgetLock(campaign: Pick<AdsCampaign, 'status' | 'budget'>): string | null {
+  const b = campaign.budget
+  if (campaign.status === 'REMOVED') return 'Cette campagne est supprimée dans Google Ads.'
+  if (!b) return 'Google Ads n\'indique pas de budget pour cette campagne.'
+  if (b.shared) return 'Ce budget est partagé entre plusieurs campagnes : il se change dans Google Ads.'
+  if (b.period !== 'DAILY') return 'Ce budget est fixé pour toute une période, pas par jour : il se change dans Google Ads.'
+  if (b.type !== 'STANDARD') return 'Le budget de ce type de campagne se change dans Google Ads.'
+  return null
+}
+
+/** Budget par jour le plus élevé accepté d'ici (en unités de la devise) : au-delà, c'est sans doute une faute de frappe. */
+export const ADS_MAX_DAILY_BUDGET = 10_000
+/** Sur un mois, Google ne dépense pas plus que 30,4 fois le budget par jour (et jusqu'à 2 fois ce budget un jour donné). */
+export const ADS_MONTH_FACTOR = 30.4
+
+/**
+ * Lit un budget par jour saisi (« 25 », « 25,50 », « 1 250.5 ») et le rend en millionièmes. Deux décimales au plus :
+ * Google refuse un montant qui n'est pas un multiple de la plus petite unité de la devise.
+ */
+export function parseDailyBudget(input: unknown): { ok: true; micros: number } | { ok: false; error: string } {
+  const text = String(input ?? '').replace(/[\s\u00a0\u202f€$£]/g, '').replace(',', '.')
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return { ok: false, error: 'Saisissez un montant par jour, avec deux décimales au plus : 25 ou 25,50.' }
+  const value = Number(text)
+  if (value <= 0) return { ok: false, error: 'Le budget par jour doit être supérieur à zéro. Pour arrêter la campagne, mettez-la en pause.' }
+  if (value > ADS_MAX_DAILY_BUDGET) return { ok: false, error: `Budget par jour trop élevé pour être changé d'ici (plus de ${ADS_MAX_DAILY_BUDGET.toLocaleString('fr-FR')}) : passez par Google Ads.` }
+  return { ok: true, micros: Math.round(value * 100) * 10_000 }
+}
+
+/** Corps de la demande qui change l'état d'une campagne (`customers/<compte>/campaigns:mutate`). */
+export const statusMutation = (customerId: string, campaignId: string, status: AdsSettableStatus) =>
+  ({ operations: [{ update: { resourceName: `customers/${customerId}/campaigns/${campaignId}`, status }, updateMask: 'status' }] })
+
+/** Corps de la demande qui change le montant d'un budget (`customers/<compte>/campaignBudgets:mutate`). */
+export const budgetMutation = (resourceName: string, amountMicros: number) =>
+  ({ operations: [{ update: { resourceName, amountMicros }, updateMask: 'amount_micros' }] })

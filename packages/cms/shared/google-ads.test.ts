@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { cleanOrigin } from './attribution.ts'
 import {
-  type AdsLead, adsCampaignQuery, adsClickQuery, adsCustomerId, adsFailure, adsRange, buildAdsReport, dayIn, formatMicros, googleAdsReady,
+  type AdsLead, adsCampaignQuery, adsCampaignStateQuery, adsClickQuery, budgetLock, budgetMutation, parseDailyBudget, statusLock, statusMutation, adsCustomerId, adsFailure, adsRange, buildAdsReport, dayIn, formatMicros, googleAdsReady,
   googleAdsSettingsErrors, oauthFailure, parseAdsPeriod, readAdsAccount, readAdsCampaigns, readAdsClick,
 } from './google-ads.ts'
 
@@ -42,8 +42,8 @@ test('lecture des réponses : compte, campagnes (entiers en texte, plusieurs pag
   const row = (id: string, name: string, cost: string, clicks: string) => ({ campaign: { id, name, status: 'ENABLED' }, metrics: { impressions: '1000', clicks, costMicros: cost, conversions: 1.5 } })
   const campaigns = readAdsCampaigns([{ results: [row('1', 'A', '1500000', '10'), row('2', 'B', '0', '0')] }, { results: [row('1', 'A', '500000', '5')] }, {}, null])
   assert.deepEqual(campaigns, [
-    { id: '1', name: 'A', status: 'ENABLED', impressions: 2000, clicks: 15, costMicros: 2_000_000, conversions: 3 },
-    { id: '2', name: 'B', status: 'ENABLED', impressions: 1000, clicks: 0, costMicros: 0, conversions: 1.5 },
+    { id: '1', name: 'A', status: 'ENABLED', budget: null, impressions: 2000, clicks: 15, costMicros: 2_000_000, conversions: 3 },
+    { id: '2', name: 'B', status: 'ENABLED', budget: null, impressions: 1000, clicks: 0, costMicros: 0, conversions: 1.5 },
   ])
   assert.deepEqual(readAdsClick({ results: [{ clickView: { gclid: 'x' }, campaign: { id: '101', name: 'Printemps' } }] }), { campaignId: '101', campaignName: 'Printemps' })
   assert.equal(readAdsClick({}), null)
@@ -65,9 +65,9 @@ test('erreurs traduites : à corriger dans les réglages, ou à réessayer', () 
 
 test('rapprochement : par identifiant de campagne, sinon par nom ; coût par contact ; contacts sans campagne', () => {
   const campaigns = [
-    { id: '101', name: 'Printemps', status: 'ENABLED', impressions: 12000, clicks: 300, costMicros: 150_000_000, conversions: 4.5 },
-    { id: '102', name: 'Marque', status: 'PAUSED', impressions: 2000, clicks: 50, costMicros: 20_000_000, conversions: 1 },
-    { id: '103', name: 'Ancienne', status: 'REMOVED', impressions: 0, clicks: 0, costMicros: 0, conversions: 0 },
+    { id: '101', name: 'Printemps', status: 'ENABLED', budget: null, impressions: 12000, clicks: 300, costMicros: 150_000_000, conversions: 4.5 },
+    { id: '102', name: 'Marque', status: 'PAUSED', budget: null, impressions: 2000, clicks: 50, costMicros: 20_000_000, conversions: 1 },
+    { id: '103', name: 'Ancienne', status: 'REMOVED', budget: null, impressions: 0, clicks: 0, costMicros: 0, conversions: 0 },
   ]
   const lead = (kind: AdsLead['kind'], origin: Record<string, unknown>, amount?: number, currency = 'eur'): AdsLead => ({ kind, origin: cleanOrigin(origin, NOW), amount, ...(kind === 'payment' ? { currency } : {}) })
   const report = buildAdsReport(campaigns, [
@@ -92,4 +92,38 @@ test('rapprochement : par identifiant de campagne, sinon par nom ; coût par con
   assert.deepEqual([mixed.campaigns[0]!.payments, mixed.campaigns[0]!.revenue], [2, 700])
   assert.equal(buildAdsReport([], []).totals.costPerContactMicros, null)
   assert.equal(formatMicros(34_000_000, 'EUR').replace(/\s/g, ' '), '34,00 €')
+})
+
+test('piloter une campagne : budget lu, garde-fous, saisie du montant, demandes envoyées à Google', () => {
+  const row = (budget: Record<string, unknown>, status = 'ENABLED') => ({
+    campaign: { id: '101', name: 'Printemps', status, campaignBudget: 'customers/1234567890/campaignBudgets/555' },
+    campaignBudget: { resourceName: 'customers/1234567890/campaignBudgets/555', amountMicros: '20000000', period: 'DAILY', type: 'STANDARD', explicitlyShared: false, referenceCount: '1', ...budget },
+  })
+  const read = (budget: Record<string, unknown> = {}, status?: string) => readAdsCampaigns([{ results: [row(budget, status)] }])[0]!
+  assert.deepEqual(read().budget, { resourceName: 'customers/1234567890/campaignBudgets/555', amountMicros: 20_000_000, shared: false, period: 'DAILY', type: 'STANDARD' })
+  assert.equal(budgetLock(read()), null)
+  assert.equal(statusLock(read()), null)
+  // Seul un budget par jour, propre à la campagne, se change d'ici.
+  assert.match(budgetLock(read({ explicitlyShared: true }))!, /partagé/)
+  assert.match(budgetLock(read({ referenceCount: '3' }))!, /partagé/)
+  assert.match(budgetLock(read({ period: 'CUSTOM_PERIOD', amountMicros: undefined }))!, /période/)
+  assert.match(budgetLock(read({ type: 'SMART_CAMPAIGN' }))!, /type de campagne/)
+  assert.match(budgetLock(read({}, 'REMOVED'))!, /supprimée/)
+  assert.match(statusLock(read({}, 'REMOVED'))!, /supprimée/)
+  assert.match(budgetLock({ status: 'ENABLED', budget: null })!, /pas de budget/)
+  // Un nom de ressource inattendu n'est jamais renvoyé à Google.
+  assert.equal(readAdsCampaigns([{ results: [{ campaign: { id: '1', campaignBudget: 'customers/1/campaigns/9' } }] }])[0]!.budget, null)
+
+  assert.deepEqual(parseDailyBudget('25'), { ok: true, micros: 25_000_000 })
+  assert.deepEqual(parseDailyBudget(' 25,50 € '), { ok: true, micros: 25_500_000 })
+  assert.deepEqual(parseDailyBudget('1 250.5'), { ok: true, micros: 1_250_500_000 })
+  assert.deepEqual(parseDailyBudget('0,07'), { ok: true, micros: 70_000 })
+  for (const bad of ['', 'vingt', '-5', '0', '0,00', '12,345', '1e3', '10001', '25,5,5', null]) assert.equal(parseDailyBudget(bad).ok, false, String(bad))
+
+  assert.equal(adsCampaignStateQuery('101')!.endsWith('FROM campaign WHERE campaign.id = 101'), true)
+  assert.equal(adsCampaignStateQuery('101 OR 1=1'), null)
+  assert.deepEqual(statusMutation('1234567890', '101', 'PAUSED'), { operations: [{ update: { resourceName: 'customers/1234567890/campaigns/101', status: 'PAUSED' }, updateMask: 'status' }] })
+  assert.deepEqual(budgetMutation('customers/1234567890/campaignBudgets/555', 25_500_000), { operations: [{ update: { resourceName: 'customers/1234567890/campaignBudgets/555', amountMicros: 25_500_000 }, updateMask: 'amount_micros' }] })
+  assert.match(adsFailure(403, { error: { details: [{ errors: [{ errorCode: { authorizationError: 'ACTION_NOT_PERMITTED' } }] }] } }).message, /accès en lecture/)
+  assert.match(adsFailure(400, { error: { details: [{ errors: [{ errorCode: { campaignBudgetError: 'BUDGET_BELOW_PER_DAY_MINIMUM' } }] }] } }).message, /minimum/)
 })

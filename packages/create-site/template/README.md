@@ -390,7 +390,15 @@ provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign
 Le module **Google Ads** s'active dans l'écran Modules (ou `googleAds()` dans `cms.config.ts`). Il lit les campagnes
 du compte (affichages, clics, dépense, conversions vues par Google) et les rapproche des contacts que le site a
 enregistrés lui-même (messages reçus, paiements réussis venus d'une annonce) : l'écran « Annonces Google » donne les
-contacts et le **coût par contact** de chaque campagne. Il ne modifie rien dans Google Ads.
+contacts et le **coût par contact** de chaque campagne.
+
+L'administrateur peut aussi, depuis cet écran, **mettre une campagne en pause, la relancer et changer son budget par
+jour**. Rien d'autre n'est modifié dans Google Ads. Chaque action demande une confirmation, relit d'abord l'état de la
+campagne chez Google (un budget changé entre-temps dans Google Ads n'est jamais écrasé) et est inscrite au journal
+d'activité. Le budget ne se change d'ici que dans le cas simple : un budget par jour, propre à la campagne. Un budget
+partagé entre plusieurs campagnes, ou fixé pour toute une période, se règle dans Google Ads. Pour ces actions, le
+compte Google qui a créé le jeton doit avoir l'accès « Standard » ou « Administrateur » au compte Google Ads ; avec un
+accès en lecture seule, les chiffres s'affichent et les actions sont refusées avec un message clair.
 
 **Côté Google, une fois** (les mêmes identifiants peuvent servir à tous vos sites) :
 

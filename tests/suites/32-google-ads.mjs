@@ -1,8 +1,9 @@
 // Module Google Ads (lecture) : réglages, vérification de la connexion, erreurs traduites, rapport des campagnes
-// rapproché des contacts du site (identifiant de campagne, nom, gclid retrouvé chez Google), écran, droits.
+// rapproché des contacts du site (identifiant de campagne, nom, gclid retrouvé chez Google), écran, droits ;
+// pilotage par l'administrateur : pause, reprise, budget par jour, garde-fous, journal d'activité.
 import { check, clickText, json, login, says } from '../lib/harness.mjs'
 import { config } from '../lib/config.mjs'
-import { CUSTOMER_DOWN, CUSTOMER_EMPTY, CUSTOMER_TEST_ONLY, CUSTOMER_VIA_MANAGER, KNOWN_GCLID, MANAGER, SECRET_UNKNOWN, TOKEN_REVOKED } from '../lib/mock-google.mjs'
+import { CUSTOMER_DOWN, CUSTOMER_EMPTY, CUSTOMER_READ_ONLY, CUSTOMER_TEST_ONLY, CUSTOMER_VIA_MANAGER, KNOWN_GCLID, MANAGER, SECRET_UNKNOWN, TOKEN_REVOKED } from '../lib/mock-google.mjs'
 
 export const meta = {
   title: 'Google Ads : réglages, campagnes, contacts du site par campagne, coût par contact',
@@ -161,5 +162,109 @@ export default async function (t) {
     const codes = [(await report(30, marc)).status, (await report(30, lina)).status, (await report(30, visitor)).status]
     check(codes.join() === '200,403,401', codes.join())
     check((await marc.call('/api/cms/modules/google-ads', { method: 'PUT', body: { values: { customerId: CUSTOMER } } })).status === 403, 'l\'éditeur change les réglages')
+  })
+
+  const mutates = () => calls().filter(c => c.url.endsWith(':mutate'))
+  const campaign = id => t.google.campaigns().find(c => c.id === id)
+  const setStatus = (id, status, client = claire) => client.call(`/api/cms/google-ads/campaigns/${id}/status`, { method: 'PUT', body: { status } })
+  const setBudget = (id, amount, expectedMicros, client = claire) => client.call(`/api/cms/google-ads/campaigns/${id}/budget`, { method: 'PUT', body: { amount, expectedMicros } })
+  const journal = async () => (await claire.json('/api/cms/activity?limit=100')).items.map(i => i.summary ?? i.phrase ?? JSON.stringify(i))
+  const row = async id => (await report()).json.report.campaigns.find(c => c.id === id)
+
+  await step('pause et reprise d\'une campagne : état relu chez Google, une seule demande, journal d\'activité', async () => {
+    const before = await row('101')
+    check(before.status === 'ENABLED' && before.budget.amountMicros === 20000000 && before.budget.period === 'DAILY' && !before.budget.shared, JSON.stringify(before.budget))
+    let r = await setStatus('101', 'PAUSED')
+    check(r.status === 200 && r.json.status === 'PAUSED' && campaign('101').status === 'PAUSED', `${r.status} ${r.text}`)
+    const sent = mutates().pop()
+    check(sent.url === '/google-ads/v26/customers/1234567890/campaigns:mutate' && JSON.stringify(sent.body) === JSON.stringify({ operations: [{ update: { resourceName: 'customers/1234567890/campaigns/101', status: 'PAUSED' }, updateMask: 'status' }] }), JSON.stringify(sent))
+    // Le rapport ne ressert pas l'ancien état gardé en mémoire.
+    check((await row('101')).status === 'PAUSED', 'le rapport montre encore la campagne active')
+    // Déjà en pause : rien n'est redemandé à Google.
+    const count = mutates().length
+    check((await setStatus('101', 'PAUSED')).status === 200 && mutates().length === count, 'seconde demande envoyée à Google')
+    // Refus : état inconnu, campagne inconnue, campagne supprimée.
+    check((await setStatus('101', 'REMOVED')).status === 400, 'suppression acceptée')
+    check((await setStatus('999', 'PAUSED')).status === 404 && (await setStatus('101 OR 1=1', 'PAUSED')).status === 404, 'campagne inconnue acceptée')
+    r = await setStatus('103', 'ENABLED')
+    check(r.status === 409 && /supprimée/.test(r.json.message), `${r.status} ${r.text}`)
+    check(mutates().length === count, 'une demande refusée est partie chez Google')
+    // Depuis l'écran : bouton « Relancer », avec confirmation.
+    await page.goto(B + '/admin/google-ads', { waitUntil: 'networkidle0' })
+    await page.waitForSelector('[data-ads-campaign="101"] [data-ads-toggle]')
+    check((await page.$eval('[data-ads-campaign="101"] [data-ads-toggle]', b => b.textContent.trim())) === 'Relancer', 'bouton de la campagne en pause')
+    const asked = []
+    page.once('dialog', d => asked.push(d.message()))
+    await page.$eval('[data-ads-campaign="101"] [data-ads-toggle]', b => b.click())
+    await page.waitForFunction(() => document.querySelector('[data-ads-campaign="101"] [data-ads-status]')?.textContent.trim() === 'Active')
+    check(/Relancer la campagne « Printemps »/.test(asked[0]) && asked[0].replace(/\s/g, ' ').includes('20,00 € par jour') && campaign('101').status === 'ENABLED', asked[0])
+    const lines = await journal()
+    check(lines.some(l => l.includes('a mis en pause la campagne Google Ads « Printemps »')) && lines.some(l => l.includes('a relancé la campagne Google Ads « Printemps »')), lines.slice(0, 4).join(' | '))
+  })
+
+  await step('budget par jour : fenêtre, plafonds annoncés, refus de Google affiché, changement appliqué et inscrit au journal', async () => {
+    // Budget partagé (« Marque ») : pas de crayon, la raison est écrite ; campagne supprimée : pas listée.
+    check(!(await page.$('[data-ads-campaign="102"] [data-ads-budget-edit]')) && /partagé entre plusieurs campagnes/.test(await page.$eval('[data-ads-campaign="102"] [data-ads-budget-lock]', e => e.textContent)), 'budget partagé modifiable')
+    check((await page.$eval('[data-ads-campaign="101"] [data-ads-budget]', e => e.textContent.replace(/\s+/g, ' ').trim())).startsWith('20,00 €'), 'budget affiché')
+    await page.$eval('[data-ads-campaign="101"] [data-ads-budget-edit]', b => b.click())
+    await page.waitForSelector('[data-ads-budget-dialog][open] [data-ads-budget-input]')
+    const input = await page.$('[data-ads-budget-input]')
+    check(await input.evaluate(el => el.value) === '20,00', 'montant proposé : ' + await input.evaluate(el => el.value))
+    check(await page.$eval('[data-ads-budget-save]', b => b.disabled), 'bouton actif sans changement')
+    const type = async (value) => { await input.evaluate((el) => { el.focus(); el.select() }); await page.keyboard.press('Backspace'); await input.type(value) }
+    // En dessous du minimum de Google : la demande part, Google refuse, le message est affiché et rien ne change.
+    await type('0,50')
+    await page.$eval('[data-ads-budget-save]', b => b.click())
+    await page.waitForSelector('[data-ads-budget-error]')
+    check(/en dessous du minimum/.test(await page.$eval('[data-ads-budget-error]', e => e.textContent)) && campaign('101').budgetMicros === 20000000, await page.$eval('[data-ads-budget-error]', e => e.textContent))
+    // Saisie illisible : le bouton reste inactif.
+    await type('beaucoup')
+    check(await page.$eval('[data-ads-budget-save]', b => b.disabled), 'bouton actif pour une saisie illisible')
+    await type('35,5')
+    await page.waitForSelector('[data-ads-budget-effect]')
+    const effect = (await page.$eval('[data-ads-budget-effect]', e => e.textContent)).replace(/\s+/g, ' ')
+    check(effect.includes('71,00 €') && effect.includes('1 079,20 €'), effect)
+    await t.shot(page, 'budget')
+    await page.$eval('[data-ads-budget-save]', b => b.click())
+    await page.waitForFunction(() => !document.querySelector('[data-ads-budget-dialog][open]'))
+    await page.waitForFunction(() => document.querySelector('[data-ads-campaign="101"] [data-ads-budget]')?.textContent.replace(/\s+/g, ' ').trim().startsWith('35,50 €'))
+    check(campaign('101').budgetMicros === 35500000, 'budget chez Google : ' + campaign('101').budgetMicros)
+    const sent = mutates().pop()
+    check(sent.url === '/google-ads/v26/customers/1234567890/campaignBudgets:mutate' && JSON.stringify(sent.body) === JSON.stringify({ operations: [{ update: { resourceName: 'customers/1/campaignBudgets/501', amountMicros: 35500000 }, updateMask: 'amount_micros' }] }), JSON.stringify(sent))
+    const lines = await journal()
+    check(lines.some(l => l.replace(/\s/g, ' ').includes('a changé le budget par jour de la campagne Google Ads « Printemps » : 20,00 € → 35,50 €')), lines.slice(0, 3).join(' | '))
+  })
+
+  await step('budget : garde-fous du serveur (partagé, changé entre-temps, montant illisible ou démesuré)', async () => {
+    const count = mutates().length
+    let r = await setBudget('102', '10', 5000000)
+    check(r.status === 409 && /partagé/.test(r.json.message), `${r.status} ${r.text}`)
+    for (const bad of ['', 'dix', '-4', '0', '12,345', '20000']) check((await setBudget('101', bad, 35500000)).status === 400, 'montant accepté : ' + bad)
+    // Quelqu'un a changé le budget dans Google Ads depuis l'affichage : rien n'est écrasé.
+    t.google.setBudget('101', 60000000)
+    r = await setBudget('101', '40', 35500000)
+    check(r.status === 409 && /a changé dans Google Ads/.test(r.json.message) && campaign('101').budgetMicros === 60000000, `${r.status} ${r.text}`)
+    check(mutates().length === count, 'une demande refusée est partie chez Google')
+    // Même montant que l'actuel : accepté, sans demande à Google.
+    check((await setBudget('101', '60', 60000000)).status === 200 && mutates().length === count, 'demande inutile envoyée')
+    check((await setBudget('101', '40', 60000000)).status === 200 && campaign('101').budgetMicros === 40000000, 'changement refusé avec le bon montant attendu')
+  })
+
+  await step('pilotage réservé à l\'administrateur ; accès en lecture seule chez Google expliqué', async () => {
+    check((await setStatus('101', 'PAUSED', marc)).status === 403 && (await setBudget('101', '1', 40000000, marc)).status === 403, 'l\'éditeur pilote une campagne')
+    check((await setStatus('101', 'PAUSED', lina)).status === 403 && (await setStatus('101', 'PAUSED', visitor)).status === 401, 'rédacteur ou visiteur')
+    check(campaign('101').status === 'ENABLED', 'campagne modifiée sans droit')
+    // L'éditeur voit les chiffres et le budget, sans bouton.
+    const context = await t.newContext(); const other = await t.newPage({ context })
+    await login(other, B, { email: 'marc@example.com', password: 'motdepasse-test-2' })
+    await other.goto(B + '/admin/google-ads', { waitUntil: 'networkidle0' })
+    await other.waitForSelector('[data-ads-campaign="101"] [data-ads-budget]')
+    check(!(await other.$('[data-ads-toggle]')) && !(await other.$('[data-ads-budget-edit]')), 'boutons de pilotage montrés à l\'éditeur')
+    await context.close()
+    // Jeton d'un compte Google qui n'a qu'un accès en lecture : Google refuse, et le message dit quoi faire.
+    await save({ customerId: CUSTOMER_READ_ONLY })
+    const r = await setStatus('101', 'PAUSED')
+    check(r.status === 502 && /accès en lecture/.test(r.json.message) && /Standard/.test(r.json.message), `${r.status} ${r.text}`)
+    check(campaign('101').status === 'ENABLED', 'campagne modifiée malgré le refus')
   })
 }

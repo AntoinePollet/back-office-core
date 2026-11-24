@@ -3,14 +3,16 @@ import type { H3Event } from 'h3'
 import type { StoredOrigin } from '../../shared/attribution'
 import {
   ADS_ACCOUNT_QUERY, ADS_CLICK_LOOKBACK_DAYS, type AdsAccount, type AdsCampaign, type AdsFailure, type AdsLead, type AdsPeriod, type AdsReport,
-  adsCampaignQuery, adsClickQuery, adsCustomerId, adsFailure, adsRange, buildAdsReport, dayIn, googleAdsReady, googleAdsSettingsErrors,
-  oauthFailure, readAdsAccount, readAdsCampaigns, readAdsClick,
+  type AdsSettableStatus, ADS_SETTABLE_STATUSES, ADS_STATUS_LABELS,
+  adsCampaignQuery, adsCampaignStateQuery, adsClickQuery, adsCustomerId, adsFailure, adsRange, budgetLock, budgetMutation, buildAdsReport, dayIn, formatMicros,
+  googleAdsReady, googleAdsSettingsErrors, oauthFailure, parseDailyBudget, readAdsAccount, readAdsCampaigns, readAdsClick, statusLock, statusMutation,
 } from '../../shared/google-ads'
 import type { CmsModuleDefinition, ModuleSettings } from '../utils/modules'
 
 /**
  * Google Ads, en lecture : dépense et résultats des campagnes, rapprochés des contacts enregistrés par le site
- * (voir `shared/google-ads.ts`). Rien n'est modifié dans le compte Google Ads.
+ * (voir `shared/google-ads.ts`), et trois actions réservées à l'administrateur : mettre une campagne en pause, la
+ * relancer, changer son budget par jour. Rien d'autre n'est modifié dans le compte Google Ads.
  */
 
 class AdsError extends Error {
@@ -50,31 +52,33 @@ async function accessToken(event: H3Event, settings: ModuleSettings) {
   return body.access_token
 }
 
-/** Une requête GAQL sur le compte réglé ; toutes les pages de la réponse (10 000 lignes par page, 5 pages au plus). */
-async function search(event: H3Event, settings: ModuleSettings, query: string): Promise<unknown[]> {
-  let token = await accessToken(event, settings)
+/**
+ * Un appel à l'API Google Ads pour le compte réglé (`googleAds:search`, `campaigns:mutate`…). Un jeton d'accès
+ * refusé (invalidé plus tôt que prévu chez Google) est redemandé une fois.
+ */
+async function call<T>(event: H3Event, settings: ModuleSettings, method: string, body: unknown): Promise<T> {
   const login = adsCustomerId(settings.loginCustomerId)
-  const pages: unknown[] = []
-  let pageToken: string | undefined
-  let renewed = false
-  for (let i = 0; i < 6 && pages.length < 5; i++) {
-    const response = await fetch(`${apiUrl(event)}/customers/${adsCustomerId(settings.customerId)}/googleAds:search`, {
+  for (let attempt = 0; ; attempt++) {
+    const token = await accessToken(event, settings)
+    const response = await fetch(`${apiUrl(event)}/customers/${adsCustomerId(settings.customerId)}/${method}`, {
       method: 'POST',
       headers: { 'authorization': `Bearer ${token}`, 'content-type': 'application/json', 'accept': 'application/json', ...(login ? { 'login-customer-id': login } : {}) },
-      body: JSON.stringify({ query, ...(pageToken ? { pageToken } : {}) }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     }).catch(unreachable('Google Ads'))
-    const body = await response.json().catch(() => null) as { nextPageToken?: string } | null
-    if (!response.ok) {
-      // Jeton d'accès refusé (invalidé plus tôt que prévu chez Google) : on en redemande un, une seule fois.
-      if (response.status === 401 && !renewed) {
-        renewed = true
-        tokens.clear()
-        token = await accessToken(event, settings)
-        continue
-      }
-      throw new AdsError(adsFailure(response.status, body))
-    }
+    const answer = await response.json().catch(() => null)
+    if (response.ok) return answer as T
+    if (response.status === 401 && attempt === 0) { tokens.clear(); continue }
+    throw new AdsError(adsFailure(response.status, answer))
+  }
+}
+
+/** Une requête GAQL sur le compte réglé ; toutes les pages de la réponse (10 000 lignes par page, 5 pages au plus). */
+async function search(event: H3Event, settings: ModuleSettings, query: string): Promise<unknown[]> {
+  const pages: unknown[] = []
+  let pageToken: string | undefined
+  for (let i = 0; i < 5; i++) {
+    const body = await call<{ nextPageToken?: string } | null>(event, settings, 'googleAds:search', { query, ...(pageToken ? { pageToken } : {}) })
     pages.push(body)
     pageToken = body?.nextPageToken
     if (!pageToken) break
@@ -94,7 +98,7 @@ export const googleAdsModule: CmsModuleDefinition = {
   label: 'Google Ads',
   // Logo officiel de Google Ads (tracé : Simple Icons) et le bleu de la marque.
   logo: { style: 'fill', color: '#4285F4', paths: ['M3.9998 22.9291C1.7908 22.9291 0 21.1383 0 18.9293s1.7908-3.9998 3.9998-3.9998 3.9998 1.7908 3.9998 3.9998-1.7908 3.9998-3.9998 3.9998zm19.4643-6.0004c-.0001-.0001-7.9996-13.8563-7.9997-13.8562-1.1046-1.9132-3.5509-2.5687-5.4641-1.4641-1.9132 1.1046-2.5687 3.5509-1.4641 5.4641l7.9997 13.8562c1.1046 1.9132 3.5509 2.5687 5.4641 1.4641 1.9132-1.1046 2.5687-3.5509 1.4641-5.4641z'] },
-  description: 'Ce que coûtent les campagnes Google Ads et ce qu\'elles rapportent : dépense, clics, et contacts du site (messages, paiements) venus des annonces, campagne par campagne. Lecture seule : rien n\'est modifié dans Google Ads.',
+  description: 'Ce que coûtent les campagnes Google Ads et ce qu\'elles rapportent : dépense, clics, et contacts du site (messages, paiements) venus des annonces, campagne par campagne. L\'administrateur peut mettre une campagne en pause, la relancer et changer son budget par jour.',
   settings: [
     {
       key: 'customerId', label: 'Numéro du compte Google Ads', type: 'text', required: true, placeholder: '123-456-7890',
@@ -117,7 +121,7 @@ export const googleAdsModule: CmsModuleDefinition = {
     },
     {
       key: 'refreshToken', label: 'Jeton d\'actualisation', type: 'secret', required: true,
-      help: 'Obtenu une fois, en se connectant avec un compte Google qui a accès au compte Google Ads, pour l\'autorisation « https://www.googleapis.com/auth/adwords » (voir le README du site). Il ne donne ici qu\'un accès en lecture aux statistiques.',
+      help: 'Obtenu une fois, en se connectant avec un compte Google qui a accès au compte Google Ads, pour l\'autorisation « https://www.googleapis.com/auth/adwords » (voir le README du site). Pour mettre en pause ou changer un budget d\'ici, ce compte doit avoir l\'accès « Standard » ou « Administrateur » au compte Google Ads ; un accès en lecture suffit pour les chiffres.',
       env: { key: 'googleAdsRefreshToken', name: 'NUXT_GOOGLE_ADS_REFRESH_TOKEN' },
     },
   ],
@@ -242,3 +246,74 @@ export async function readGoogleAds(event: H3Event, days: AdsPeriod): Promise<Ad
 
 /** L'écran « Annonces Google » (dépenses comprises) est ouvert aux administrateurs et aux éditeurs. */
 export const canReadGoogleAds = (user: { role: string }) => user.role === 'admin' || user.role === 'editor'
+
+// ───────────── Piloter une campagne : pause, reprise, budget (administrateur) ─────────────
+
+type Actor = { id: string; name?: string | null; email?: string | null }
+
+/** Refus lisible par la personne : 409 quand l'état chez Google ne permet pas l'action, 502 quand Google la refuse. */
+const refuse = (statusCode: number, message: string) => createError({ statusCode, message })
+
+/** Réglages du module et état de la campagne chez Google à l'instant, relus avant toute modification. */
+async function campaignNow(event: H3Event, id: string) {
+  const settings = await moduleSettings(event, 'google-ads')
+  if (!googleAdsReady(settings)) throw refuse(409, 'Google Ads n\'est pas encore réglé.')
+  const query = adsCampaignStateQuery(id)
+  if (!query) throw refuse(404, 'Campagne introuvable.')
+  const [campaign] = readAdsCampaigns(await search(event, settings, query).catch(rethrow))
+  if (!campaign) throw refuse(404, 'Google Ads ne trouve pas cette campagne dans ce compte.')
+  return { settings, campaign }
+}
+
+function rethrow(error: unknown): never {
+  if (error instanceof AdsError) throw refuse(error.failure.kind === 'unavailable' ? 503 : 502, error.failure.message)
+  throw error
+}
+
+/** Après une modification : les chiffres gardés en mémoire ne disent plus l'état des campagnes. */
+const forget = () => cache.clear()
+
+/** Met une campagne en pause, ou la relance. Sans effet (et sans appel d'écriture) si elle est déjà dans cet état. */
+export async function setCampaignStatus(event: H3Event, user: Actor, id: string, status: unknown) {
+  if (!(ADS_SETTABLE_STATUSES as readonly unknown[]).includes(status)) throw refuse(400, 'État attendu : ENABLED (active) ou PAUSED (en pause).')
+  const wanted = status as AdsSettableStatus
+  const { settings, campaign } = await campaignNow(event, id)
+  const lock = statusLock(campaign)
+  if (lock) throw refuse(409, lock)
+  if (campaign.status !== wanted) {
+    await call(event, settings, 'campaigns:mutate', statusMutation(adsCustomerId(settings.customerId), campaign.id, wanted)).catch(rethrow)
+    forget()
+    logActivity(event, {
+      action: 'google_ads.campaign_status', category: 'settings', actor: user, target: { kind: 'google-ads', id: campaign.id },
+      phrase: `a ${wanted === 'PAUSED' ? 'mis en pause' : 'relancé'} la campagne Google Ads « ${campaign.name} »`,
+    })
+  }
+  return { id: campaign.id, status: wanted, label: ADS_STATUS_LABELS[wanted] }
+}
+
+/**
+ * Change le budget par jour d'une campagne. `expectedMicros` est le budget que la personne avait sous les yeux : s'il a
+ * changé entre-temps dans Google Ads, rien n'est fait et elle est invitée à relire.
+ */
+export async function setCampaignBudget(event: H3Event, user: Actor, id: string, input: { amount?: unknown; expectedMicros?: unknown }) {
+  const parsed = parseDailyBudget(input.amount)
+  if (!parsed.ok) throw refuse(400, parsed.error)
+  const { settings, campaign } = await campaignNow(event, id)
+  const lock = budgetLock(campaign)
+  if (lock) throw refuse(409, lock)
+  const budget = campaign.budget!
+  if (Number(input.expectedMicros) !== budget.amountMicros) {
+    forget()
+    throw refuse(409, 'Le budget de cette campagne a changé dans Google Ads depuis l\'affichage de cette page. Rechargez-la, puis recommencez.')
+  }
+  if (parsed.micros !== budget.amountMicros) {
+    const found = await account(event, settings).catch(rethrow)
+    await call(event, settings, 'campaignBudgets:mutate', budgetMutation(budget.resourceName, parsed.micros)).catch(rethrow)
+    forget()
+    logActivity(event, {
+      action: 'google_ads.campaign_budget', category: 'settings', actor: user, target: { kind: 'google-ads', id: campaign.id },
+      phrase: `a changé le budget par jour de la campagne Google Ads « ${campaign.name} » : ${formatMicros(budget.amountMicros, found.currency)} → ${formatMicros(parsed.micros, found.currency)}`,
+    })
+  }
+  return { id: campaign.id, amountMicros: parsed.micros }
+}

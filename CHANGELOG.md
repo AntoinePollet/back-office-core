@@ -33,11 +33,13 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   campagne, avec un filtre par canal ; l'export CSV et les workflows (`{{ origin.channel }}`…) ont la provenance.
   Par défaut, elle n'est gardée que le temps de la visite, sans rien écrire sur l'appareil du visiteur ;
   `site.attribution` la règle (voir le README du site). Aucun changement à faire dans les pages.
-- **Module Google Ads (lecture).** Nouvel écran « Annonces Google » : dépense, clics et conversions de chaque
+- **Module Google Ads.** Nouvel écran « Annonces Google » : dépense, clics et conversions de chaque
   campagne, lus dans Google Ads, à côté des contacts du site qu'elle a amenés (messages, paiements) et du coût par
   contact. Les contacts sont rattachés aux campagnes par `utm_id={campaignid}`, par le `gclid` (retrouvé auprès de
   Google) ou par le nom de la campagne. À activer dans l'écran Modules ; la mise en route côté Google (projet Cloud,
-  client OAuth, jeton) est décrite dans le README du site. Rien n'est modifié dans Google Ads.
+  client OAuth, jeton) est décrite dans le README du site. L'administrateur peut y mettre une campagne en pause, la
+  relancer et changer son budget par jour (avec confirmation, et inscription au journal d'activité) ; rien d'autre
+  n'est modifié dans Google Ads.
 
 ## 0.11.0 — 2026-11-23
 

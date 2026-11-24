@@ -2,7 +2,7 @@
 // par les workflows, et garde la trace des appels.
 import http from 'node:http'
 import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudflare.mjs'
-import { google } from './mock-google.mjs'
+import { createGoogle } from './mock-google.mjs'
 
 /**
  * - POST /v3/smtp/email → 201, comme Brevo
@@ -25,6 +25,7 @@ import { google } from './mock-google.mjs'
  */
 export async function startMock(port) {
   const calls = []
+  const google = createGoogle()
   const server = http.createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
     if (req.url === '/_calls') return res.end(JSON.stringify(calls))
@@ -36,7 +37,7 @@ export async function startMock(port) {
       catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
       calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, login: req.headers['login-customer-id'] ?? null, developerToken: req.headers['developer-token'] ?? null, body })
       if (req.url.startsWith('/google')) {
-        const { status, json } = google(req, body)
+        const { status, json } = google.handle(req, body)
         res.statusCode = status
         return res.end(JSON.stringify(json))
       }
@@ -128,6 +129,8 @@ export async function startMock(port) {
     url: `http://localhost:${port}`,
     /** Copie des appels reçus jusqu'ici. */
     calls: () => [...calls],
+    /** Le faux Google de cette suite : état des campagnes, changement de budget joué « dans Google Ads ». */
+    google,
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()) }),
   }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Megaphone, RefreshCw, Settings } from '@lucide/vue'
-import { ADS_STATUS_LABELS, GOOGLE_ADS_PERIODS, type AdsAccount, type AdsPeriod, type AdsReport, formatMicros } from '../../../shared/google-ads'
+import { Megaphone, Pause, Pencil, Play, RefreshCw, Settings } from '@lucide/vue'
+import { ADS_MONTH_FACTOR, ADS_STATUS_LABELS, GOOGLE_ADS_PERIODS, type AdsAccount, type AdsPeriod, type AdsReport, type AdsReportRow, budgetLock, formatMicros, parseDailyBudget, statusLock } from '../../../shared/google-ads'
 import { formatAmount } from '../../../shared/stripe'
 
 // Les dépenses publicitaires sont ouvertes à l'administrateur et à l'éditeur (le serveur le vérifie aussi).
@@ -43,6 +43,74 @@ const perContact = (micros: number | null) => (micros === null ? '—' : money(m
 const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
 const plural = (n: number, one: string, many: string) => `${count(n)} ${n > 1 ? many : one}`
 const hasPayments = computed(() => !!report.value && report.value.totals.payments > 0)
+
+// ───── Piloter une campagne (administrateur) : pause, reprise, budget par jour ─────
+const toast = useCmsToast()
+/** Campagne dont une modification est en cours d'envoi. */
+const busy = ref<string | null>(null)
+
+async function setStatus(c: AdsReportRow) {
+  const pause = c.status === 'ENABLED'
+  const question = pause
+    ? `Mettre en pause la campagne « ${c.name} » ?\n\nSes annonces ne seront plus diffusées, jusqu'à ce que vous la relanciez.`
+    : `Relancer la campagne « ${c.name} » ?\n\nSes annonces seront de nouveau diffusées, et la dépense reprendra${c.budget ? ` (budget : ${money(c.budget.amountMicros)} par jour)` : ''}.`
+  if (busy.value || !confirm(question)) return
+  busy.value = c.id
+  try {
+    await cmsApi(`/api/cms/google-ads/campaigns/${c.id}/status`, { method: 'PUT', body: { status: pause ? 'PAUSED' : 'ENABLED' } })
+    toast.success(pause ? 'Campagne mise en pause' : 'Campagne relancée')
+    await load()
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e, 'La campagne n\'a pas pu être modifiée.'))
+  }
+  finally {
+    busy.value = null
+  }
+}
+
+/** Fenêtre « Budget par jour » : la campagne concernée, la saisie, et l'erreur à afficher. */
+const editing = ref<AdsReportRow | null>(null)
+const amount = ref('')
+const budgetError = ref<string | null>(null)
+const dialog = ref<HTMLDialogElement>()
+const parsed = computed(() => parseDailyBudget(amount.value))
+const unchanged = computed(() => parsed.value.ok && parsed.value.micros === editing.value?.budget?.amountMicros)
+// Une erreur vaut pour le montant qui l'a provoquée : elle s'efface dès que la saisie change.
+watch(amount, () => { budgetError.value = null })
+
+async function editBudget(c: AdsReportRow) {
+  editing.value = c
+  amount.value = ((c.budget?.amountMicros ?? 0) / 1_000_000).toLocaleString('fr-FR', { minimumFractionDigits: 2, useGrouping: false })
+  budgetError.value = null
+  await nextTick()
+  dialog.value?.showModal()
+}
+async function saveBudget() {
+  const c = editing.value
+  if (!c?.budget || busy.value) return
+  if (!parsed.value.ok) { budgetError.value = parsed.value.error; return }
+  busy.value = c.id
+  budgetError.value = null
+  try {
+    await cmsApi(`/api/cms/google-ads/campaigns/${c.id}/budget`, { method: 'PUT', body: { amount: amount.value, expectedMicros: c.budget.amountMicros } })
+    dialog.value?.close()
+    toast.success('Budget modifié')
+    await load()
+  }
+  catch (e: any) {
+    budgetError.value = cmsErrorMessage(e, 'Le budget n\'a pas pu être modifié.')
+    // Le budget a changé entre-temps dans Google Ads : la page relit les campagnes, la fenêtre montre le nouveau montant.
+    if (e?.statusCode === 409) {
+      await load()
+      const fresh = report.value?.campaigns.find(x => x.id === c.id)
+      if (fresh) editing.value = fresh
+    }
+  }
+  finally {
+    busy.value = null
+  }
+}
 </script>
 
 <template>
@@ -121,6 +189,7 @@ const hasPayments = computed(() => !!report.value && report.value.totals.payment
               <tr>
                 <th>Campagne</th>
                 <th class="text-right hidden md:table-cell">Affichages</th>
+                <th class="text-right">Budget par jour</th>
                 <th class="text-right">Clics</th>
                 <th class="text-right">Dépense</th>
                 <th class="text-right hidden md:table-cell" title="Conversions comptées par Google Ads">Conv. Google</th>
@@ -132,7 +201,26 @@ const hasPayments = computed(() => !!report.value && report.value.totals.payment
               <tr v-for="c in report.campaigns" :key="c.id" :data-ads-campaign="c.id">
                 <td class="min-w-40">
                   <div class="font-medium">{{ c.name || `Campagne n° ${c.id}` }}</div>
-                  <div class="text-xs" :class="c.status === 'ENABLED' ? 'text-success' : 'text-base-content/50'">{{ ADS_STATUS_LABELS[c.status] ?? c.status }}</div>
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                    <span :class="c.status === 'ENABLED' ? 'text-success' : 'text-base-content/50'" data-ads-status>{{ ADS_STATUS_LABELS[c.status] ?? c.status }}</span>
+                    <button
+                      v-if="isAdmin && !statusLock(c)" type="button" class="btn btn-xs btn-ghost" :disabled="!!busy" data-ads-toggle
+                      :title="c.status === 'ENABLED' ? 'Arrêter la diffusion des annonces de cette campagne' : 'Reprendre la diffusion des annonces de cette campagne'" @click="setStatus(c)"
+                    >
+                      <span v-if="busy === c.id" class="loading loading-spinner loading-xs" />
+                      <component :is="c.status === 'ENABLED' ? Pause : Play" v-else :size="12" />
+                      {{ c.status === 'ENABLED' ? 'Mettre en pause' : 'Relancer' }}
+                    </button>
+                  </div>
+                </td>
+                <td class="text-right tabular-nums whitespace-nowrap" data-ads-budget>
+                  <template v-if="c.budget && c.budget.period === 'DAILY'">{{ money(c.budget.amountMicros) }}</template>
+                  <span v-else class="text-base-content/50">—</span>
+                  <button
+                    v-if="isAdmin && !budgetLock(c)" type="button" class="btn btn-xs btn-ghost btn-square" :disabled="!!busy" data-ads-budget-edit
+                    title="Changer le budget par jour" :aria-label="`Changer le budget par jour de la campagne ${c.name}`" @click="editBudget(c)"
+                  ><Pencil :size="12" /></button>
+                  <div v-else-if="isAdmin && c.status !== 'REMOVED' && budgetLock(c)" class="text-xs font-normal text-base-content/50 whitespace-normal max-w-40 ml-auto" data-ads-budget-lock>{{ budgetLock(c) }}</div>
                 </td>
                 <td class="text-right tabular-nums hidden md:table-cell">{{ count(c.impressions) }}</td>
                 <td class="text-right tabular-nums">{{ count(c.clicks) }}</td>
@@ -147,7 +235,7 @@ const hasPayments = computed(() => !!report.value && report.value.totals.payment
               <tr v-if="report.unassigned.contacts" data-ads-unassigned>
                 <td colspan="2" class="hidden md:table-cell text-base-content/70">Venus de Google Ads, campagne non retrouvée</td>
                 <td class="md:hidden text-base-content/70">Campagne non retrouvée</td>
-                <td /><td /><td class="hidden md:table-cell" />
+                <td /><td /><td /><td class="hidden md:table-cell" />
                 <td class="text-right tabular-nums font-semibold">{{ count(report.unassigned.contacts) }}</td>
                 <td />
               </tr>
@@ -155,6 +243,30 @@ const hasPayments = computed(() => !!report.value && report.value.totals.payment
           </table>
         </div>
       </div>
+
+      <!-- Budget par jour d'une campagne. -->
+      <dialog ref="dialog" class="modal" data-ads-budget-dialog @close="editing = null">
+        <form v-if="editing?.budget" class="modal-box space-y-4" novalidate @submit.prevent="saveBudget">
+          <h2 class="text-lg font-bold">Budget par jour</h2>
+          <p class="text-sm text-base-content/70">Campagne « {{ editing.name }} ». Budget actuel : <strong data-ads-budget-current>{{ money(editing.budget.amountMicros) }}</strong> par jour.</p>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Nouveau budget par jour ({{ currency }})</legend>
+            <input v-model="amount" class="input w-full" :class="{ 'input-error': budgetError }" inputmode="decimal" autocomplete="off" data-ads-budget-input>
+            <p v-if="budgetError" class="label text-error whitespace-normal" role="alert" data-ads-budget-error>{{ budgetError }}</p>
+            <p v-else-if="parsed.ok && !unchanged" class="label whitespace-normal" data-ads-budget-effect>
+              Google pourra dépenser jusqu'à {{ money(parsed.micros * 2) }} certains jours, et {{ money(Math.round(parsed.micros * ADS_MONTH_FACTOR)) }} au plus sur un mois.
+            </p>
+          </fieldset>
+          <p class="text-xs text-base-content/60">Le changement s'applique tout de suite dans Google Ads. Il est inscrit au journal d'activité.</p>
+          <div class="modal-action">
+            <button type="button" class="btn btn-sm" @click="dialog?.close()">Annuler</button>
+            <button class="btn btn-sm btn-primary" :disabled="!!busy || !parsed.ok || unchanged" data-ads-budget-save>
+              <span v-if="busy" class="loading loading-spinner loading-xs" />Changer le budget
+            </button>
+          </div>
+        </form>
+        <form method="dialog" class="modal-backdrop"><button aria-label="Fermer">Fermer</button></form>
+      </dialog>
 
       <p class="text-xs text-base-content/50 mt-4">
         Dépense, clics et conversions : Google Ads, relus toutes les 5 minutes (dernière lecture {{ cmsFormatWhen(ok!.updatedAt) }}), jours comptés dans le fuseau horaire du compte.
