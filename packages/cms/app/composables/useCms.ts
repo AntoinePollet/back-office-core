@@ -248,7 +248,9 @@ export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K
     // Un jeton anti-robots ne sert qu'une fois : il est relancé après chaque envoi que le serveur a pu vérifier.
     let consumed = protection.active.value
     try {
-      await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value, ...(protection.active.value ? { turnstile: protection.token.value } : {}) } })
+      // Provenance du visiteur (annonce, e-mail, autre site…) : voir `useCmsAttribution.ts`.
+      const origin = cmsVisitOrigin()
+      await cmsApi(`/api/forms/${id}`, { method: 'POST', body: { values, website: trap.value, ...(origin ? { origin } : {}), ...(protection.active.value ? { turnstile: protection.token.value } : {}) } })
       sent.value = true
       for (const key of Object.keys(values)) delete (values as Record<string, unknown>)[key]
       Object.assign(values, initial)

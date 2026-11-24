@@ -97,6 +97,11 @@ site: {
   l'accueil (le site écrit déjà le sien) : `useCmsSeo(home, { structuredData: false })`.
 - Les valeurs sont aussi dans `entry.seo` (`title`, `description`, `shareTitle`, `shareDescription`, `image`, `noindex`).
 - Les seuils des conseils (longueurs, taille d'image…) sont regroupés et expliqués dans `shared/seo.ts` du core.
+- L'onglet montre aussi les **titres de la page** (H1 à H6), lus dans la page elle-même, affichée sans être vue avec la
+  saisie en cours. C'est donc le gabarit du site qui décide : chaque page doit avoir **un seul `<h1>`**, en général le
+  titre du contenu (ou l'accroche d'une page unique), puis des `<h2>` et `<h3>` sans sauter de niveau. Les boutons
+  « Titre de section (H2) » et « Sous-titre (H3) » des textes mis en forme produisent ces deux niveaux : dans le
+  gabarit, ne mettez pas ce texte sous un titre de niveau plus bas que H1.
 
 ## Reprendre des contenus existants
 
@@ -355,6 +360,30 @@ envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 j
 Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
 « Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
 `{{ fields.email }}` dans « Répondre à ».
+
+### Provenance des contacts (annonces, e-mails, moteurs de recherche)
+
+Rien à écrire dans les pages : le core relève d'où vient chaque visiteur et le joint à ses messages (`useCmsForm`) et
+à ses paiements (`useCmsCheckout`). Dans « Messages reçus » et « Paiements », un tableau dit combien viennent de
+Google Ads, d'une autre publicité, d'un e-mail, d'un réseau social, d'un moteur de recherche, d'un autre site ou d'un
+accès direct, avec le détail par campagne ; un clic sur un canal filtre la liste, et l'export CSV a les colonnes de
+provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign }}`, `{{ origin.term }}` et
+`{{ origin.source }}`.
+
+- **Ce qui est relevé** : les paramètres `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content` de la
+  page d'arrivée, l'identifiant de clic des régies (`gclid` de Google Ads — à laisser activé dans Google Ads,
+  « Balisage automatique » —, `msclkid`, `fbclid`…), le domaine du site précédent (pas son adresse complète, qui peut
+  contenir la recherche du visiteur) et la page d'arrivée. Le serveur contrôle tout et décide lui-même du canal.
+- **Pour les autres régies et les e-mails**, ajouter les paramètres `utm_*` aux liens : `utm_medium=cpc` (ou `paid_social`)
+  pour une publicité, `utm_medium=email` pour une lettre d'information.
+- **Par défaut, la provenance n'est gardée qu'en mémoire, le temps de la visite** (navigation dans le site comprise) :
+  rien n'est écrit sur l'appareil du visiteur, aucun bandeau n'est nécessaire pour cela. Un visiteur qui revient plus
+  tard compte en « Accès direct ».
+- **La garder plusieurs jours** demande l'accord du visiteur : `site: { attribution: { rememberDays: 30 } }` dans
+  `cms.config.ts`, puis, dans le bandeau de consentement du site, `cmsAttributionConsent(true)` quand le visiteur
+  accepte (à chaque chargement de page où son accord est connu) et `cmsAttributionConsent(false)` s'il le retire.
+  Sans cet appel, rien n'est écrit.
+- **Désactiver** : `site: { attribution: false }`.
 
 ### Protéger un formulaire des robots
 

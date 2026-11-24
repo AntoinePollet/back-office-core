@@ -83,6 +83,9 @@ export default defineNuxtModule<CmsModuleOptions>({
     // Réglages de référencement du site, pour `useCmsSeo` : les pages n'embarquent pas toute la configuration.
     const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>
     publicConfig.cmsSeo = { siteName: String(config.site?.name ?? ''), titleSuffix: String(config.site?.titleSuffix ?? ''), shareImage: String(config.site?.shareImage ?? '') }
+    // Provenance des contacts : lue par le site à l'arrivée du visiteur (`site.attribution`).
+    const attribution = config.site?.attribution
+    publicConfig.cmsAttribution = { enabled: attribution !== false, rememberDays: attribution ? Number(attribution.rememberDays ?? 0) : 0 }
     const definitions = [...Object.values(config.singletons ?? {}), ...Object.values(config.collections ?? {})] as { icon?: string; label: string }[]
     const iconsDir = join(dirname(createRequire(import.meta.url).resolve('@lucide/vue')), '../esm/icons')
     const names = [...new Set(definitions.map(d => d.icon).filter((n): n is string => !!n))].filter((name) => {

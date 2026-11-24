@@ -96,7 +96,8 @@ export default async function (t) {
 
   await step('bouton « Acheter » du site : session créée avec le prix publié, quantité, image, retour, puis redirection vers Stripe', async () => {
     const context = await t.newContext(); const site = await t.newPage({ context })
-    await site.goto(B + '/boutique', { waitUntil: 'networkidle0' })
+    // Le visiteur arrive par une annonce Google Ads : sa provenance part avec le paiement.
+    await site.goto(B + '/boutique?utm_source=google&utm_medium=cpc&utm_campaign=panneaux&gclid=TEST-CLIC-1', { waitUntil: 'networkidle0' })
     const cards = await site.$$eval('[data-product]', els => els.map(e => e.dataset.product))
     // Seuls les produits publiés sont sur la page.
     check(cards.sort().join() === 'Panneau acoustique,Panneau sur devis,Panneau épuisé', cards.join())
@@ -119,6 +120,7 @@ export default async function (t) {
     check(b['metadata[cms_entry]'] === ids.panel && b['metadata[cms_collection]'] === 'products' && b['payment_intent_data[metadata][cms_entry]'] === ids.panel, 'métadonnées')
     check(b['shipping_address_collection[allowed_countries][0]'] === 'FR' && b['shipping_address_collection[allowed_countries][1]'] === 'BE', 'livraison')
     check(!Object.keys(b).some(k => k.startsWith('payment_method_types')), 'payment_method_types envoyé')
+    check(b['metadata[cms_o_source]'] === 'google' && b['metadata[cms_o_campaign]'] === 'panneaux' && b['metadata[cms_o_click]'] === 'gclid' && b['metadata[cms_o_click_id]'] === 'TEST-CLIC-1' && b['metadata[cms_o_landing]'] === '/boutique', 'provenance : ' + JSON.stringify(Object.fromEntries(Object.entries(b).filter(([k]) => k.includes('cms_o_')))))
   })
 
   await step('montant envoyé par le navigateur ignoré : le serveur relit le prix publié', async () => {
@@ -195,9 +197,11 @@ export default async function (t) {
     const [p] = await payments()
     check(p.status === 'paid' && p.title === 'Panneau acoustique' && p.quantity === 2 && p.unitAmount === 4990 && p.amount === 9980 && p.currency === 'eur', JSON.stringify(p))
     check(p.email === 'jeanne@example.com' && p.shipping.city === 'Paris' && p.livemode === false && p.paymentIntent === 'pi_test_1' && p.entryId === ids.panel, JSON.stringify(p))
+    check(p.origin?.channel === 'google-ads' && p.origin.campaign === 'panneaux' && p.origin.clickId === 'TEST-CLIC-1', 'provenance : ' + JSON.stringify(p.origin))
     const sent = await until(() => calls().find(c => c.url === '/vente'), 'appel du workflow')
     const v = sent.body.payment
     check(v.product === 'Panneau acoustique' && v.quantity === '2' && v.amount.replace(/\s/g, ' ') === '99,80 €' && v.email === 'jeanne@example.com' && v.mode === 'test', JSON.stringify(v))
+    check(sent.body.origin?.channel === 'Google Ads' && sent.body.origin.campaign === 'panneaux', 'provenance dans le workflow : ' + JSON.stringify(sent.body.origin))
     check(v.shipping === 'Jeanne Martin\n12 rue des Lilas\n75011 Paris\nFR' && v.adminUrl === `${B}/admin/payments?payment=${p.id}` && v.reference === 'pi_test_1', JSON.stringify(v))
     const run = await until(async () => (await claire.json('/api/cms/workflow-runs')).find(x => x.event === 'payment.succeeded'), 'journal')
     check(run.status === 'success' && run.summary.startsWith('Un paiement est reçu : « Panneau acoustique » × 2'), JSON.stringify(run))
@@ -243,13 +247,17 @@ export default async function (t) {
   await step('écran « Paiements » : liste, test distingué de la production, détail, lien vers Stripe', async () => {
     await page.goto(B + '/admin/payments', { waitUntil: 'domcontentloaded' })
     await says(page, 'Paiements de test : aucun argent n\'a circulé.')
-    await page.waitForSelector('main li button')
-    const rows = await page.$$eval('main li button', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
+    await page.waitForSelector('main [data-payment]')
+    const rows = await page.$$eval('main [data-payment]', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))
     check(rows.length === 2 && rows.some(r => r.includes('Panneau acoustique × 2') && r.includes('99,80') && r.includes('Payé')) && rows.some(r => r.includes('Échoué')), rows.join(' | '))
-    await clickText(page, 'main li button', 'Payé')
+    await clickText(page, 'main [data-payment]', 'Payé')
     const detail = await page.$eval('[data-detail]', a => a.innerText)
     check(detail.includes('Jeanne Martin · jeanne@example.com') && detail.includes('12 rue des Lilas') && detail.includes('Test') && detail.includes('2 × 49,90'), detail)
     check(await page.$eval('[data-detail] a.btn-primary', a => a.href) === 'https://dashboard.stripe.com/test/payments/pi_test_1', 'lien Stripe')
+    // Provenance : le paiement venu de l'annonce est compté dans « Google Ads », avec sa campagne et son montant.
+    check(await page.$eval('[data-origin-detail]', e => e.dataset.channel) === 'google-ads', 'provenance du détail')
+    const ads = await page.$eval('[data-origin-channel="google-ads"]', e => e.innerText.replace(/\s+/g, ' '))
+    check(ads.includes('Google Ads') && ads.includes('1 · 99,80') && ads.includes('Campagne « panneaux »'), 'tableau : ' + ads)
     await t.shot(page, 'paiements-detail')
     // Largeur de téléphone : la liste puis le détail, l'un sous l'autre.
     await page.setViewport({ width: 390, height: 1400 }); await wait(300)

@@ -1,5 +1,6 @@
 import { and, count, eq, lt } from 'drizzle-orm'
 import type { H3Event } from 'h3'
+import { CHANNELS, type StoredOrigin, channelOfRow } from '../../shared/attribution'
 import { type FormDefinition, formDefinitions, formSummary, formatFormValue } from '../../shared/modules'
 import type { CmsModuleDefinition } from '../utils/modules'
 
@@ -30,6 +31,10 @@ export const formsModule: CmsModuleDefinition = {
         { key: 'form.name', label: 'Nom du formulaire' },
         { key: 'form.summary', label: 'Tout le message : une ligne par champ rempli' },
         { key: 'form.adminUrl', label: 'Adresse du message dans le back-office' },
+        { key: 'origin.channel', label: 'Provenance : canal (Google Ads, e-mail, moteur de recherche…)' },
+        { key: 'origin.campaign', label: 'Provenance : nom de la campagne' },
+        { key: 'origin.term', label: 'Provenance : mot-clé de l\'annonce' },
+        { key: 'origin.source', label: 'Provenance : source (utm_source ou site d\'où vient le visiteur)' },
         ...[...fields].map(([key, label]) => ({ key: `fields.${key}`, label: `Champ « ${label} »` })),
       ],
       sample: (target) => {
@@ -41,32 +46,33 @@ export const formsModule: CmsModuleDefinition = {
           : field.type === 'date' ? '2026-01-15'
           : field.format === 'email' ? 'visiteur@example.com'
           : field.type === 'textarea' ? 'Bonjour,\nceci est un message d\'exemple.' : 'Exemple']))
-        return formEvent(id, def, 'exemple', values, '')
+        return formEvent(id, def, 'exemple', values, '', { channel: 'google-ads', source: 'google', medium: 'cpc', campaign: 'printemps', term: 'avocat lyon' })
       },
     }]
   },
 }
 
 /** L'événement « formulaire envoyé », avec les variables proposées aux workflows. */
-function formEvent(id: string, def: FormDefinition, submissionId: string, values: Record<string, unknown>, origin: string) {
+function formEvent(id: string, def: FormDefinition, submissionId: string, values: Record<string, unknown>, origin: string, from: StoredOrigin | null) {
   return {
     summary: `Formulaire « ${def.label} » envoyé`,
     target: id,
     context: {
       form: { name: def.label, summary: formSummary(def, values), adminUrl: `${origin}/admin/forms?message=${submissionId}` },
       fields: Object.fromEntries(Object.entries(def.fields).map(([key, field]) => [key, formatFormValue(field, values[key])])),
+      origin: { channel: CHANNELS[channelOfRow(from)], campaign: from?.campaign ?? '', term: from?.term ?? '', source: from?.source ?? from?.referrer ?? '' },
     },
   }
 }
 
 /** Enregistre un message validé, fait le ménage des messages trop anciens et prévient les workflows. */
-export async function storeSubmission(event: H3Event, id: string, def: FormDefinition, values: Record<string, unknown>) {
+export async function storeSubmission(event: H3Event, id: string, def: FormDefinition, values: Record<string, unknown>, from: StoredOrigin | null = null) {
   const db = useDb(event)
-  const row = { id: crypto.randomUUID(), form: id, values, read: false, createdAt: new Date() }
+  const row = { id: crypto.randomUUID(), form: id, values, origin: from, read: false, createdAt: new Date() }
   await db.insert(schema.formSubmissions).values(row)
   const { retentionDays } = moduleOptions<{ retentionDays: number }>('forms')
   await db.delete(schema.formSubmissions).where(lt(schema.formSubmissions.createdAt, new Date(Date.now() - retentionDays * 86_400_000)))
-  emitCmsEvents(event, [{ name: 'form.submitted', module: 'forms', ...formEvent(id, def, row.id, values, getRequestURL(event).origin) }])
+  emitCmsEvents(event, [{ name: 'form.submitted', module: 'forms', ...formEvent(id, def, row.id, values, getRequestURL(event).origin, from) }])
   return row
 }
 

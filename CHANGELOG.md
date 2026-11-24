@@ -22,6 +22,17 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   le site déclenche lui-même la sauvegarde de la nuit et les publications programmées. Demande Node 24.
   `pnpm create-site --hosting node` crée un tel site, avec son `Dockerfile`, son `docker-compose.yml` (Caddy pour le
   HTTPS), son fichier `.env` et un guide `HEBERGEMENT.md`. Rien ne change pour les sites hébergés chez Cloudflare.
+- **Référencement : titres de la page.** L'onglet Référencement affiche le plan de la page (H1, H2, H3…) tel que Google
+  le lit, mis à jour pendant la saisie, et signale les problèmes : titre principal (H1) absent, en double, vide ou sans
+  rapport avec le titre de la page, niveau sauté (H2 puis H4), titre vide. Les textes longs sans intertitre sont
+  aussi signalés, dans la vue d'ensemble comme dans l'onglet. Dans l'éditeur, les boutons de titre disent le niveau
+  qu'ils produisent (« Titre de section (H2) », « Sous-titre (H3) »).
+- **Provenance des contacts.** Le site relève d'où vient chaque visiteur (annonce Google Ads grâce au `gclid`, autre
+  publicité, e-mail, réseau social, moteur de recherche, autre site, accès direct) et le joint à ses messages et à ses
+  paiements. « Messages reçus » et « Paiements » disent combien de contacts viennent des annonces, campagne par
+  campagne, avec un filtre par canal ; l'export CSV et les workflows (`{{ origin.channel }}`…) ont la provenance.
+  Par défaut, elle n'est gardée que le temps de la visite, sans rien écrire sur l'appareil du visiteur ;
+  `site.attribution` la règle (voir le README du site). Aucun changement à faire dans les pages.
 
 ## 0.11.0 — 2026-11-23
 

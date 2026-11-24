@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Download, Mail, Trash2 } from '@lucide/vue'
+import { CHANNELS, type Channel, type OriginPeriod, PAID_CHANNELS, type StoredOrigin, channelOfRow, filterByOrigin } from '../../../shared/attribution'
 import { type FormDefinition, formDefinitions, formatFormValue } from '../../../shared/modules'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
-type Submission = { id: string; form: string; values: Record<string, unknown>; read: boolean; createdAt: string }
+type Submission = { id: string; form: string; values: Record<string, unknown>; origin: StoredOrigin | null; read: boolean; createdAt: string }
 
 const schema = await useCmsSchema()
 const route = useRoute()
@@ -14,7 +15,12 @@ const formIds = Object.keys(forms)
 
 const data = ref(await cmsApi<{ submissions: Submission[]; retentionDays: number }>('/api/cms/forms').catch((e) => { throw createError({ statusCode: e?.statusCode ?? 500, message: cmsErrorMessage(e), fatal: true }) }))
 const tab = ref(formIds[0]!)
-const list = computed(() => data.value.submissions.filter(s => s.form === tab.value))
+const ofForm = computed(() => data.value.submissions.filter(s => s.form === tab.value))
+// Provenance : période et canal choisis dans le tableau « D'où viennent les messages », appliqués à la liste.
+const days = ref<OriginPeriod>(null)
+const channel = ref<Channel | null>(null)
+const list = computed(() => filterByOrigin(ofForm.value, days.value, channel.value))
+const paidBadge = (s: Submission) => { const c = channelOfRow(s.origin); return PAID_CHANNELS.includes(c) ? CHANNELS[c] : null }
 const unreadIn = (id: string) => data.value.submissions.filter(s => s.form === id && !s.read).length
 const selected = ref<Submission | null>(null)
 
@@ -61,8 +67,11 @@ function exportCsv() {
   // Un texte qui commence par = + - ou @ serait pris pour une formule par le tableur : il est neutralisé par une apostrophe.
   const cell = (text: string) => `"${(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text).replace(/"/g, '""')}"`
   const rows = [
-    ['Date', ...fields.map(([, f]) => f.label)],
-    ...list.value.map(s => [new Date(s.createdAt).toLocaleString('fr-FR'), ...fields.map(([key, f]) => formatFormValue(f, s.values[key]))]),
+    ['Date', ...fields.map(([, f]) => f.label), 'Provenance', 'Campagne', 'Mot-clé', 'Source'],
+    ...list.value.map(s => [
+      new Date(s.createdAt).toLocaleString('fr-FR'), ...fields.map(([key, f]) => formatFormValue(f, s.values[key])),
+      CHANNELS[channelOfRow(s.origin)], s.origin?.campaign ?? '', s.origin?.term ?? '', [s.origin?.source ?? s.origin?.referrer, s.origin?.medium].filter(Boolean).join(' / '),
+    ]),
   ]
   const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const link = document.createElement('a')
@@ -76,6 +85,8 @@ function exportCsv() {
 onMounted(() => {
   const wanted = data.value.submissions.find(s => s.id === route.query.message)
   if (wanted) { tab.value = wanted.form; open(wanted) }
+  // Sans message à ouvrir : les 30 derniers jours.
+  else days.value = 30
 })
 </script>
 
@@ -90,14 +101,16 @@ onMounted(() => {
     </div>
 
     <div v-if="formIds.length > 1" role="tablist" class="tabs tabs-border mb-3">
-      <a v-for="id in formIds" :key="id" role="tab" class="tab" :class="{ 'tab-active': tab === id }" @click="tab = id; selected = null">
+      <a v-for="id in formIds" :key="id" role="tab" class="tab" :class="{ 'tab-active': tab === id }" @click="tab = id; selected = null; channel = null">
         {{ forms[id]!.label }}<span v-if="unreadIn(id)" class="badge badge-sm badge-info ml-2">{{ unreadIn(id) }}</span>
       </a>
     </div>
 
+    <CmsOriginStats v-if="ofForm.length" v-model:days="days" v-model:channel="channel" :rows="ofForm" :noun="['message', 'messages']" class="mb-4" />
+
     <div class="grid lg:grid-cols-[1fr_24rem] gap-6 items-start">
       <div class="card bg-base-100 border border-base-300 overflow-hidden">
-        <div v-if="!list.length" class="p-10 text-center text-sm text-base-content/50">Aucun message pour l'instant.</div>
+        <div v-if="!list.length" class="p-10 text-center text-sm text-base-content/50">{{ ofForm.length ? 'Aucun message pour cette période ou ce canal.' : 'Aucun message pour l\'instant.' }}</div>
         <ul v-else class="divide-y divide-base-300">
           <li v-for="s in list" :key="s.id">
             <button type="button" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-base-200 cursor-pointer" :class="{ 'bg-base-200': selected?.id === s.id }" @click="open(s)">
@@ -106,6 +119,7 @@ onMounted(() => {
                 <span class="block truncate" :class="{ 'font-semibold': !s.read }">{{ preview(s)[0] ?? 'Message' }}</span>
                 <span class="block truncate text-sm text-base-content/60">{{ preview(s)[1] }}</span>
               </span>
+              <span v-if="paidBadge(s)" class="badge badge-sm badge-accent badge-soft shrink-0" data-origin-badge>{{ paidBadge(s) }}</span>
               <span class="shrink-0 text-xs text-base-content/50">{{ cmsFormatWhen(s.createdAt) }}</span>
             </button>
           </li>
@@ -122,6 +136,7 @@ onMounted(() => {
               <dd class="whitespace-pre-wrap break-words">{{ formatFormValue(field, selected.values[key]) || '—' }}</dd>
             </div>
           </dl>
+          <CmsOriginDetail :origin="selected.origin" />
           <div class="flex flex-wrap gap-2 pt-1">
             <a v-if="replyAddress(selected)" class="btn btn-sm btn-primary grow" :href="`mailto:${replyAddress(selected)}`"><Mail :size="16" />Répondre</a>
             <button class="btn btn-sm" @click="setRead(selected, false); selected = null">Marquer non lu</button>

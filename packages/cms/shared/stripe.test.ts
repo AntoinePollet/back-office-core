@@ -157,8 +157,11 @@ test('session reçue par le webhook : produit, montant, acheteur, livraison (deu
   const p = paymentFromSession(session)!
   assert.deepEqual({ ...p, shipping: undefined }, {
     sessionId: 'cs_test_1', paymentIntent: 'pi_1', collection: 'products', entryId: 'abc', title: 'Panneau', quantity: 2, unitAmount: 4990,
-    amount: 9980, currency: 'eur', email: 'jeanne@example.com', name: 'Jeanne Martin', shipping: undefined, livemode: false,
+    amount: 9980, currency: 'eur', email: 'jeanne@example.com', name: 'Jeanne Martin', shipping: undefined, livemode: false, origin: null,
   })
+  // Provenance de l'acheteur : relue dans les métadonnées, contrôlée, canal recalculé.
+  const ad = paymentFromSession({ ...session, metadata: { ...session.metadata, cms_o_source: 'google', cms_o_medium: 'cpc', cms_o_campaign: 'printemps', cms_o_click: 'gclid', cms_o_click_id: 'x1' } })!
+  assert.deepEqual(ad.origin, { source: 'google', medium: 'cpc', campaign: 'printemps', click: 'gclid', clickId: 'x1', channel: 'google-ads' })
   assert.equal(formatShipping(p.shipping), 'Jeanne Martin\n12 rue des Lilas\n75011 Paris\nFR')
   const old = { ...session, collected_information: undefined, shipping_details: session.collected_information.shipping_details }
   assert.equal(paymentFromSession(old)!.shipping!.city, 'Paris')

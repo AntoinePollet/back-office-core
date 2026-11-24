@@ -14,6 +14,7 @@
  * Le montant payé vient toujours du back-office : le site n'envoie que « quel contenu, combien d'exemplaires »,
  * le serveur relit le prix publié. Le paiement n'est tenu pour réussi qu'à réception de l'événement signé de Stripe.
  */
+import { type StoredOrigin, originFromMetadata } from './attribution'
 
 // ───────────────────────── Déclaration ─────────────────────────
 
@@ -197,7 +198,8 @@ const STRIPE_LOCALES = ['bg', 'cs', 'da', 'de', 'el', 'en', 'en-GB', 'es', 'es-4
 export const stripeLocale = (locale: string) => (STRIPE_LOCALES.includes(locale) ? locale : STRIPE_LOCALES.includes(locale.split('-')[0]!) ? locale.split('-')[0]! : 'auto')
 
 /** Métadonnées posées sur la session et le paiement : c'est ainsi que le webhook retrouve le produit. */
-export type CheckoutMetadata = { cms_collection: string; cms_entry: string; cms_title: string; cms_quantity: string; cms_unit_amount: string; cms_locale: string }
+/** Métadonnées de la session : le produit, et la provenance de l'acheteur (`cms_o_*`, voir `shared/attribution.ts`). */
+export type CheckoutMetadata = { cms_collection: string; cms_entry: string; cms_title: string; cms_quantity: string; cms_unit_amount: string; cms_locale: string } & { [key: `cms_o_${string}`]: string }
 
 export type CheckoutInput = {
   currency: string
@@ -320,6 +322,8 @@ export type PaymentFromSession = {
   name: string | null
   shipping: ShippingAddress | null
   livemode: boolean
+  /** D'où venait l'acheteur, lu dans les métadonnées de la session. */
+  origin: StoredOrigin | null
 }
 
 export type ShippingAddress = { name: string | null; line1: string | null; line2: string | null; postalCode: string | null; city: string | null; state: string | null; country: string | null }
@@ -355,6 +359,7 @@ export function paymentFromSession(session: Obj): PaymentFromSession | null {
       ? { name: str(ship?.name), line1: str(address.line1), line2: str(address.line2), postalCode: str(address.postal_code), city: str(address.city), state: str(address.state), country: str(address.country) }
       : null,
     livemode: session.livemode === true,
+    origin: originFromMetadata(session?.metadata),
   }
 }
 

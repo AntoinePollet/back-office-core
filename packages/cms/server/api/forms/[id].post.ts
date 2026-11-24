@@ -1,3 +1,4 @@
+import { cleanOrigin } from '../../../shared/attribution'
 import { formDefinitions, validateSubmission } from '../../../shared/modules'
 import { storeSubmission } from '../../cms-modules/forms'
 import { requireHuman } from '../../cms-modules/turnstile'
@@ -18,7 +19,7 @@ export default defineEventHandler(async (event) => {
 
   // Un formulaire de contact pèse quelques kilo-octets : au-delà, ce n'en est pas un.
   if (Number(getRequestHeader(event, 'content-length') ?? 0) > 100_000) throw createError({ statusCode: 413, message: 'Message trop long.' })
-  const body = await readBody<{ values?: unknown; website?: unknown; turnstile?: unknown }>(event).catch(() => null)
+  const body = await readBody<{ values?: unknown; website?: unknown; turnstile?: unknown; origin?: unknown }>(event).catch(() => null)
   // Champ piège, invisible pour une personne : un robot qui le remplit reçoit une réponse normale, mais rien n'est enregistré.
   if (body?.website) return { ok: true }
 
@@ -32,6 +33,7 @@ export default defineEventHandler(async (event) => {
   await requireHuman(event, body?.turnstile)
 
   await hitRateLimit(event, [limit.key], WINDOW_MS)
-  await storeSubmission(event, id, def, values)
+  // Provenance du visiteur : contrôlée, et classée dans un canal ici ; une provenance mal formée est simplement ignorée.
+  await storeSubmission(event, id, def, values, cleanOrigin(body?.origin))
   return { ok: true }
 })
