@@ -6,6 +6,7 @@ import {
   formatAmount, formatShipping, keyMode, paymentFromSession, sellableCollections, statusFromEvent,
 } from '../../shared/stripe'
 import type { CmsModuleDefinition, TemplateContext } from '../utils/modules'
+import { conversionForLead } from './google-conversions'
 
 /**
  * Paiement par Stripe Checkout (https://stripe.com).
@@ -194,14 +195,16 @@ export async function applyStripeEvent(event: H3Event, stripeEvent: { type?: str
   if (!found) return 'ignoré : session sans produit du site'
   const db = useDb(event)
   const now = new Date()
-  const row = { id: crypto.randomUUID(), ...found, refundedAmount: 0, status, createdAt: now, updatedAt: now }
+  // Vrai paiement réussi, venu d'une annonce Google avec l'accord de l'acheteur : à signaler à Google Ads.
+  const conversion = status === 'paid' && found.livemode ? await conversionForLead(event, 'payment', found.origin) : null
+  const row = { id: crypto.randomUUID(), ...found, conversion, refundedAmount: 0, status, createdAt: now, updatedAt: now }
   const [inserted] = await db.insert(schema.payments).values(row).onConflictDoNothing({ target: schema.payments.sessionId }).returning()
   let changed: PaymentRow | undefined = inserted
   if (!inserted) {
     const from = STATUS_FROM[status]
     if (from.length) {
       ;[changed] = await db.update(schema.payments)
-        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, updatedAt: now })
+        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, updatedAt: now, ...(conversion ? { conversion } : {}) })
         .where(and(eq(schema.payments.sessionId, found.sessionId), inArray(schema.payments.status, from))).returning()
     }
   }

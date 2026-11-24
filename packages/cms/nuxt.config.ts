@@ -55,6 +55,8 @@ export default defineNuxtConfig({
     /** Adresses de Google. Ne se changent que pour les tests : NUXT_GOOGLE_ADS_API_URL, NUXT_GOOGLE_OAUTH_TOKEN_URL. */
     googleAdsApiUrl: 'https://googleads.googleapis.com/v26',
     googleOauthTokenUrl: 'https://oauth2.googleapis.com/token',
+    /** Data Manager API de Google (envoi des conversions). Ne se change que pour les tests : NUXT_GOOGLE_DATA_MANAGER_URL. */
+    googleDataManagerUrl: 'https://datamanager.googleapis.com/v1',
     /** Nombre de jours pendant lesquels une sauvegarde est conservée : variable NUXT_BACKUP_RETENTION_DAYS. */
     backupRetentionDays: 30,
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */

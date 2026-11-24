@@ -457,7 +457,8 @@ accès en lecture seule, les chiffres s'affichent et les actions sont refusées 
    production : en mode « Test », le jeton créé à l'étape suivante cesse de marcher au bout de 7 jours.
 3. Créer le **jeton d'actualisation** : sur [OAuth Playground](https://developers.google.com/oauthplayground), roue
    dentée → « Use your own OAuth credentials » (ID client et secret), autorisation
-   `https://www.googleapis.com/auth/adwords`, se connecter avec un compte Google qui a accès au compte Google Ads
+   `https://www.googleapis.com/auth/adwords` (et `https://www.googleapis.com/auth/datamanager` si vous comptez
+   signaler les contacts à Google, voir plus bas), se connecter avec un compte Google qui a accès au compte Google Ads
    (directement, ou par un compte administrateur), puis « Exchange authorization code for tokens » : copier le
    *Refresh token*.
 
@@ -466,6 +467,27 @@ administrateur (MCC) si l'accès passe par lui, ID client, secret et jeton d'act
 connexion ». Pour une agence, ces trois derniers et le compte administrateur peuvent venir de l'hébergement
 (`NUXT_GOOGLE_ADS_CLIENT_ID`, `NUXT_GOOGLE_ADS_CLIENT_SECRET`, `NUXT_GOOGLE_ADS_REFRESH_TOKEN`,
 `NUXT_GOOGLE_ADS_LOGIN_CUSTOMER_ID`) : il ne reste alors que le numéro du compte à saisir pour chaque site.
+
+**Signaler les contacts à Google Ads (conversions).** Facultatif. Un message reçu ou un paiement réussi venu d'une
+annonce peut être signalé à Google Ads comme conversion : Google sait alors quels mots-clés amènent des contacts, et
+peut régler ses enchères dessus.
+
+- Dans Google Ads, créer une action de conversion de type **« Importation depuis les clics »** (Objectifs →
+  Conversions). L'écran « Annonces Google » liste celles du compte avec leur numéro.
+- Dans **Modules → Google Ads**, saisir ce numéro pour les messages, et un autre (ou le même) pour les paiements.
+  « Vérifier la connexion » contrôle qu'elles existent.
+- Côté Google Cloud, activer aussi la **Data Manager API** dans le projet, et créer le jeton d'actualisation avec les
+  **deux** autorisations : `https://www.googleapis.com/auth/adwords` et `https://www.googleapis.com/auth/datamanager`.
+  (Depuis juin 2026, Google n'ouvre plus l'ancien envoi de conversions de l'API Google Ads aux nouvelles intégrations.)
+- **Seuls partent les contacts dont le visiteur a donné son accord** : il faut donc le module Consentement. Sans
+  accord, le contact est compté par le site, mais rien n'est transmis.
+- Ce qui part : l'identifiant du clic (`gclid`), la date du contact, le montant d'un paiement et un identifiant
+  interne qui évite les doublons. Ni nom, ni e-mail, ni contenu du message.
+- L'envoi est fait par la tâche planifiée du site (toutes les cinq minutes), au plus tôt six heures après le clic :
+  Google ne connaît pas un clic plus récent. Une panne de Google est réessayée toutes les heures ; un réglage en cause
+  (jeton sans l'autorisation, action introuvable) arrête les envois sans rien perdre, et l'écran « Annonces Google »
+  le dit. L'état de chaque contact se lit dans son détail (« Messages reçus », « Paiements »).
+- Seuls les contacts arrivés après le réglage sont envoyés ; les paiements de test ne le sont jamais.
 
 **Rattacher les contacts aux campagnes.** Trois moyens, du plus sûr au moins sûr :
 

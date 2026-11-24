@@ -1,15 +1,19 @@
 // Module Google Ads (lecture) : réglages, vérification de la connexion, erreurs traduites, rapport des campagnes
 // rapproché des contacts du site (identifiant de campagne, nom, gclid retrouvé chez Google), écran, droits ;
-// pilotage par l'administrateur : pause, reprise, budget par jour, garde-fous, journal d'activité.
-import { check, clickText, json, login, says } from '../lib/harness.mjs'
+// pilotage par l'administrateur : pause, reprise, budget par jour, garde-fous, journal d'activité ;
+// conversions signalées à Google (Data Manager API) : accord exigé, attente après le clic, refus, panne, réglage en cause.
+import { check, clickText, json, login, says, until } from '../lib/harness.mjs'
 import { config } from '../lib/config.mjs'
-import { CUSTOMER_DOWN, CUSTOMER_EMPTY, CUSTOMER_READ_ONLY, CUSTOMER_TEST_ONLY, CUSTOMER_VIA_MANAGER, KNOWN_GCLID, MANAGER, SECRET_UNKNOWN, TOKEN_REVOKED } from '../lib/mock-google.mjs'
+import {
+  CUSTOMER_DOWN, CUSTOMER_EMPTY, CUSTOMER_READ_ONLY, CUSTOMER_TEST_ONLY, CUSTOMER_VIA_MANAGER, GCLID_GOOGLE_DOWN, GCLID_UNPARSEABLE, KNOWN_GCLID, MANAGER,
+  SECRET_UNKNOWN, TOKEN_REVOKED, TOKEN_WITHOUT_DATAMANAGER,
+} from '../lib/mock-google.mjs'
 
 export const meta = {
   title: 'Google Ads : réglages, campagnes, contacts du site par campagne, coût par contact',
   mock: true,
   // Seules les adresses de Google visent le faux service ; les identifiants sont saisis dans le back-office.
-  env: ({ mock }) => ({ NUXT_GOOGLE_ADS_API_URL: `${mock}/google-ads/v26`, NUXT_GOOGLE_OAUTH_TOKEN_URL: `${mock}/google/token` }),
+  env: ({ mock }) => ({ NUXT_GOOGLE_ADS_API_URL: `${mock}/google-ads/v26`, NUXT_GOOGLE_OAUTH_TOKEN_URL: `${mock}/google/token`, NUXT_GOOGLE_DATA_MANAGER_URL: `${mock}/google-datamanager/v1` }),
 }
 
 const CLIENT = '1234-abcd.apps.googleusercontent.com'
@@ -266,5 +270,100 @@ export default async function (t) {
     const r = await setStatus('101', 'PAUSED')
     check(r.status === 502 && /accès en lecture/.test(r.json.message) && /Standard/.test(r.json.message), `${r.status} ${r.text}`)
     check(campaign('101').status === 'ENABLED', 'campagne modifiée malgré le refus')
+  })
+
+  // ───── Conversions signalées à Google Ads ─────
+
+  const HOUR = 3_600_000
+  const tick = async () => (await visitor.post('/_cms/dev-scheduled', { cron: '*/5 * * * *' })).status
+  const lead = async name => (await json(page, '/api/cms/forms')).submissions.find(m => m.values.name === name)
+  const overview = async () => (await report()).json.conversions
+
+  await step('conversions : action de conversion contrôlée, vérifiée auprès de Google, listée dans l\'écran', async () => {
+    await save({ customerId: CUSTOMER })
+    const bad = await save({ messageConversion: 'ma conversion' })
+    check(bad.status === 400 && /que des chiffres/.test(bad.json.message), `${bad.status} ${bad.text}`)
+    await save({ messageConversion: '9999' })
+    let r = await verify()
+    check(!r.ok && /action de conversion n° 9999/.test(r.message), JSON.stringify(r))
+    check(/n° 9999 n'existe pas/.test((await overview()).problem ?? ''), JSON.stringify(await overview()))
+    await save({ messageConversion: '7001' })
+    r = await verify()
+    check(r.ok && r.message.includes('Conversions : « Message du site »'), JSON.stringify(r))
+    const o = await overview()
+    check(o.message === '7001' && o.payment === null && !o.problem && JSON.stringify(o.actions) === JSON.stringify([{ id: '7001', name: 'Message du site' }, { id: '7002', name: 'Achat sur le site' }]), JSON.stringify(o))
+    // L'éditeur voit les campagnes, pas les réglages de conversion.
+    check((await report(30, marc)).json.conversions === undefined, 'conversions montrées à l\'éditeur')
+  })
+
+  await step('mise en attente : seulement un clic Google avec l\'accord du visiteur', async () => {
+    const click = (clickId, extra = {}) => ({ click: 'gclid', clickId, at: Date.now() - 7 * HOUR, consent: true, ...extra })
+    const sent = await Promise.all([
+      contact('Accord donné', click('GCLID-ACCORD-000001')),
+      contact('Sans accord', click('GCLID-SANS-ACCORD-1', { consent: undefined })),
+      contact('Clic trop récent', click('GCLID-RECENT-00001', { at: Date.now() - HOUR })),
+      contact('Clic illisible', click(GCLID_UNPARSEABLE)),
+      contact('Google en panne', click(GCLID_GOOGLE_DOWN)),
+      contact('Autre régie', { source: 'facebook', medium: 'cpc', consent: true }),
+    ])
+    check(sent.every(r => r.status === 200), sent.map(r => r.status).join())
+    for (const name of ['Accord donné', 'Clic trop récent', 'Clic illisible', 'Google en panne']) check((await lead(name)).conversion?.state === 'pending', `${name} : ${JSON.stringify((await lead(name)).conversion)}`)
+    for (const name of ['Sans accord', 'Autre régie', 'Par gclid']) check((await lead(name)).conversion === null, `${name} : ${JSON.stringify((await lead(name)).conversion)}`)
+    check(t.google.ingested().length === 0, 'un contact est parti avant la tâche planifiée')
+  })
+
+  await step('tâche planifiée : envoi à Google six heures après le clic ; refus définitif, panne réessayée plus tard, rien en double', async () => {
+    check(await tick() === 200, 'tâche planifiée refusée')
+    const ok = await until(async () => { const m = await lead('Accord donné'); return m.conversion?.state === 'sent' ? m : null }, 'envoi du contact')
+    check(ok.conversion.requestId === 'demande-1' && Math.abs(ok.conversion.at - Date.now()) < 60_000, JSON.stringify(ok.conversion))
+    const [got] = t.google.ingested()
+    check(t.google.ingested().length === 1 && JSON.stringify(got.destination) === JSON.stringify({ operatingAccount: { accountId: '1234567890', accountType: 'GOOGLE_ADS' }, productDestinationId: '7001' }), JSON.stringify(got.destination))
+    const e = got.event
+    check(e.adIdentifiers.gclid === 'GCLID-ACCORD-000001' && e.transactionId === ok.id && e.consent.adUserData === 'CONSENT_GRANTED' && e.consent.adPersonalization === 'CONSENT_DENIED' && e.conversionValue === undefined, JSON.stringify(e))
+    check(Math.abs(Date.parse(e.eventTimestamp) - Date.parse(ok.createdAt)) < 1000, `date envoyée ${e.eventTimestamp}, contact ${ok.createdAt}`)
+    // Ce qui part chez Google ne contient ni le nom, ni l'e-mail, ni le message du visiteur.
+    const raw = JSON.stringify(calls().filter(c => c.url.includes('events:ingest')).map(c => c.body))
+    check(!raw.includes('visiteur@example.com') && !raw.includes('Accord donné') && !raw.includes('rendez-vous'), 'donnée personnelle envoyée à Google')
+    check((await lead('Clic trop récent')).conversion.state === 'pending' && !(await lead('Clic trop récent')).conversion.at, JSON.stringify((await lead('Clic trop récent')).conversion))
+    const refused = (await lead('Clic illisible')).conversion
+    check(refused.state === 'failed' && /could not be decoded/.test(refused.error), JSON.stringify(refused))
+    const down = (await lead('Google en panne')).conversion
+    check(down.state === 'pending' && down.tries === 1 && /pour le moment/.test(down.error), JSON.stringify(down))
+    // Second passage : rien n'est renvoyé (ni le contact déjà signalé, ni la panne avant une heure).
+    const before = calls().filter(c => c.url.includes('events:ingest')).length
+    check(await tick() === 200 && calls().filter(c => c.url.includes('events:ingest')).length === before && t.google.ingested().length === 1, 'un contact a été renvoyé')
+  })
+
+  await step('jeton sans l\'autorisation d\'envoi : rien n\'est perdu, le problème est dit, l\'envoi reprend une fois corrigé', async () => {
+    await save({}, { refreshToken: TOKEN_WITHOUT_DATAMANAGER })
+    check((await verify()).ok, 'les chiffres ne se lisent plus avec ce jeton')
+    check((await contact('Après le changement de jeton', { click: 'gclid', clickId: 'GCLID-APRES-000001', at: Date.now() - 7 * HOUR, consent: true })).status === 200, 'contact refusé')
+    check(await tick() === 200, 'tâche planifiée refusée')
+    const waiting = await until(async () => { const m = await lead('Après le changement de jeton'); return m.conversion?.error ? m.conversion : null }, 'essai d\'envoi')
+    check(waiting.state === 'pending' && !waiting.tries && /datamanager/.test(waiting.error), JSON.stringify(waiting))
+    check(/datamanager/.test((await overview()).problem ?? ''), 'problème absent de l\'écran : ' + JSON.stringify(await overview()))
+    await save({}, { refreshToken: TOKEN })
+    check((await verify()).ok && await tick() === 200, 'retour au bon jeton')
+    await until(async () => (await lead('Après le changement de jeton')).conversion.state === 'sent', 'envoi après correction')
+    check(t.google.ingested().length === 2 && !(await overview()).problem, JSON.stringify(await overview()))
+  })
+
+  await step('écran : contacts signalés, en attente et refusés ; état dit dans le détail d\'un message', async () => {
+    const o = await overview()
+    check(JSON.stringify(o.counts) === JSON.stringify({ pending: 2, sent: 2, failed: 1, expired: 0 }), JSON.stringify(o.counts))
+    await page.goto(B + '/admin/google-ads', { waitUntil: 'networkidle0' })
+    await page.waitForSelector('[data-ads-conversions]')
+    check((await page.$eval('[data-ads-conversion-for=message]', e => e.textContent)).includes('Action « Message du site »') && (await page.$eval('[data-ads-conversion-for=payment]', e => e.textContent)).includes('Non envoyés'), 'réglages affichés')
+    const counts = (await page.$eval('[data-ads-conversion-counts]', e => e.textContent)).replace(/\s+/g, ' ')
+    check(counts.includes('2 signalés') && counts.includes('2 en attente') && counts.includes('1 refusé par Google'), counts)
+    check((await page.$eval('[data-ads-conversion-actions]', e => e.innerText)).includes('7002') , 'actions du compte')
+    await page.$eval('[data-ads-conversions]', e => e.scrollIntoView())
+    await t.shot(page, 'conversions')
+    await page.goto(B + '/admin/forms', { waitUntil: 'networkidle0' })
+    await clickText(page, 'main ul.divide-y li button', 'Accord donné')
+    await page.waitForSelector('[data-origin-conversion][data-state=sent]')
+    check((await page.$eval('[data-origin-conversion]', e => e.textContent)).includes('signalé à Google Ads le'), 'état absent du détail')
+    await clickText(page, 'main ul.divide-y li button', 'Sans accord')
+    await page.waitForFunction(() => !document.querySelector('[data-origin-conversion]'))
   })
 }

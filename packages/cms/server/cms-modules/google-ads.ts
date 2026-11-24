@@ -7,6 +7,7 @@ import {
   adsCampaignQuery, adsCampaignStateQuery, adsClickQuery, adsCustomerId, adsFailure, adsRange, budgetLock, budgetMutation, buildAdsReport, dayIn, formatMicros,
   googleAdsReady, googleAdsSettingsErrors, oauthFailure, parseDailyBudget, readAdsAccount, readAdsCampaigns, readAdsClick, statusLock, statusMutation,
 } from '../../shared/google-ads'
+import { CONVERSION_ACTIONS_QUERY, readConversionActions } from '../../shared/conversions'
 import type { CmsModuleDefinition, ModuleSettings } from '../utils/modules'
 
 /**
@@ -15,7 +16,7 @@ import type { CmsModuleDefinition, ModuleSettings } from '../utils/modules'
  * relancer, changer son budget par jour. Rien d'autre n'est modifié dans le compte Google Ads.
  */
 
-class AdsError extends Error {
+export class AdsError extends Error {
   constructor(public failure: AdsFailure) { super(failure.message) }
 }
 
@@ -36,7 +37,7 @@ async function digest(parts: unknown[]) {
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function accessToken(event: H3Event, settings: ModuleSettings) {
+export async function accessToken(event: H3Event, settings: ModuleSettings) {
   const key = await digest([settings.clientId, settings.clientSecret, settings.refreshToken])
   const hit = tokens.get(key)
   if (hit && hit.expires > Date.now() + 60_000) return hit.token
@@ -74,7 +75,7 @@ async function call<T>(event: H3Event, settings: ModuleSettings, method: string,
 }
 
 /** Une requête GAQL sur le compte réglé ; toutes les pages de la réponse (10 000 lignes par page, 5 pages au plus). */
-async function search(event: H3Event, settings: ModuleSettings, query: string): Promise<unknown[]> {
+export async function search(event: H3Event, settings: ModuleSettings, query: string): Promise<unknown[]> {
   const pages: unknown[] = []
   let pageToken: string | undefined
   for (let i = 0; i < 5; i++) {
@@ -86,7 +87,7 @@ async function search(event: H3Event, settings: ModuleSettings, query: string): 
   return pages
 }
 
-async function account(event: H3Event, settings: ModuleSettings): Promise<AdsAccount> {
+export async function account(event: H3Event, settings: ModuleSettings): Promise<AdsAccount> {
   const found = readAdsAccount((await search(event, settings, ADS_ACCOUNT_QUERY))[0])
   if (!found) throw new AdsError({ kind: 'refused', message: 'Google Ads n\'a renvoyé aucun compte pour ce numéro.' })
   return found
@@ -124,6 +125,14 @@ export const googleAdsModule: CmsModuleDefinition = {
       help: 'Obtenu une fois, en se connectant avec un compte Google qui a accès au compte Google Ads, pour l\'autorisation « https://www.googleapis.com/auth/adwords » (voir le README du site). Pour mettre en pause ou changer un budget d\'ici, ce compte doit avoir l\'accès « Standard » ou « Administrateur » au compte Google Ads ; un accès en lecture suffit pour les chiffres.',
       env: { key: 'googleAdsRefreshToken', name: 'NUXT_GOOGLE_ADS_REFRESH_TOKEN' },
     },
+    {
+      key: 'messageConversion', label: 'Action de conversion pour un message reçu', type: 'text', placeholder: '1234567890',
+      help: 'Facultatif. Pour signaler à Google Ads les messages venus d\'une annonce : le numéro d\'une action de conversion de type « Importation depuis les clics », créée dans Google Ads (Objectifs → Conversions). L\'écran « Annonces Google » liste celles du compte avec leur numéro. Seuls les contacts dont le visiteur a donné son accord (module Consentement) sont envoyés. Le jeton doit aussi porter l\'autorisation « https://www.googleapis.com/auth/datamanager ».',
+    },
+    {
+      key: 'paymentConversion', label: 'Action de conversion pour un paiement', type: 'text', placeholder: '1234567890',
+      help: 'Facultatif. Même chose pour les paiements réussis (module Stripe), envoyés avec leur montant.',
+    },
   ],
   adminPage: { to: '/admin/google-ads', label: 'Voir les annonces' },
   validate: googleAdsSettingsErrors,
@@ -136,7 +145,14 @@ export const googleAdsModule: CmsModuleDefinition = {
     clickTried.clear()
     clicksRefusedAt = 0
     const found = await account(event, settings)
-    return `Connexion réussie au compte Google Ads « ${found.name || adsCustomerId(settings.customerId)} » (${found.currency}).`
+    const ok = `Connexion réussie au compte Google Ads « ${found.name || adsCustomerId(settings.customerId)} » (${found.currency}).`
+    // Actions de conversion réglées : elles doivent exister dans le compte et accepter un envoi.
+    const wanted = [settings.messageConversion, settings.paymentConversion].map(v => v?.trim()).filter((v): v is string => !!v)
+    if (!wanted.length) return ok
+    const actions = readConversionActions(await search(event, settings, CONVERSION_ACTIONS_QUERY))
+    const missing = wanted.filter(id => !actions.some(a => a.id === id))
+    if (missing.length) throw new Error(`Le compte est joignable, mais l'action de conversion n° ${missing.join(', ')} n'y existe pas ou n'est pas de type « Importation depuis les clics ».`)
+    return `${ok} Conversions : ${[...new Set(wanted)].map(id => `« ${actions.find(a => a.id === id)!.name} »`).join(' et ')}.`
   },
 }
 

@@ -3,6 +3,7 @@ import type { H3Event } from 'h3'
 import { CHANNELS, type StoredOrigin, channelOfRow } from '../../shared/attribution'
 import { type FormDefinition, formDefinitions, formSummary, formatFormValue } from '../../shared/modules'
 import type { CmsModuleDefinition } from '../utils/modules'
+import { conversionForLead } from './google-conversions'
 
 const definitions = () => formDefinitions(cmsConfig)
 
@@ -68,7 +69,9 @@ function formEvent(id: string, def: FormDefinition, submissionId: string, values
 /** Enregistre un message validé, fait le ménage des messages trop anciens et prévient les workflows. */
 export async function storeSubmission(event: H3Event, id: string, def: FormDefinition, values: Record<string, unknown>, from: StoredOrigin | null = null) {
   const db = useDb(event)
-  const row = { id: crypto.randomUUID(), form: id, values, origin: from, read: false, createdAt: new Date() }
+  // Contact venu d'une annonce Google, avec l'accord du visiteur : à signaler à Google Ads (module Google Ads).
+  const conversion = await conversionForLead(event, 'message', from)
+  const row = { id: crypto.randomUUID(), form: id, values, origin: from, conversion, read: false, createdAt: new Date() }
   await db.insert(schema.formSubmissions).values(row)
   const { retentionDays } = moduleOptions<{ retentionDays: number }>('forms')
   await db.delete(schema.formSubmissions).where(lt(schema.formSubmissions.createdAt, new Date(Date.now() - retentionDays * 86_400_000)))

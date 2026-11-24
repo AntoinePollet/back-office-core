@@ -37,7 +37,10 @@ test('période dans le fuseau du compte, requêtes', () => {
 })
 
 test('lecture des réponses : compte, campagnes (entiers en texte, plusieurs pages), clic', () => {
-  assert.deepEqual(readAdsAccount({ results: [{ customer: { descriptiveName: 'Cabinet Durand', currencyCode: 'eur', timeZone: 'Europe/Paris' } }] }), { name: 'Cabinet Durand', currency: 'EUR', timeZone: 'Europe/Paris' })
+  assert.deepEqual(readAdsAccount({ results: [{ customer: { descriptiveName: 'Cabinet Durand', currencyCode: 'eur', timeZone: 'Europe/Paris' } }] }), { name: 'Cabinet Durand', currency: 'EUR', timeZone: 'Europe/Paris', conversionCustomer: '' })
+  // Suivi des conversions fait par le compte administrateur : c'est lui qui possède les actions de conversion.
+  assert.equal(readAdsAccount({ results: [{ customer: { conversionTrackingSetting: { googleAdsConversionCustomer: 'customers/1112223333' } } }] })!.conversionCustomer, '1112223333')
+  assert.equal(readAdsAccount({ results: [{ customer: { conversionTrackingSetting: { googleAdsConversionCustomer: 'n\'importe quoi' } } }] })!.conversionCustomer, '')
   assert.equal(readAdsAccount({}), null)
   const row = (id: string, name: string, cost: string, clicks: string) => ({ campaign: { id, name, status: 'ENABLED' }, metrics: { impressions: '1000', clicks, costMicros: cost, conversions: 1.5 } })
   const campaigns = readAdsCampaigns([{ results: [row('1', 'A', '1500000', '10'), row('2', 'B', '0', '0')] }, { results: [row('1', 'A', '500000', '5')] }, {}, null])

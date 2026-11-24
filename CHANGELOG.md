@@ -40,6 +40,11 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
   client OAuth, jeton) est décrite dans le README du site. L'administrateur peut y mettre une campagne en pause, la
   relancer et changer son budget par jour (avec confirmation, et inscription au journal d'activité) ; rien d'autre
   n'est modifié dans Google Ads.
+- **Google Ads : contacts signalés comme conversions.** Avec une action de conversion réglée dans le module, les
+  messages et les paiements venus d'une annonce sont signalés à Google Ads (Data Manager API), quelques heures après
+  le clic, seulement si le visiteur a donné son accord (module Consentement). Rien de personnel n'est transmis. L'état
+  de l'envoi se lit dans le détail de chaque contact et dans l'écran « Annonces Google ». Le jeton d'actualisation
+  doit porter aussi l'autorisation `datamanager` (voir le README du site).
 - **Module Consentement.** Bandeau de consentement posé par le core sur les pages du site : refuser aussi simple
   qu'accepter, rien avant le choix, choix gardé six mois, français et anglais. `<CmsConsentLink />` (à placer dans le
   pied de page) le rouvre, `useCmsConsent().allows('…')` dit à une page si une finalité est acceptée, et

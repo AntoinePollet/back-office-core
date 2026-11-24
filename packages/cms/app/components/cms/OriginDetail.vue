@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { CHANNELS, PAID_CHANNELS, type StoredOrigin, channelOfRow } from '../../../shared/attribution'
+import { type ConversionState, conversionLabel } from '../../../shared/conversions'
 
 /** Provenance d'un message ou d'un paiement, dans le panneau de détail. */
-const props = defineProps<{ origin?: StoredOrigin | null }>()
+const props = defineProps<{ origin?: StoredOrigin | null; /** Envoi du contact à Google Ads comme conversion, s'il y a lieu. */ conversion?: ConversionState | null }>()
+const sending = computed(() => conversionLabel(props.conversion))
 const channel = computed(() => channelOfRow(props.origin))
 const rows = computed(() => {
   const o = props.origin
@@ -33,6 +35,7 @@ const rows = computed(() => {
         <dd class="break-words">{{ value }}</dd>
       </template>
     </dl>
-    <p v-else class="text-xs text-base-content/50">Aucun indice relevé : arrivée directe, ou visiteur revenu plus tard par un autre chemin.</p>
+    <p v-if="sending" class="text-xs" :class="conversion?.state === 'failed' ? 'text-warning' : 'text-base-content/70'" data-origin-conversion :data-state="conversion?.state">Conversion : {{ sending }}</p>
+    <p v-if="!rows.length" class="text-xs text-base-content/50">Aucun indice relevé : arrivée directe, ou visiteur revenu plus tard par un autre chemin.</p>
   </div>
 </template>

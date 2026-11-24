@@ -5,7 +5,7 @@ import { type FormDefinition, formDefinitions, formatFormValue } from '../../../
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
-type Submission = { id: string; form: string; values: Record<string, unknown>; origin: StoredOrigin | null; read: boolean; createdAt: string }
+type Submission = { id: string; form: string; values: Record<string, unknown>; origin: StoredOrigin | null; conversion?: import('../../../shared/conversions').ConversionState | null; read: boolean; createdAt: string }
 
 const schema = await useCmsSchema()
 const route = useRoute()
@@ -138,7 +138,7 @@ onMounted(() => {
               <dd class="whitespace-pre-wrap break-words">{{ formatFormValue(field, selected.values[key]) || '—' }}</dd>
             </div>
           </dl>
-          <CmsOriginDetail :origin="selected.origin" />
+          <CmsOriginDetail :origin="selected.origin" :conversion="selected.conversion" />
           <div class="flex flex-wrap gap-2 pt-1">
             <a v-if="replyAddress(selected)" class="btn btn-sm btn-primary grow" :href="`mailto:${replyAddress(selected)}`"><Mail :size="16" />Répondre</a>
             <button class="btn btn-sm" @click="setRead(selected, false); selected = null">Marquer non lu</button>

@@ -6,8 +6,13 @@ import { formatAmount } from '../../../shared/stripe'
 // Les dépenses publicitaires sont ouvertes à l'administrateur et à l'éditeur (le serveur le vérifie aussi).
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-editor'] })
 
+/** Conversions envoyées à Google : réglages, actions disponibles et comptes (administrateur seulement). */
+type Conversions = {
+  actions: { id: string; name: string }[]; message: string | null; payment: string | null
+  counts: { pending: number; sent: number; failed: number; expired: number }; problem: string | null
+}
 type Answer =
-  | { state: 'ok'; account: AdsAccount; from: string; to: string; report: AdsReport; updatedAt: string }
+  | { state: 'ok'; account: AdsAccount; from: string; to: string; report: AdsReport; updatedAt: string; conversions?: Conversions | null }
   | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string }
 
 const user = useCmsUser()
@@ -43,6 +48,8 @@ const perContact = (micros: number | null) => (micros === null ? '—' : money(m
 const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
 const plural = (n: number, one: string, many: string) => `${count(n)} ${n > 1 ? many : one}`
 const hasPayments = computed(() => !!report.value && report.value.totals.payments > 0)
+const conversions = computed(() => ok.value?.conversions ?? null)
+const actionName = (id: string | null) => (id ? conversions.value?.actions.find(a => a.id === id)?.name ?? `n° ${id}` : null)
 
 // ───── Piloter une campagne (administrateur) : pause, reprise, budget par jour ─────
 const toast = useCmsToast()
@@ -242,6 +249,36 @@ async function saveBudget() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Conversions envoyées à Google Ads (administrateur). -->
+      <div v-if="conversions" class="card bg-base-100 border border-base-300 p-4 sm:p-5 mt-4 text-sm space-y-3" data-ads-conversions>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="font-semibold grow">Contacts signalés à Google Ads</h2>
+          <NuxtLink to="/admin/modules/google-ads" class="btn btn-xs"><Settings :size="12" />Régler</NuxtLink>
+        </div>
+        <p class="text-base-content/70">
+          Un contact venu d'une annonce est signalé à Google Ads comme conversion, quelques heures après le clic, si le visiteur a donné son accord
+          (module Consentement). Google sait alors quels mots-clés amènent des contacts. Seuls partent l'identifiant du clic, la date et, pour un paiement, le montant.
+        </p>
+        <div v-if="conversions.problem" class="alert alert-warning alert-soft text-sm" role="alert" data-ads-conversions-problem>{{ conversions.problem }}</div>
+        <dl class="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+          <div><dt class="text-base-content/60">Messages reçus</dt><dd data-ads-conversion-for="message">{{ actionName(conversions.message) ? `Action « ${actionName(conversions.message)} »` : 'Non envoyés (aucune action de conversion réglée)' }}</dd></div>
+          <div><dt class="text-base-content/60">Paiements</dt><dd data-ads-conversion-for="payment">{{ actionName(conversions.payment) ? `Action « ${actionName(conversions.payment)} »` : 'Non envoyés (aucune action de conversion réglée)' }}</dd></div>
+        </dl>
+        <p v-if="conversions.message || conversions.payment" data-ads-conversion-counts>
+          Sur 90 jours : <strong>{{ count(conversions.counts.sent) }}</strong> signalé{{ conversions.counts.sent > 1 ? 's' : '' }},
+          {{ count(conversions.counts.pending) }} en attente, {{ count(conversions.counts.failed) }} refusé{{ conversions.counts.failed > 1 ? 's' : '' }} par Google<template v-if="conversions.counts.expired">, {{ count(conversions.counts.expired) }} trop ancien{{ conversions.counts.expired > 1 ? 's' : '' }}</template>.
+        </p>
+        <div v-if="conversions.actions.length">
+          <div class="text-base-content/60 mb-1">Actions de conversion du compte qui acceptent un envoi (numéro à recopier dans les réglages) :</div>
+          <ul class="space-y-0.5" data-ads-conversion-actions>
+            <li v-for="a in conversions.actions" :key="a.id" class="flex gap-3"><code class="font-mono text-xs bg-base-200 rounded px-1.5 py-0.5">{{ a.id }}</code><span>{{ a.name }}</span></li>
+          </ul>
+        </div>
+        <p v-else class="text-base-content/60" data-ads-conversion-none>
+          Ce compte n'a pas encore d'action de conversion de type « Importation depuis les clics » : créez-en une dans Google Ads (Objectifs → Conversions), elle apparaîtra ici avec son numéro.
+        </p>
       </div>
 
       <!-- Budget par jour d'une campagne. -->

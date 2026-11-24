@@ -9,7 +9,7 @@ type Payment = {
   id: string; sessionId: string; paymentIntent: string | null; collection: string; entryId: string; title: string
   quantity: number; unitAmount: number; amount: number; refundedAmount: number; currency: string
   email: string | null; name: string | null; shipping: ShippingAddress | null; status: PaymentStatus; livemode: boolean
-  origin: StoredOrigin | null; createdAt: string; updatedAt: string
+  origin: StoredOrigin | null; conversion?: import('../../../shared/conversions').ConversionState | null; createdAt: string; updatedAt: string
 }
 
 const schema = await useCmsSchema()
@@ -133,7 +133,7 @@ onMounted(() => {
             <div v-if="selected.shipping"><dt class="text-base-content/60">Adresse de livraison</dt><dd class="whitespace-pre-wrap">{{ formatShipping(selected.shipping) }}</dd></div>
             <div><dt class="text-base-content/60">Référence Stripe</dt><dd class="font-mono text-xs break-all">{{ selected.paymentIntent ?? selected.sessionId }}</dd></div>
           </dl>
-          <CmsOriginDetail :origin="selected.origin" />
+          <CmsOriginDetail :origin="selected.origin" :conversion="selected.conversion" />
           <div v-if="selected.status === 'pending'" class="alert alert-soft alert-warning text-xs">Paiement différé (virement, prélèvement…) : Stripe préviendra le site quand il aboutira ou échouera.</div>
           <div class="flex flex-wrap gap-2 pt-1">
             <a class="btn btn-sm btn-primary grow" :href="dashboardUrl(selected)" target="_blank" rel="noopener"><ExternalLink :size="16" />Voir dans Stripe</a>

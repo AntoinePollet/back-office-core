@@ -32,6 +32,9 @@ export function googleAdsSettingsErrors(settings: Settings): Record<string, stri
   const errors: Record<string, string> = {}
   if (settings.customerId && !adsCustomerId(settings.customerId)) errors.customerId = 'Le numéro de compte Google Ads a dix chiffres : 123-456-7890.'
   if (settings.loginCustomerId && !adsCustomerId(settings.loginCustomerId)) errors.loginCustomerId = 'Le numéro du compte administrateur a dix chiffres : 123-456-7890.'
+  for (const key of ['messageConversion', 'paymentConversion'] as const) {
+    if (settings[key] && !/^\d{1,20}$/.test(settings[key]!.trim())) errors[key] = 'Le numéro d\'une action de conversion ne contient que des chiffres (voir l\'écran « Annonces Google »).'
+  }
   if (settings.clientId && !/\.apps\.googleusercontent\.com$/.test(settings.clientId.trim())) errors.clientId = 'L\'identifiant client OAuth se termine par « .apps.googleusercontent.com ».'
   return errors
 }
@@ -52,7 +55,8 @@ export function adsRange(days: AdsPeriod, timeZone: string | undefined, now = Da
   return { from: dayIn(timeZone, now - (days - 1) * 86_400_000), to: dayIn(timeZone, now) }
 }
 
-export const ADS_ACCOUNT_QUERY = 'SELECT customer.descriptive_name, customer.currency_code, customer.time_zone FROM customer LIMIT 1'
+export const ADS_ACCOUNT_QUERY = 'SELECT customer.descriptive_name, customer.currency_code, customer.time_zone, '
+  + 'customer.conversion_tracking_setting.google_ads_conversion_customer FROM customer LIMIT 1'
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 /** Ce qu'il faut d'une campagne pour la montrer et la piloter : son état et son budget. */
@@ -88,7 +92,16 @@ export const ADS_CLICK_LOOKBACK_DAYS = 90
 
 // ───────────────────────── Lecture des réponses ─────────────────────────
 
-export type AdsAccount = { name: string; currency: string; timeZone: string }
+export type AdsAccount = {
+  name: string
+  currency: string
+  timeZone: string
+  /**
+   * Compte qui possède les actions de conversion : ce compte-ci, ou son compte administrateur quand le suivi des
+   * conversions est fait à ce niveau. Vide si Google ne le dit pas.
+   */
+  conversionCustomer: string
+}
 /** Budget d'une campagne, tel que Google le décrit. */
 export type AdsBudget = {
   /** Nom de la ressource chez Google : `customers/123/campaignBudgets/456`. */
@@ -124,7 +137,8 @@ const rowsOf = (body: unknown): Obj[] => (Array.isArray((body as Obj | null)?.re
 export function readAdsAccount(body: unknown): AdsAccount | null {
   const customer = rowsOf(body)[0]?.customer
   if (!customer) return null
-  return { name: String(customer.descriptiveName ?? ''), currency: String(customer.currencyCode ?? 'EUR').toUpperCase(), timeZone: String(customer.timeZone ?? '') }
+  const owner = /^customers\/(\d{10})$/.exec(String(customer.conversionTrackingSetting?.googleAdsConversionCustomer ?? ''))?.[1] ?? ''
+  return { name: String(customer.descriptiveName ?? ''), currency: String(customer.currencyCode ?? 'EUR').toUpperCase(), timeZone: String(customer.timeZone ?? ''), conversionCustomer: owner }
 }
 
 function readAdsBudget(row: Obj): AdsBudget | null {
