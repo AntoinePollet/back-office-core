@@ -1,0 +1,79 @@
+# Vérifier : tests unitaires, types et tests de bout en bout, sur les deux hébergements du core
+# (Cloudflare et serveur Node). Une évolution qui casse l'un des deux se voit dans la demande de fusion.
+name: Vérifier
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Une nouvelle poussée sur la même branche annule la vérification en cours.
+concurrency:
+  group: verifier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unitaires:
+    name: Tests unitaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Installation
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+
+  e2e:
+    name: Bout en bout (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # Une cible en échec n'arrête pas l'autre : on veut savoir laquelle casse.
+      fail-fast: false
+      matrix:
+        include:
+          - target: cloudflare
+            node: 22
+          # Le serveur Node utilise le SQLite intégré à Node, qui demande Node 24.
+          - target: node
+            node: 24
+    env:
+      CMS_TARGET: ${{ matrix.target }}
+      E2E_TARGET: ${{ matrix.target }}
+      E2E_CHROME: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Installation
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      # Plusieurs suites modifient la base avec sqlite3 (dates avancées, commande de secours du README).
+      # Depuis Ubuntu 24.04, AppArmor empêche le bac à sable de Chrome de démarrer : on le lui rend possible.
+      - name: Outils du système
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq sqlite3
+          echo 0 | sudo tee /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+      - name: Types
+        run: pnpm typecheck
+      - name: Tests de bout en bout
+        run: pnpm test:e2e
+      - name: Captures et journaux
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: resultats-${{ matrix.target }}
+          path: tests/resultats/
+          retention-days: 7

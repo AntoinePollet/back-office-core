@@ -7,7 +7,7 @@ import type { H3Event } from 'h3'
 export type RateLimit = { key: string; max: number }
 
 /** Adresse du visiteur. Sur Cloudflare, elle est dans cet en-tête, que le visiteur ne peut pas falsifier. */
-export const clientIp = (event: H3Event) => getRequestHeader(event, 'cf-connecting-ip') ?? getRequestIP(event) ?? 'inconnue'
+export const clientIp = (event: H3Event) => usePlatform().clientIp(event) ?? 'inconnue'
 
 /** Répond 429 si l'un des compteurs a atteint son maximum dans sa fenêtre en cours. Ne compte rien. */
 export async function assertRateLimit(event: H3Event, limits: RateLimit[], message: (minutes: number) => string) {

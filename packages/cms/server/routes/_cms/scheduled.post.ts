@@ -1,7 +1,9 @@
 import { isFrequentCron } from '../../../shared/schedule'
+import { sendPendingConversions } from '../../cms-modules/google-conversions'
 
 /**
- * Tâche planifiée : les publications programmées dues, puis la sauvegarde automatique du jour. Route interne, appelée
+ * Tâche planifiée : les publications programmées dues, les conversions à signaler à Google Ads, puis la sauvegarde
+ * automatique du jour. Route interne, appelée
  * seulement par le déclencheur planifié (server/plugins/backup-schedule.ts) : pour toute requête venue de l'extérieur,
  * elle n'existe pas.
  *
@@ -22,6 +24,10 @@ export default defineEventHandler(async (event) => {
     // L'heure prévue du déclenchement peut précéder de quelques secondes l'heure réelle : la plus tardive fait foi.
     return runDueSchedules(event, new Date(Math.max(now.getTime(), Date.now())))
   })().catch((error) => { console.error('[cms] les publications programmées n\'ont pas pu être traitées', error); return null })
+  // Contacts à signaler à Google Ads (module Google Ads) : une erreur ici ne gêne ni les publications ni la sauvegarde.
+  const conversions = frequent
+    ? await sendPendingConversions(event).catch((error) => { console.error('[cms] les conversions n\'ont pas pu être envoyées à Google', error); return null })
+    : null
   const backup = await runAutoBackup(event, frequent ? { now } : { cron, now })
-  return { ...backup, schedules }
+  return { ...backup, schedules, conversions }
 })

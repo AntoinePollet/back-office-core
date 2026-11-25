@@ -1,9 +1,10 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { addTemplate, addTypeTemplate, defineNuxtModule } from '@nuxt/kit'
+import { addTemplate, addTypeTemplate, defineNuxtModule, installModule } from '@nuxt/kit'
 import { fileURLToPath } from 'node:url'
 import { createJiti } from 'jiti'
+import cloudflareDev from 'nitro-cloudflare-dev'
 
 /**
  * Branche le core sur le projet client :
@@ -12,10 +13,57 @@ import { createJiti } from 'jiti'
  *   pour ne pas embarquer toute la bibliothèque dans le back-office ;
  * - déduit de ce fichier, sous `#cms-types`, le type de chaque contenu : les pages du site ont l'autocomplétion des champs ;
  * - transmet aux pages du site les réglages de référencement (`site.titleSuffix`, `site.shareImage`), lus par `useCmsSeo`.
+ * - branche le core sur l'hébergement choisi (`cms: { target }` dans le nuxt.config.ts du site) : Cloudflare ou serveur Node.
  */
-export default defineNuxtModule({
-  meta: { name: 'backoffice-core' },
-  async setup(_options, nuxt) {
+
+/** Où le site est hébergé : chez Cloudflare (Workers, D1, R2), ou sur un serveur Node ordinaire (Docker, VPS…). */
+export type CmsTarget = 'cloudflare' | 'node'
+export type CmsModuleOptions = {
+  /**
+   * Hébergement du site. Par défaut « cloudflare ». La variable d'environnement CMS_TARGET passe avant ce réglage.
+   */
+  target?: CmsTarget
+}
+
+export default defineNuxtModule<CmsModuleOptions>({
+  meta: { name: 'backoffice-core', configKey: 'cms' },
+  async setup(options, nuxt) {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const target = process.env.CMS_TARGET || options.target || 'cloudflare'
+    if (target !== 'cloudflare' && target !== 'node') throw new Error(`[backoffice-core] Hébergement inconnu : « ${target} ». Valeurs possibles : cloudflare, node.`)
+
+    // L'hébergement : `#cms-platform` désigne la version du core écrite pour lui (server/platform).
+    const platform = resolve(here, 'server/platform', target)
+    nuxt.options.alias['#cms-platform'] = platform
+    nuxt.options.nitro.alias = { ...nuxt.options.nitro.alias, '#cms-platform': platform }
+    // Ce que seule la version « serveur Node » utilise est décrit dans tous les cas : TypeScript relit ses fichiers partout.
+    addTypeTemplate({
+      filename: 'types/cms-platform.d.ts',
+      getContents: () => `declare module '#cms-migrations' {\n  const migrations: { name: string; sql: string }[]\n  export default migrations\n}\n`,
+    }, { nitro: true, nuxt: true })
+    const useImages = (file: string) => {
+      const images = resolve(here, 'server/platform/node', file)
+      nuxt.options.alias['#cms-images'] = images
+      nuxt.options.nitro.alias = { ...nuxt.options.nitro.alias, '#cms-images': images }
+    }
+    if (target === 'cloudflare') {
+      nuxt.options.nitro.preset ??= 'cloudflare_module'
+      useImages('images-none')
+      // Les liaisons Cloudflare (D1, R2…) dans le serveur de développement.
+      await installModule(cloudflareDev)
+    }
+    else {
+      nuxt.options.nitro.preset ??= 'node-server'
+      // sharp redimensionne les images s'il est installé dans le projet du site ; sinon elles sont servies telles quelles.
+      const sharp = (() => { try { createRequire(join(nuxt.options.rootDir, 'package.json')).resolve('sharp'); return true } catch { return false } })()
+      if (!sharp) console.warn('[backoffice-core] Paquet « sharp » absent : les images seront servies dans leur taille d\'origine (pnpm add sharp).')
+      useImages(sharp ? 'images-sharp' : 'images-none')
+      // Les migrations de la base voyagent avec le serveur, qui les applique à son démarrage.
+      const dir = resolve(here, 'server/database/migrations')
+      const migrations = readdirSync(dir).filter(name => name.endsWith('.sql')).sort().map(name => ({ name, sql: readFileSync(join(dir, name), 'utf8') }))
+      nuxt.options.nitro.virtual = { ...nuxt.options.nitro.virtual, '#cms-migrations': `export default ${JSON.stringify(migrations)}` }
+    }
+
     const file = resolve(nuxt.options.rootDir, 'cms.config.ts')
     if (!existsSync(file)) throw new Error(`[backoffice-core] Fichier introuvable : ${file}`)
     nuxt.options.alias['#cms-config'] = file
@@ -35,6 +83,9 @@ export default defineNuxtModule({
     // Réglages de référencement du site, pour `useCmsSeo` : les pages n'embarquent pas toute la configuration.
     const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>
     publicConfig.cmsSeo = { siteName: String(config.site?.name ?? ''), titleSuffix: String(config.site?.titleSuffix ?? ''), shareImage: String(config.site?.shareImage ?? '') }
+    // Provenance des contacts : lue par le site à l'arrivée du visiteur (`site.attribution`).
+    const attribution = config.site?.attribution
+    publicConfig.cmsAttribution = { enabled: attribution !== false, rememberDays: attribution ? Number(attribution.rememberDays ?? 0) : 0 }
     const definitions = [...Object.values(config.singletons ?? {}), ...Object.values(config.collections ?? {})] as { icon?: string; label: string }[]
     const iconsDir = join(dirname(createRequire(import.meta.url).resolve('@lucide/vue')), '../esm/icons')
     const names = [...new Set(definitions.map(d => d.icon).filter((n): n is string => !!n))].filter((name) => {

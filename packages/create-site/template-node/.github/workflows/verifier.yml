@@ -1,0 +1,35 @@
+# Vérifications du site à chaque demande de fusion (y compris celles ouvertes par Renovate pour une nouvelle
+# version du core) : installation, types, construction. Rien n'est publié.
+name: Vérifier
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verifier-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verifier:
+    name: Installation, types, construction
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # La version de pnpm est celle du champ « packageManager » de package.json.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      # Échoue si pnpm-lock.yaml ne correspond pas à package.json : une mise à jour incomplète n'est jamais fusionnée.
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+      - name: Types
+        run: pnpm exec nuxt typecheck
+      - name: Construction
+        run: pnpm exec nuxt build

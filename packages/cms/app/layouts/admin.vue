@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, Images, Inbox, LayoutList, LogOut, Menu, Palette, Puzzle, ScrollText, SearchCheck, Settings, ShieldCheck, Signpost, Trash2, Users, Workflow } from '@lucide/vue'
+import { ArrowLeftRight, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, Images, Inbox, LayoutList, LogOut, Megaphone, Menu, Palette, Puzzle, ScrollText, SearchCheck, Settings, ShieldCheck, Signpost, Trash2, Users, Workflow } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { type AvailabilityMode, MODE_LABELS } from '../../shared/availability'
@@ -147,6 +147,8 @@ const nav = computed<NavSection[]>(() => {
       hasModule(m => m.category === 'audience') && staff && { key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' },
       // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
       hasModule(m => m.id === 'stripe') && staff && { key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' },
+      // Module « Google Ads » : dépense des campagnes et contacts qu'elles amènent, pour l'administrateur et l'éditeur.
+      hasModule(m => m.id === 'google-ads') && staff && { key: 'google-ads', label: 'Annonces Google', icon: Megaphone, to: '/admin/google-ads' },
       // Corbeille : pour qui peut supprimer quelque chose (il n'y verra que cela). L'administrateur la trouve dans « Administration ».
       !isAdmin && canOpenTrash(user.value) && { key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' },
     ] as (NavItem | false)[]).filter((i): i is NavItem => !!i),

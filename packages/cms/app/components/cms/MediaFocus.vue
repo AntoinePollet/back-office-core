@@ -21,8 +21,16 @@ const FORMATS = [
 ]
 
 const point = ref({ ...(props.media.focus ?? CENTER) })
+/** Le dernier point envoyé à l'enregistrement, tant que sa réponse n'est pas revenue dans `props.media`. */
+let sent: string | undefined
+const sameFocus = (focus: CmsMedia['focus']) => JSON.stringify(normalizeFocus(focus))
 // Autre fichier, ou réglage changé ailleurs : le point affiché suit.
-watch(() => [props.media.id, props.media.focus?.x, props.media.focus?.y], () => { point.value = { ...(props.media.focus ?? CENTER) } })
+watch(() => [props.media.id, props.media.focus?.x, props.media.focus?.y], () => {
+  // Retour de notre propre enregistrement : le point a pu être déplacé entre-temps (flèches du clavier), on n'y touche pas.
+  const own = sent !== undefined && `${props.media.id}:${sameFocus(props.media.focus)}` === sent
+  sent = undefined
+  if (!own) point.value = { ...(props.media.focus ?? CENTER) }
+})
 
 const percent = (n: number) => Math.round(n * 100)
 const position = computed(() => `${percent(point.value.x)}% ${percent(point.value.y)}%`)
@@ -43,9 +51,12 @@ async function save() {
   // Un réglage arrivé pendant un enregistrement part juste après : c'est toujours le dernier point qui est gardé.
   if (saving.value) { pending = true; return }
   saving.value = true
+  const id = props.media.id
   try {
-    const { purgeFailed, ...updated } = await cmsApi<CmsMedia & { purgeFailed: boolean }>(`/api/cms/media/${props.media.id}`, { method: 'PATCH', body: { focus } })
+    const { purgeFailed, ...updated } = await cmsApi<CmsMedia & { purgeFailed: boolean }>(`/api/cms/media/${id}`, { method: 'PATCH', body: { focus } })
     cmsSiteUpdated({ purgeFailed })
+    // Un autre fichier a pu être ouvert pendant l'enregistrement : le retour ne concerne alors plus le point affiché.
+    sent = props.media.id === id ? `${id}:${sameFocus(focus)}` : undefined
     emit('saved', updated)
     toast.success(focus ? 'Point d\'intérêt enregistré' : 'Point d\'intérêt remis au centre')
   }

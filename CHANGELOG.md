@@ -13,6 +13,44 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Hébergement hors de Cloudflare.** Un site peut maintenant tourner sur un serveur Node ordinaire, dans un conteneur
+  Docker (VPS, serveur du client, autre hébergeur) : `cms: { target: 'node' }` dans son `nuxt.config.ts`. La base est
+  alors un fichier SQLite (mêmes tables, mêmes migrations, appliquées au démarrage), les fichiers de la médiathèque
+  vont sur le disque ou dans un stockage compatible S3 (`NUXT_S3_*`), les images sont redimensionnées par `sharp`, et
+  le site déclenche lui-même la sauvegarde de la nuit et les publications programmées. Demande Node 24.
+  `pnpm create-site --hosting node` crée un tel site, avec son `Dockerfile`, son `docker-compose.yml` (Caddy pour le
+  HTTPS), son fichier `.env` et un guide `HEBERGEMENT.md`. Rien ne change pour les sites hébergés chez Cloudflare.
+- **Référencement : titres de la page.** L'onglet Référencement affiche le plan de la page (H1, H2, H3…) tel que Google
+  le lit, mis à jour pendant la saisie, et signale les problèmes : titre principal (H1) absent, en double, vide ou sans
+  rapport avec le titre de la page, niveau sauté (H2 puis H4), titre vide. Les textes longs sans intertitre sont
+  aussi signalés, dans la vue d'ensemble comme dans l'onglet. Dans l'éditeur, les boutons de titre disent le niveau
+  qu'ils produisent (« Titre de section (H2) », « Sous-titre (H3) »).
+- **Provenance des contacts.** Le site relève d'où vient chaque visiteur (annonce Google Ads grâce au `gclid`, autre
+  publicité, e-mail, réseau social, moteur de recherche, autre site, accès direct) et le joint à ses messages et à ses
+  paiements. « Messages reçus » et « Paiements » disent combien de contacts viennent des annonces, campagne par
+  campagne, avec un filtre par canal ; l'export CSV et les workflows (`{{ origin.channel }}`…) ont la provenance.
+  Par défaut, elle n'est gardée que le temps de la visite, sans rien écrire sur l'appareil du visiteur ;
+  `site.attribution` la règle (voir le README du site). Aucun changement à faire dans les pages.
+- **Module Google Ads.** Nouvel écran « Annonces Google » : dépense, clics et conversions de chaque
+  campagne, lus dans Google Ads, à côté des contacts du site qu'elle a amenés (messages, paiements) et du coût par
+  contact. Les contacts sont rattachés aux campagnes par `utm_id={campaignid}`, par le `gclid` (retrouvé auprès de
+  Google) ou par le nom de la campagne. À activer dans l'écran Modules ; la mise en route côté Google (projet Cloud,
+  client OAuth, jeton) est décrite dans le README du site. L'administrateur peut y mettre une campagne en pause, la
+  relancer et changer son budget par jour (avec confirmation, et inscription au journal d'activité) ; rien d'autre
+  n'est modifié dans Google Ads.
+- **Google Ads : contacts signalés comme conversions.** Avec une action de conversion réglée dans le module, les
+  messages et les paiements venus d'une annonce sont signalés à Google Ads (Data Manager API), quelques heures après
+  le clic, seulement si le visiteur a donné son accord (module Consentement). Rien de personnel n'est transmis. L'état
+  de l'envoi se lit dans le détail de chaque contact et dans l'écran « Annonces Google ». Le jeton d'actualisation
+  doit porter aussi l'autorisation `datamanager` (voir le README du site).
+- **Module Consentement.** Bandeau de consentement posé par le core sur les pages du site : refuser aussi simple
+  qu'accepter, rien avant le choix, choix gardé six mois, français et anglais. `<CmsConsentLink />` (à placer dans le
+  pied de page) le rouvre, `useCmsConsent().allows('…')` dit à une page si une finalité est acceptée, et
+  `consent({ purposes })` déclare les finalités propres au site. L'accord pour la mesure de la publicité est joint à
+  la provenance des contacts. À activer dans l'écran Modules.
+
 ## 0.11.0 — 2026-11-23
 
 ### Nouveautés

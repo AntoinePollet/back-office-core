@@ -60,5 +60,8 @@ useCmsSeo(home)
         <div class="collapse-content text-sm">{{ q.answer }} <a v-if="q.more" :href="q.more.href" class="link link-primary">{{ q.more.label }}</a></div>
       </div>
     </section>
+
+    <!-- Module « Consentement » : le lien n'apparaît que si le module est actif. -->
+    <footer class="text-sm opacity-70"><CmsConsentLink class="link" /></footer>
   </main>
 </template>

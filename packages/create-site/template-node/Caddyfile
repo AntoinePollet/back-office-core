@@ -1,0 +1,6 @@
+# Serveur frontal du site : certificat HTTPS obtenu et renouvelé tout seul pour le domaine de SITE_DOMAIN (.env).
+# Le domaine doit pointer vers ce serveur, et les ports 80 et 443 être ouverts.
+{$SITE_DOMAIN:localhost} {
+	encode zstd gzip
+	reverse_proxy site:3000
+}

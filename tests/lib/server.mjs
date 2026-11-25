@@ -39,6 +39,11 @@ export function resetDatabase(logFile) {
   const stateDir = path.join(config.tmpDir, 'etat')
   fs.rmSync(stateDir, { recursive: true, force: true })
   fs.mkdirSync(stateDir, { recursive: true })
+  // Serveur Node : le core crée lui-même sa base (et ses tables) à la première requête, dans ce dossier.
+  if (config.target === 'node') {
+    fs.writeFileSync(logFile, 'Serveur Node : la base est créée par le core au démarrage.\n')
+    return stateDir
+  }
   const r = spawnSync(bin('wrangler'), ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', stateDir], {
     cwd: config.playgroundDir,
     env: { ...process.env, CI: 'true', WRANGLER_SEND_METRICS: 'false' },
@@ -70,7 +75,7 @@ export async function startServer({ persistDir, env = {}, logFile }) {
   const log = fs.openSync(logFile, 'w')
   const child = spawn(bin('nuxt'), ['dev', '--port', String(port), '--no-open'], {
     cwd: config.playgroundDir,
-    env: { ...process.env, NUXT_WRANGLER_PERSIST_DIR: persistDir, NUXT_TELEMETRY_DISABLED: '1', ...env },
+    env: { ...process.env, ...(config.target === 'node' ? { CMS_TARGET: 'node', NUXT_DATA_DIR: persistDir, NUXT_TRUST_PROXY: 'true' } : { NUXT_WRANGLER_PERSIST_DIR: persistDir }), NUXT_TELEMETRY_DISABLED: '1', ...env },
     stdio: ['ignore', log, log],
     detached: true,
   })

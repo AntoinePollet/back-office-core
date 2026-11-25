@@ -1,4 +1,5 @@
 // Mesure d'audience (Cloudflare Web Analytics) et anti-robots (Cloudflare Turnstile), joués par le faux service.
+import { config } from '../lib/config.mjs'
 import { check, clickText, json, login, menuLabels, says, until } from '../lib/harness.mjs'
 import { DUMMY_TOKEN, SECRET_REFUSED, SITE_DOWN, SITE_EMPTY, TOKEN_REFUSED } from '../lib/mock-cloudflare.mjs'
 
@@ -36,7 +37,7 @@ export default async function (t) {
   const scripts = () => calls().filter(c => c.url === '/turnstile/v0/api.js')
   // Chaque envoi direct vient d'une adresse différente : la limite d'envois par visiteur ne gêne pas la suite.
   let ip = 10
-  const sendForm = (body, address = `203.0.113.${ip++}`) => visitor.call('/api/forms/contact', { method: 'POST', body, headers: { 'cf-connecting-ip': address } })
+  const sendForm = (body, address = `203.0.113.${ip++}`) => visitor.call('/api/forms/contact', { method: 'POST', body, headers: { [config.ipHeader]: address } })
   const putModule = (id, body) => claire.call(`/api/cms/modules/${id}`, { method: 'PUT', body })
 
   // ───────────────────────── Mesure d'audience ─────────────────────────
@@ -64,7 +65,7 @@ export default async function (t) {
   await step('site : pas de balise tant que rien n\'est réglé ; pages mises en cache', async () => {
     const r = await visitor.get('/')
     check(r.status === 200 && !r.text.includes('cloudflareinsights'), 'balise présente trop tôt')
-    check(/s-maxage=\d+/.test(r.headers.get('cache-control') ?? ''), 'page d\'accueil non mise en cache : ' + r.headers.get('cache-control'))
+    check(config.siteCached(r.headers.get('cache-control')), 'page d\'accueil non mise en cache : ' + r.headers.get('cache-control'))
   })
 
   await step('réglages invalides refusés : un jeton ne peut pas glisser de HTML dans les pages', async () => {

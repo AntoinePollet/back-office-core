@@ -56,8 +56,8 @@ const buttons = computed(() => {
   return [
     has('bold') && { icon: Bold, title: 'Gras', active: e.isActive('bold'), run: () => e.chain().focus().toggleBold().run() },
     has('italic') && { icon: Italic, title: 'Italique', active: e.isActive('italic'), run: () => e.chain().focus().toggleItalic().run() },
-    has('heading') && { icon: Heading2, title: 'Titre de section', active: e.isActive('heading', { level: 2 }), run: () => e.chain().focus().toggleHeading({ level: 2 }).run() },
-    has('heading') && { icon: Heading3, title: 'Sous-titre', active: e.isActive('heading', { level: 3 }), run: () => e.chain().focus().toggleHeading({ level: 3 }).run() },
+    has('heading') && { icon: Heading2, title: 'Titre de section (H2)', active: e.isActive('heading', { level: 2 }), run: () => e.chain().focus().toggleHeading({ level: 2 }).run() },
+    has('heading') && { icon: Heading3, title: 'Sous-titre (H3)', active: e.isActive('heading', { level: 3 }), run: () => e.chain().focus().toggleHeading({ level: 3 }).run() },
     has('list') && { icon: List, title: 'Liste à puces', active: e.isActive('bulletList'), run: () => e.chain().focus().toggleBulletList().run() },
     has('list') && { icon: ListOrdered, title: 'Liste numérotée', active: e.isActive('orderedList'), run: () => e.chain().focus().toggleOrderedList().run() },
     has('quote') && { icon: Quote, title: 'Citation', active: e.isActive('blockquote'), run: () => e.chain().focus().toggleBlockquote().run() },

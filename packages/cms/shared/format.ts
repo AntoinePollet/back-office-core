@@ -300,6 +300,16 @@ type Site = {
    * du site ('/logo.svg', carré de préférence) ou une adresse complète.
    */
   logo?: string
+  /**
+   * Provenance des contacts (« Messages reçus », « Paiements ») : d'où venait le visiteur, lu dans l'adresse de sa
+   * page d'arrivée (`utm_*`, `gclid` de Google Ads…) et le site précédent. Par défaut, elle n'est gardée que le temps
+   * de la visite, en mémoire : rien n'est écrit sur l'appareil du visiteur.
+   * - `false` : rien n'est relevé ;
+   * - `{ rememberDays: 30 }` : la provenance est aussi gardée 30 jours sur l'appareil (stockage local), pour un
+   *   visiteur qui revient plus tard. C'est un traceur : il n'est écrit qu'après l'accord du visiteur, que le bandeau
+   *   de consentement du site transmet par `cmsAttributionConsent(true)`.
+   */
+  attribution?: false | { rememberDays?: number }
 }
 
 type Config = {
@@ -347,6 +357,11 @@ export function validate(config: Config): string[] {
   if (site.timeZone !== undefined && !isValidTimeZone(site.timeZone)) errors.push(`site.timeZone : fuseau horaire inconnu « ${site.timeZone} » (attendu un identifiant comme 'Europe/Paris')`)
   if (site.titleSuffix !== undefined && (typeof site.titleSuffix !== 'string' || !site.titleSuffix.trim())) errors.push('site.titleSuffix : un texte est attendu (ou rien)')
   if (site.shareImage !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.shareImage))) errors.push('site.shareImage : attendu un fichier du dossier public (\'/partage.jpg\') ou une adresse complète (https://…)')
+  if (site.attribution !== undefined && site.attribution !== false) {
+    const days = (site.attribution as { rememberDays?: unknown } | null)?.rememberDays
+    if (!site.attribution || typeof site.attribution !== 'object' || (days !== undefined && (!Number.isInteger(days) || (days as number) < 1 || (days as number) > 395)))
+      errors.push('site.attribution : attendu false, ou { rememberDays: n } avec n entre 1 et 395 jours')
+  }
   if (site.logo !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.logo))) errors.push('site.logo : attendu un fichier du dossier public (\'/logo.svg\') ou une adresse complète (https://…)')
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'

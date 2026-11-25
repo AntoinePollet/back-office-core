@@ -68,6 +68,11 @@ export const SEO_LIMITS = {
    * Vérifié seulement si le contenu a un champ de texte mis en forme, c'est-à-dire un texte principal.
    */
   bodyMinWords: 50,
+  /**
+   * Texte long sans intertitre (mots). Appréciation : au-delà de quelques paragraphes, des titres de section (H2, H3)
+   * aident le lecteur à s'y retrouver et Google à comprendre de quoi parle chaque partie.
+   */
+  sectionWords: 300,
 } as const
 
 // ───────────────────────── Titre de la page ─────────────────────────
@@ -258,6 +263,23 @@ export function contentWordCount(fields: Fields, values: Values): number {
   return words
 }
 
+/** Un texte mis en forme du contenu propose-t-il les titres de section (H2, H3) ? */
+function contentAllowsHeadings(fields: Fields, values: Values): boolean {
+  let allowed = false
+  walk(fields, values, (field) => {
+    if (field.type === 'richText' && (!field.features || (field.features as readonly string[]).includes('heading'))) allowed = true
+  })
+  return allowed
+}
+/** Le contenu a-t-il au moins un titre de section dans ses textes mis en forme ? */
+function contentHasHeadings(fields: Fields, values: Values): boolean {
+  let found = false
+  walk(fields, values, (field, value) => {
+    if (field.type === 'richText' && typeof value === 'string' && /<h[2-6][\s>]/i.test(value)) found = true
+  })
+  return found
+}
+
 // ───────────────────────── Conseils ─────────────────────────
 
 export type SeoMedia = { name: string; mime: string; width: number | null; height: number | null; alt: Record<string, string> }
@@ -275,7 +297,7 @@ export type SeoTip = {
   /** Ce qu'il faut faire, en une phrase. */
   advice: string
   /** Champ concerné, pour le situer dans l'onglet. */
-  field: 'title' | 'description' | 'image' | 'content' | 'address' | 'visibility'
+  field: 'title' | 'description' | 'image' | 'content' | 'address' | 'visibility' | 'structure'
   /** Liens utiles : la page en doublon, les fichiers à compléter dans la médiathèque. */
   links?: { label: string; to: string }[]
 }
@@ -426,6 +448,9 @@ export function seoTips(input: SeoInput): SeoTip[] {
       if (words < L.bodyMinWords) {
         add({ id: 'body-short', level: 'conseil', field: 'content', title: `Très peu de texte (${plural(words, 'mot', 'mots')})`, advice: 'Développez le contenu de la page : Google a besoin de texte pour comprendre de quoi elle parle.' })
       }
+      else if (words >= L.sectionWords && contentAllowsHeadings(def.fields, merged) && !contentHasHeadings(def.fields, merged)) {
+        add({ id: 'headings-none', level: 'conseil', field: 'structure', title: `Texte long sans intertitre (${plural(words, 'mot', 'mots')})`, advice: 'Découpez-le avec des « Titres de section » (H2) et des « Sous-titres » (H3), en reprenant les mots que les gens cherchent : la page se lit mieux, et Google comprend chaque partie.' })
+      }
     }
   }
   return tips
@@ -436,3 +461,69 @@ export type SeoState = 'complete' | 'improve' | 'hidden'
 export const seoPoints = (tips: SeoTip[]) => tips.filter(t => t.level !== 'rappel').length
 export const seoState = (tips: SeoTip[], noindex: boolean): SeoState => (noindex ? 'hidden' : seoPoints(tips) ? 'improve' : 'complete')
 export const SEO_STATE_LABELS: Record<SeoState, string> = { complete: 'Complet', improve: 'À améliorer', hidden: 'Masqué' }
+
+// ───────────────────────── Plan de la page (titres H1 à H6) ─────────────────────────
+
+/** Un titre de la page telle qu'elle s'affiche (voir `readOutline` dans `shared/live-preview.ts`). */
+export type SeoHeading = { level: number; text: string; place: string }
+
+/** Mots qui comptent d'un texte : en minuscules, sans accents, d'au moins 4 lettres. */
+const keywords = (text: string) => new Set(text.toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 4))
+
+/**
+ * Conseils sur les titres de la page, lus dans la page rendue avec la saisie en cours. Ils complètent `seoTips`,
+ * qui ne voit que les valeurs du formulaire : le titre principal (H1) est placé par le gabarit du site, souvent à
+ * partir d'un champ du contenu, et le back-office ne peut le connaître qu'en regardant la page.
+ * `baseTitle` : titre de la page sans le suffixe du site. Une page masquée des moteurs de recherche n'en reçoit aucun.
+ */
+export function seoOutlineTips(headings: SeoHeading[], page: { baseTitle: string; noindex: boolean }): SeoTip[] {
+  if (page.noindex) return []
+  const tips: SeoTip[] = []
+  const h1 = headings.filter(h => h.level === 1)
+  if (!h1.length) {
+    tips.push({
+      id: 'h1-missing', level: 'important', field: 'structure', title: 'Pas de titre principal (H1)',
+      advice: 'C\'est lui qui annonce le sujet de la page à Google. Il vient en général d\'un champ du contenu (titre, accroche) : vérifiez qu\'il est rempli. S\'il manque encore, c\'est le gabarit de la page qui est à compléter.',
+    })
+  }
+  else if (h1.length > 1) {
+    tips.push({
+      id: 'h1-multiple', level: 'conseil', field: 'structure', title: `${h1.length} titres principaux (H1)`,
+      advice: `Gardez un seul H1, qui dit le sujet de la page (${h1.map(h => quote(h.text || 'vide')).join(', ')}) : les autres peuvent devenir des titres de section (H2).${h1.some(h => h.place !== 'main') ? ' L\'un d\'eux est dans l\'en-tête ou le pied de page du site : c\'est le gabarit qui est à revoir.' : ''}`,
+    })
+  }
+  if (h1.length && h1.every(h => !h.text)) {
+    tips.push({ id: 'h1-empty', level: 'important', field: 'structure', title: 'Titre principal (H1) vide', advice: 'Le titre principal s\'affiche sans texte : remplissez le champ dont il vient (titre, accroche).' })
+  }
+  // Titres vides et niveaux sautés : dans le contenu seulement. Ceux de l'en-tête, du menu et du pied de page sont
+  // les mêmes sur toutes les pages, et la personne qui écrit n'y peut rien.
+  const content = headings.filter(h => h.place === 'main')
+  const empty = content.filter(h => h.level > 1 && !h.text).length
+  if (empty) {
+    tips.push({ id: 'heading-empty', level: 'conseil', field: 'structure', title: `${plural(empty, 'titre vide', 'titres vides')}`, advice: 'Un titre sans texte n\'apporte rien et gêne les lecteurs d\'écran : retirez la mise en forme de titre de cette ligne, ou écrivez-le.' })
+  }
+  // Niveau sauté en descendant (H2 puis H4) : en remontant (H4 puis H2), c'est normal.
+  for (let i = 1; i < content.length; i++) {
+    const before = content[i - 1]!, here = content[i]!
+    if (here.level > before.level + 1) {
+      tips.push({
+        id: 'heading-skip', level: 'conseil', field: 'structure', title: `Niveau de titre sauté (H${before.level} puis H${here.level})`,
+        advice: `${quote(here.text || 'titre vide')} est un H${here.level} placé juste après un H${before.level} : faites-en un H${before.level + 1}, pour que le plan de la page reste lisible par Google et par les lecteurs d'écran.`,
+      })
+      break
+    }
+  }
+  // Le H1 et le titre de la page doivent parler de la même chose : au moins un mot important en commun.
+  const main = h1.length === 1 ? h1[0]!.text : ''
+  if (main && page.baseTitle) {
+    const inTitle = keywords(page.baseTitle)
+    const inH1 = keywords(main)
+    if (inTitle.size && inH1.size && ![...inH1].some(w => inTitle.has(w))) {
+      tips.push({
+        id: 'h1-unrelated', level: 'conseil', field: 'structure', title: 'Titre principal (H1) sans rapport avec le titre de la page',
+        advice: `Google compare ${quote(main)} et ${quote(page.baseTitle)} : reprenez dans l'un les mots importants de l'autre, pour qu'ils annoncent le même sujet.`,
+      })
+    }
+  }
+  return tips
+}

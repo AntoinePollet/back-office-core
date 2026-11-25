@@ -37,6 +37,16 @@ et deux flux GitHub Actions (`.github/workflows/verifier.yml`, `deployer.yml`) :
 
 `--dry-run` crée les fichiers mais n'exécute aucune commande Cloudflare : il affiche celles qui seraient lancées.
 
+## Hébergement : Cloudflare ou serveur Node
+
+- `--hosting cloudflare` (par défaut) : Workers, base D1, bucket R2. C'est le chemin décrit ci-dessus.
+- `--hosting node` : le site tourne sur un serveur Node, dans un conteneur Docker (VPS, serveur du client, autre
+  hébergeur). Les fichiers de `template-node/` s'ajoutent au modèle ou y remplacent les leurs (`package.json` sans
+  wrangler, `nuxt.config.ts` avec `cms: { target: 'node' }`, flux GitHub qui publie une image Docker), `wrangler.jsonc`
+  disparaît, et un fichier `.env` est écrit avec un secret des sessions tiré au hasard. Il n'y a ni `pnpm db:migrate`
+  (le site crée et met à niveau sa base au démarrage) ni étape `--cloudflare`. La mise en ligne est décrite dans le
+  `HEBERGEMENT.md` du projet créé.
+
 ## Dépendance vers le core
 
 - `--core local` (`--core-path <dossier>`, par défaut `packages/cms` de ce dépôt) : `link:` vers le dossier.
@@ -46,6 +56,7 @@ Le README du projet créé explique comment passer de l'un à l'autre.
 
 ## Modifier le modèle
 
-Les fichiers de `template/` sont copiés tels quels, sauf `_gitignore`, `_npmrc` et `_package.json` (renommés) et les marqueurs
+Les fichiers de `template/` (et de `template-node/`) sont copiés tels quels, sauf `_gitignore`, `_npmrc`, `_package.json`,
+`_dockerignore` et `_env.example` (renommés) et les marqueurs
 `__ID__`, `__SITE_NAME__`… remplacés par `src/template.mjs`. Les versions des dépendances de `_package.json` suivent
 celles de `playground/package.json` : `pnpm --filter create-site test` le vérifie.

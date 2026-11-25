@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Download, ExternalLink, Mail } from '@lucide/vue'
+import { CHANNELS, type Channel, type OriginPeriod, type StoredOrigin, channelOfRow, filterByOrigin } from '../../../shared/attribution'
 import { dashboardUrl, formatAmount, formatShipping, type PaymentStatus, type ShippingAddress } from '../../../shared/stripe'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
@@ -8,7 +9,7 @@ type Payment = {
   id: string; sessionId: string; paymentIntent: string | null; collection: string; entryId: string; title: string
   quantity: number; unitAmount: number; amount: number; refundedAmount: number; currency: string
   email: string | null; name: string | null; shipping: ShippingAddress | null; status: PaymentStatus; livemode: boolean
-  createdAt: string; updatedAt: string
+  origin: StoredOrigin | null; conversion?: import('../../../shared/conversions').ConversionState | null; createdAt: string; updatedAt: string
 }
 
 const schema = await useCmsSchema()
@@ -18,7 +19,14 @@ const data = ref(await cmsApi<{ payments: Payment[] }>('/api/cms/payments').catc
 // Les paiements de test et les vrais ne se mélangent pas : on montre les vrais, sauf s'il n'y a que des essais.
 const hasLive = computed(() => data.value.payments.some(p => p.livemode))
 const mode = ref<'live' | 'test'>(hasLive.value || !data.value.payments.length ? 'live' : 'test')
-const list = computed(() => data.value.payments.filter(p => p.livemode === (mode.value === 'live')))
+const ofMode = computed(() => data.value.payments.filter(p => p.livemode === (mode.value === 'live')))
+// Provenance : période et canal choisis dans le tableau « D'où viennent les paiements », appliqués à la liste.
+const days = ref<OriginPeriod>(null)
+const channel = ref<Channel | null>(null)
+const list = computed(() => filterByOrigin(ofMode.value, days.value, channel.value))
+/** Le tableau de provenance compte les paiements réussis ; leur total n'est montré que s'ils sont tous dans la même devise. */
+const paidRows = computed(() => ofMode.value.filter(p => p.status === 'paid'))
+const oneCurrency = computed(() => { const c = new Set(paidRows.value.map(p => p.currency)); return c.size === 1 ? [...c][0]! : null })
 const count = (live: boolean) => data.value.payments.filter(p => p.livemode === live).length
 const selected = ref<Payment | null>(null)
 
@@ -45,10 +53,11 @@ function exportCsv() {
   const cell = (text: string) => `"${(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text).replace(/"/g, '""')}"`
   const decimals = (p: Payment, minor: number) => formatAmount(minor, p.currency).replace(/[^\d,.-]/g, '')
   const rows = [
-    ['Date', 'Statut', 'Produit', 'Quantité', 'Montant', 'Remboursé', 'Devise', 'E-mail', 'Nom', 'Adresse de livraison', 'Référence Stripe', 'Mode'],
+    ['Date', 'Statut', 'Produit', 'Quantité', 'Montant', 'Remboursé', 'Devise', 'E-mail', 'Nom', 'Adresse de livraison', 'Référence Stripe', 'Mode', 'Provenance', 'Campagne', 'Mot-clé', 'Source'],
     ...list.value.map(p => [
       when(p), STATUS[p.status].label, p.title, String(p.quantity), decimals(p, p.amount), decimals(p, p.refundedAmount), p.currency.toUpperCase(),
       p.email ?? '', p.name ?? '', formatShipping(p.shipping).replace(/\n/g, ', '), p.paymentIntent ?? p.sessionId, p.livemode ? 'Production' : 'Test',
+      CHANNELS[channelOfRow(p.origin)], p.origin?.campaign ?? '', p.origin?.term ?? '', [p.origin?.source ?? p.origin?.referrer, p.origin?.medium].filter(Boolean).join(' / '),
     ]),
   ]
   const blob = new Blob(['﻿' + rows.map(r => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' })
@@ -77,15 +86,19 @@ onMounted(() => {
     </div>
 
     <div role="tablist" class="tabs tabs-border mb-3">
-      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'live' }" @click="mode = 'live'; selected = null">Vrais paiements<span class="badge badge-sm ml-2">{{ count(true) }}</span></a>
-      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'test' }" @click="mode = 'test'; selected = null">Essais (mode test)<span class="badge badge-sm ml-2">{{ count(false) }}</span></a>
+      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'live' }" @click="mode = 'live'; selected = null; channel = null; days = null">Vrais paiements<span class="badge badge-sm ml-2">{{ count(true) }}</span></a>
+      <a role="tab" class="tab" :class="{ 'tab-active': mode === 'test' }" @click="mode = 'test'; selected = null; channel = null; days = null">Essais (mode test)<span class="badge badge-sm ml-2">{{ count(false) }}</span></a>
     </div>
     <div v-if="mode === 'test'" class="alert alert-warning alert-soft text-sm mb-3">Paiements de test : aucun argent n'a circulé.</div>
-    <p v-if="totals.length" class="text-sm mb-3">Encaissé : <strong>{{ totals.join(' · ') }}</strong> <span class="text-base-content/60">(paiements réussis, remboursements déduits)</span></p>
+    <CmsOriginStats
+      v-if="paidRows.length" v-model:days="days" v-model:channel="channel" :rows="paidRows" :noun="['paiement réussi', 'paiements réussis']" class="mb-4"
+      :amount="oneCurrency ? (p: Payment) => p.amount - p.refundedAmount : undefined" :format-amount="oneCurrency ? (n: number) => formatAmount(n, oneCurrency!) : undefined"
+    />
+    <p v-if="totals.length" class="text-sm mb-3">Encaissé : <strong>{{ totals.join(' · ') }}</strong> <span class="text-base-content/60">(paiements réussis, remboursements déduits<template v-if="days !== null || channel"> ; seulement la période et le canal choisis ci-dessus, comme l'export</template>)</span></p>
 
     <div class="grid lg:grid-cols-[1fr_24rem] gap-6 items-start">
       <div class="card bg-base-100 border border-base-300 overflow-hidden">
-        <div v-if="!list.length" class="p-10 text-center text-sm text-base-content/50">Aucun paiement pour l'instant.</div>
+        <div v-if="!list.length" class="p-10 text-center text-sm text-base-content/50">{{ ofMode.length ? 'Aucun paiement pour cette période ou ce canal.' : 'Aucun paiement pour l\'instant.' }}</div>
         <ul v-else class="divide-y divide-base-300">
           <li v-for="p in list" :key="p.id">
             <button type="button" class="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-base-200 cursor-pointer" :class="{ 'bg-base-200': selected?.id === p.id }" :data-payment="p.id" @click="selected = p">
@@ -120,6 +133,7 @@ onMounted(() => {
             <div v-if="selected.shipping"><dt class="text-base-content/60">Adresse de livraison</dt><dd class="whitespace-pre-wrap">{{ formatShipping(selected.shipping) }}</dd></div>
             <div><dt class="text-base-content/60">Référence Stripe</dt><dd class="font-mono text-xs break-all">{{ selected.paymentIntent ?? selected.sessionId }}</dd></div>
           </dl>
+          <CmsOriginDetail :origin="selected.origin" :conversion="selected.conversion" />
           <div v-if="selected.status === 'pending'" class="alert alert-soft alert-warning text-xs">Paiement différé (virement, prélèvement…) : Stripe préviendra le site quand il aboutira ou échouera.</div>
           <div class="flex flex-wrap gap-2 pt-1">
             <a class="btn btn-sm btn-primary grow" :href="dashboardUrl(selected)" target="_blank" rel="noopener"><ExternalLink :size="16" />Voir dans Stripe</a>

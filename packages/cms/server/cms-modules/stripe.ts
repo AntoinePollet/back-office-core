@@ -1,10 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import type { H3Event } from 'h3'
+import { CHANNELS, channelOfRow } from '../../shared/attribution'
 import {
   type PaymentFromSession, type PaymentStatus, type StripeConfig, STATUS_FROM,
   formatAmount, formatShipping, keyMode, paymentFromSession, sellableCollections, statusFromEvent,
 } from '../../shared/stripe'
 import type { CmsModuleDefinition, TemplateContext } from '../utils/modules'
+import { conversionForLead } from './google-conversions'
 
 /**
  * Paiement par Stripe Checkout (https://stripe.com).
@@ -67,6 +69,7 @@ function paymentContext(p: Omit<PaymentFromSession, 'sessionId'> & { id: string;
       mode: modeLabel(p.livemode),
       adminUrl: `${origin}/admin/payments?payment=${p.id}`,
     },
+    origin: { channel: CHANNELS[channelOfRow(p.origin)], campaign: p.origin?.campaign ?? '', term: p.origin?.term ?? '', source: p.origin?.source ?? p.origin?.referrer ?? '' },
   }
 }
 
@@ -154,11 +157,16 @@ export const stripeModule: CmsModuleDefinition = {
       { key: 'payment.reference', label: 'Référence Stripe' },
       { key: 'payment.mode', label: 'Mode : test ou production' },
       { key: 'payment.adminUrl', label: 'Adresse du paiement dans le back-office' },
+      { key: 'origin.channel', label: 'Provenance : canal (Google Ads, e-mail, moteur de recherche…)' },
+      { key: 'origin.campaign', label: 'Provenance : nom de la campagne' },
+      { key: 'origin.term', label: 'Provenance : mot-clé de l\'annonce' },
+      { key: 'origin.source', label: 'Provenance : source (utm_source ou site d\'où vient l\'acheteur)' },
     ]
     const sample = (name: keyof typeof EVENT_LABELS) => (target?: string) => paymentEvent(name, {
       id: 'exemple', sessionId: 'cs_test_exemple', paymentIntent: 'pi_exemple', collection: target ?? targets[0]?.key ?? '', entryId: 'exemple',
       title: 'Produit d\'exemple', quantity: 2, unitAmount: 4990, amount: 9980, currency: stripeOptions().currency ?? 'eur',
       email: 'acheteur@example.com', name: 'Jeanne Martin', livemode: false,
+      origin: { channel: 'google-ads', source: 'google', medium: 'cpc', campaign: 'printemps', term: 'avocat lyon' },
       shipping: { name: 'Jeanne Martin', line1: '12 rue des Lilas', line2: null, postalCode: '75011', city: 'Paris', state: null, country: 'FR' },
     }, '')
     return (['payment.succeeded', 'payment.failed'] as const).map(name => ({
@@ -187,14 +195,16 @@ export async function applyStripeEvent(event: H3Event, stripeEvent: { type?: str
   if (!found) return 'ignoré : session sans produit du site'
   const db = useDb(event)
   const now = new Date()
-  const row = { id: crypto.randomUUID(), ...found, refundedAmount: 0, status, createdAt: now, updatedAt: now }
+  // Vrai paiement réussi, venu d'une annonce Google avec l'accord de l'acheteur : à signaler à Google Ads.
+  const conversion = status === 'paid' && found.livemode ? await conversionForLead(event, 'payment', found.origin) : null
+  const row = { id: crypto.randomUUID(), ...found, conversion, refundedAmount: 0, status, createdAt: now, updatedAt: now }
   const [inserted] = await db.insert(schema.payments).values(row).onConflictDoNothing({ target: schema.payments.sessionId }).returning()
   let changed: PaymentRow | undefined = inserted
   if (!inserted) {
     const from = STATUS_FROM[status]
     if (from.length) {
       ;[changed] = await db.update(schema.payments)
-        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, updatedAt: now })
+        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, updatedAt: now, ...(conversion ? { conversion } : {}) })
         .where(and(eq(schema.payments.sessionId, found.sessionId), inArray(schema.payments.status, from))).returning()
     }
   }

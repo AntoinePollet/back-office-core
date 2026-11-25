@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm'
+import { cleanOrigin, originToMetadata } from '../../../shared/attribution'
 import {
   type CheckoutMetadata, checkQuantity, checkSellable, checkoutParams, encodeForm, safeReturnPath, sellableCollections, STRIPE_MAX_AMOUNT, withSessionId,
 } from '../../../shared/stripe'
@@ -19,7 +20,7 @@ const WINDOW_MS = 10 * 60_000
 export default defineEventHandler(async (event) => {
   await requireModule(event, 'stripe')
   if (Number(getRequestHeader(event, 'content-length') ?? 0) > 10_000) throw createError({ statusCode: 413, message: 'Demande trop longue.' })
-  const body = await readBody<{ collection?: unknown; id?: unknown; quantity?: unknown; locale?: unknown; returnPath?: unknown }>(event).catch(() => null)
+  const body = await readBody<{ collection?: unknown; id?: unknown; quantity?: unknown; locale?: unknown; returnPath?: unknown; origin?: unknown }>(event).catch(() => null)
 
   const options = stripeOptions()
   const type = String(body?.collection ?? '')
@@ -60,6 +61,8 @@ export default defineEventHandler(async (event) => {
   const imageUrl = mediaUrl ? new URL(mediaUrl, cmsConfig.site.url ?? origin).href : null
   const metadata: CheckoutMetadata = {
     cms_collection: type, cms_entry: id, cms_title: name.slice(0, 450), cms_quantity: String(quantity), cms_unit_amount: String(sale.unitAmount), cms_locale: locale,
+    // Provenance de l'acheteur : contrôlée ici, rendue par Stripe avec la session payée.
+    ...originToMetadata(cleanOrigin(body?.origin)),
   }
   const params = checkoutParams({
     currency: options.currency,

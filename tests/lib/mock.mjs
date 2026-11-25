@@ -2,6 +2,7 @@
 // par les workflows, et garde la trace des appels.
 import http from 'node:http'
 import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudflare.mjs'
+import { createGoogle } from './mock-google.mjs'
 
 /**
  * - POST /v3/smtp/email → 201, comme Brevo
@@ -15,6 +16,7 @@ import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudfla
  *   403 sans User-Agent, comme le vrai service
  * - Plausible, sous /plausible : POST /plausible/api/v2/query → statistiques selon les regroupements demandés ;
  *   401 avec la clé « mauvaise-cle-plausible », 400 « site not found » pour le domaine inconnu.fr
+ * - Google, sous /google et /google-ads : jeton d'accès et API Google Ads (voir mock-google.mjs)
  * - GET /_calls → les appels reçus (pour déboguer à la main)
  * - Stripe, sous /stripe : POST /stripe/v1/checkout/sessions → une session (cs_test_<n>) ; GET /stripe/v1/checkout/sessions →
  *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement »
@@ -23,6 +25,7 @@ import { cloudflareGraphql, siteverify, TURNSTILE_SCRIPT } from './mock-cloudfla
  */
 export async function startMock(port) {
   const calls = []
+  const google = createGoogle()
   const server = http.createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
     if (req.url === '/_calls') return res.end(JSON.stringify(calls))
@@ -32,7 +35,12 @@ export async function startMock(port) {
       let body = null
       try { body = JSON.parse(raw || 'null') }
       catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
-      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, body })
+      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, login: req.headers['login-customer-id'] ?? null, developerToken: req.headers['developer-token'] ?? null, body })
+      if (req.url.startsWith('/google')) {
+        const { status, json } = google.handle(req, body)
+        res.statusCode = status
+        return res.end(JSON.stringify(json))
+      }
       if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
       if (req.url.startsWith('/github/')) return github(req, res, body)
       if (req.url.startsWith('/resend/')) return resend(req, res)
@@ -121,6 +129,8 @@ export async function startMock(port) {
     url: `http://localhost:${port}`,
     /** Copie des appels reçus jusqu'ici. */
     calls: () => [...calls],
+    /** Le faux Google de cette suite : état des campagnes, changement de budget joué « dans Google Ads ». */
+    google,
     close: () => new Promise((resolve) => { server.closeAllConnections?.(); server.close(() => resolve()) }),
   }
 }

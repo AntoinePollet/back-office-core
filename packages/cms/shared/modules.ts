@@ -17,6 +17,7 @@
  */
 import { validateValues } from './content'
 import type { AnyField } from './format'
+import { type ConsentPurposeOptions, consentOptionsErrors } from './consent'
 
 /**
  * Ce que `cms.config.ts` contient pour un module : son identifiant et ses options, sérialisables.
@@ -33,10 +34,36 @@ export const MODULE_CATEGORIES = {
   audience: 'Mesure d\'audience',
   forms: 'Formulaires',
   payment: 'Paiement',
+  ads: 'Publicité',
+  privacy: 'Vie privée',
   security: 'Sécurité',
   other: 'Autres',
 } as const
 export type ModuleCategory = keyof typeof MODULE_CATEGORIES
+
+// ───────────────────────── Consentement ─────────────────────────
+
+/**
+ * Bandeau de consentement des visiteurs. Sans option, il demande l'accord pour la mesure de la publicité (provenance
+ * des contacts gardée d'une visite à l'autre). Le site peut y ajouter ses propres finalités, qu'il respecte lui-même
+ * avec `useCmsConsent().allows('video')` :
+ *
+ *   consent({ purposes: { video: { label: 'Vidéos YouTube', description: 'Afficher les vidéos hébergées par YouTube.' } } })
+ */
+export function consent(options: { purposes?: ConsentPurposeOptions } = {}) {
+  const errors = consentOptionsErrors(options.purposes)
+  if (errors.length) fail(errors.join(' ; '))
+  return { id: 'consent' as const, options: { purposes: options.purposes ?? {} } }
+}
+
+// ───────────────────────── Google Ads ─────────────────────────
+
+/**
+ * Google Ads en lecture : dépense des campagnes et contacts du site venus des annonces, dans l'écran
+ * « Annonces Google ». Réglages dans le back-office (ou, pour le client OAuth et le jeton, par les variables
+ * NUXT_GOOGLE_ADS_* de l'hébergement).
+ */
+export const googleAds = () => ({ id: 'google-ads' as const })
 
 // ───────────────────────── Brevo ─────────────────────────
 

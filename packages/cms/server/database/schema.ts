@@ -412,6 +412,10 @@ export const formSubmissions = sqliteTable('cms_form_submissions', {
   /** Identifiant du formulaire dans cms.config.ts. */
   form: text('form').notNull(),
   values: text('values', { mode: 'json' }).$type<Json>().notNull(),
+  /** D'où venait le visiteur (annonce, e-mail, autre site…), contrôlé par le serveur ; null : rien de relevé. */
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  /** Envoi de ce contact à la régie publicitaire comme conversion (module Google Ads) ; null : rien à envoyer. */
+  conversion: text('conversion', { mode: 'json' }).$type<import('../../shared/conversions').ConversionState | null>(),
   read: integer('read', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_form_submissions_form').on(t.form, t.createdAt)])
@@ -445,6 +449,10 @@ export const payments = sqliteTable('cms_payments', {
   status: text('status').$type<import('../../shared/stripe').PaymentStatus>().notNull(),
   /** Paiement de test (clé sk_test_ / rk_test_) : aucun argent n'a circulé. */
   livemode: integer('livemode', { mode: 'boolean' }).notNull(),
+  /** D'où venait l'acheteur (annonce, e-mail, autre site…), transmis par les métadonnées de la session ; null : rien de relevé. */
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  /** Envoi de ce paiement à la régie publicitaire comme conversion (module Google Ads) ; null : rien à envoyer. */
+  conversion: text('conversion', { mode: 'json' }).$type<import('../../shared/conversions').ConversionState | null>(),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_payments_created').on(t.createdAt), index('cms_payments_intent').on(t.paymentIntent)])

@@ -1,9 +1,17 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CORE_REPO, CORE_SUBDIR } from './args.mjs'
 
 export const TEMPLATE_DIR = fileURLToPath(new URL('../template', import.meta.url))
+/** Ce qui change pour un site hébergé sur un serveur Node (Docker) : ces fichiers s'ajoutent au modèle ou y remplacent les leurs. */
+export const NODE_TEMPLATE_DIR = fileURLToPath(new URL('../template-node', import.meta.url))
+/** Fichiers du modèle propres à Cloudflare, absents d'un site hébergé ailleurs. */
+const CLOUDFLARE_ONLY = ['wrangler.jsonc']
+
+/** Hébergement du site : « cloudflare » sauf mention contraire. */
+export const hostingOf = answers => (answers.hosting === 'node' ? 'node' : 'cloudflare')
 
 /**
  * Référence git proposée par défaut : l'étiquette de la version du core qui accompagne cette commande (« v0.1.0 »).
@@ -51,8 +59,35 @@ export function siteTs(answers) {
   return `{ ${parts.join(', ')} }`
 }
 
+/** Ce que le README dit de l'hébergement : la ligne du tableau des fichiers, et un renvoi vers HEBERGEMENT.md. */
+function hostingTokens(answers) {
+  if (hostingOf(answers) === 'cloudflare') {
+    return {
+      __HOSTING_FILES__: `| \`wrangler.jsonc\` | Ressources Cloudflare : Worker \`${answers.id}\`, base D1 \`${answers.id}\`, bucket R2 \`${bucketName(answers.id)}\` |\n`,
+      __HOSTING_NOTE__: '',
+    }
+  }
+  return {
+    __HOSTING_FILES__: [
+      '| `Dockerfile`, `docker-compose.yml`, `Caddyfile` | Image Docker du site et son serveur frontal (HTTPS) |',
+      '| `.env.example` | Modèle des réglages de production (secret des sessions, domaine, stockage S3) |',
+      '| `HEBERGEMENT.md` | Mise en ligne, mises à jour et sauvegardes sur un serveur Node |',
+      '',
+    ].join('\n'),
+    __HOSTING_NOTE__: [
+      '> **Ce site est hébergé sur un serveur Node (Docker), pas chez Cloudflare.** Dans ce README, tout ce qui cite',
+      '> Cloudflare, `wrangler`, D1, R2 ou `.wrangler/` (lancement en local, mise en ligne, hébergement des sauvegardes,',
+      '> déploiement automatique) est remplacé par [HEBERGEMENT.md](./HEBERGEMENT.md). Le reste s\'applique tel quel.',
+      '',
+      '',
+    ].join('\n'),
+  }
+}
+
 function tokens(answers) {
   return {
+    ...hostingTokens(answers),
+    __SITE_DOMAIN__: answers.url ? new URL(answers.url).host : 'exemple.fr',
     __ID_JSON__: JSON.stringify(answers.id),
     __BUCKET_JSON__: JSON.stringify(bucketName(answers.id)),
     __SITE_NAME_JSON__: JSON.stringify(answers.name),
@@ -68,7 +103,7 @@ function tokens(answers) {
 }
 
 /** Fichiers du modèle dont le nom change à la copie (npm et pnpm traitent à part .gitignore et package.json). */
-const RENAMES = { '_gitignore': '.gitignore', '_npmrc': '.npmrc', '_package.json': 'package.json' }
+const RENAMES = { '_gitignore': '.gitignore', '_npmrc': '.npmrc', '_package.json': 'package.json', '_dockerignore': '.dockerignore', '_env.example': '.env.example' }
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -81,6 +116,11 @@ function walk(dir) {
 export function generate(answers) {
   mkdirSync(answers.dir, { recursive: true })
   cpSync(TEMPLATE_DIR, answers.dir, { recursive: true })
+  const node = hostingOf(answers) === 'node'
+  if (node) {
+    cpSync(NODE_TEMPLATE_DIR, answers.dir, { recursive: true })
+    for (const name of CLOUDFLARE_ONLY) rmSync(join(answers.dir, name), { force: true })
+  }
   const values = tokens(answers)
   const pattern = new RegExp(Object.keys(values).sort((a, b) => b.length - a.length).join('|'), 'g')
   const created = []
@@ -94,6 +134,12 @@ export function generate(answers) {
     const out = text.replace(pattern, token => values[token])
     if (out !== text) writeFileSync(file, out)
     created.push(relative(answers.dir, file))
+  }
+  // Serveur Node : les réglages de production, avec un secret des sessions tiré au hasard. Le fichier reste hors de git.
+  if (node) {
+    const example = readFileSync(join(answers.dir, '.env.example'), 'utf8')
+    writeFileSync(join(answers.dir, '.env'), example.replace(/^NUXT_AUTH_SECRET=$/m, `NUXT_AUTH_SECRET=${randomBytes(32).toString('hex')}`), { mode: 0o600 })
+    created.push('.env')
   }
   return created.sort()
 }
@@ -121,6 +167,16 @@ export const AUTOMATION_FILES = ['renovate.json', '.github/workflows/verifier.ym
  * faits par cette commande.
  */
 export function automationSteps(answers) {
+  if (hostingOf(answers) === 'node') {
+    return [
+      ...(answers.core !== 'git' ? ['Avec un lien local vers le core, l\'image Docker ne peut pas être construite (le core est hors du projet) :', 'passer à la dépendance git avant de livrer le site (voir README.md).', ''] : []),
+      '1. Pousser le projet sur GitHub, branche main, avec pnpm-lock.yaml (créé par pnpm install).',
+      '2. Autoriser Renovate sur ce dépôt : https://github.com/apps/renovate → Configure → ajouter le dépôt.',
+      '   Il ouvrira une demande de fusion à chaque version du core ; les correctifs sont fusionnés seuls.',
+      '3. Chaque fusion sur main construit l\'image Docker du site et la publie sur ghcr.io (rien à régler).',
+      '   Sur le serveur : docker compose pull && docker compose up -d (voir HEBERGEMENT.md).',
+    ]
+  }
   if (answers.core !== 'git') {
     return [
       'Non disponibles avec un lien local vers le core : il n\'y a pas de version à suivre, et GitHub ne peut pas',

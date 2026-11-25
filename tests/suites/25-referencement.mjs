@@ -1,6 +1,7 @@
 // Référencement assisté : aperçus et conseils de l'onglet Référencement, titre et description de partage,
-// suffixe de titre et image par défaut du site, données structurées, vue d'ensemble, droits, deux langues.
-import { check, clickText, login, menuLabels, says } from '../lib/harness.mjs'
+// suffixe de titre et image par défaut du site, données structurées, vue d'ensemble, droits, deux langues,
+// titres de la page (H1 à H6) lus dans la page rendue.
+import { check, clickText, field, login, menuLabels, says } from '../lib/harness.mjs'
 
 export const meta = { title: 'référencement assisté : aperçus, conseils, partage, vue d\'ensemble' }
 
@@ -358,5 +359,72 @@ export default async function (t) {
     check(cells.length === 3 && cells.every(right => right <= 390), 'colonnes sur téléphone : ' + cells)
     await t.shot(phone, 'vue-ensemble-telephone')
     await phone.close()
+  })
+
+  /** Titres affichés dans l'onglet : [niveau, texte, place]. */
+  const outline = () => page.$$eval('[data-seo-outline] [data-seo-heading]', els => els.map(e => [Number(e.dataset.seoHeading), e.querySelector('.break-words').textContent.trim(), e.dataset.place]))
+  /** Attend un H1 (de ce texte, s'il est donné) dans les titres de l'onglet. */
+  const waitH1 = (expected, what) => page.waitForFunction(expected => [...document.querySelectorAll('[data-seo-outline] [data-seo-heading="1"]')]
+    .some(e => expected === null || e.querySelector('.break-words').textContent.trim() === expected), { timeout: 20_000 }, expected)
+    .catch(async () => { throw new Error(`${what} ; titres affichés : ${JSON.stringify(await outline())}`) })
+
+  await step('titres de la page : lus dans la page rendue (H1 du gabarit, H2 et H3 du texte), dans un cadre invisible', async () => {
+    ids.d = (await claire.json('/api/cms/entries/services', {
+      method: 'POST',
+      body: { values: { title: 'Droit immobilier', onQuote: true, body: `<h2>Nos missions</h2><p>${words(60)}</p><h3>Baux commerciaux</h3><p>${words(20)}</p>`, seo: { description: DESCRIPTION, image: media.id } }, publish: ['fr'] },
+    })).id
+    await openSeo(`/admin/services/${ids.d}`)
+    await page.waitForSelector('[data-seo-outline][data-state=ready]', { timeout: 20_000 })
+    await waitH1(null, 'pas de H1')
+    const main = (await outline()).filter(h => h[2] === 'main')
+    check(JSON.stringify(main.slice(0, 3)) === JSON.stringify([[1, 'Droit immobilier', 'main'], [2, 'Nos missions', 'main'], [3, 'Baux commerciaux', 'main']]), 'titres : ' + JSON.stringify(main))
+    const tips = await tipIds()
+    check(!tips.some(id => id.startsWith('h1-') || id.startsWith('heading-')), 'conseils inattendus : ' + tips)
+    // Le cadre ne se voit pas et ne prend ni clic ni tabulation.
+    const probe = await page.$eval('[data-seo-probe]', el => ({ right: el.getBoundingClientRect().right, tab: el.tabIndex, hidden: el.getAttribute('aria-hidden'), events: getComputedStyle(el).pointerEvents }))
+    await page.$eval('[data-seo-outline]', el => el.scrollIntoView())
+    await t.shot(page, 'titres')
+    check(probe.right <= 0 && probe.tab === -1 && probe.hidden === 'true' && probe.events === 'none', 'cadre visible : ' + JSON.stringify(probe))
+    // Les boutons de l'éditeur disent quel titre ils produisent.
+    await clickText(page, '[role=tab]', 'Contenu')
+    const buttons = await page.$$eval('.cms-rich button', els => els.map(b => b.title))
+    check(buttons.includes('Titre de section (H2)') && buttons.includes('Sous-titre (H3)'), 'boutons : ' + buttons)
+  })
+
+  await step('titres de la page : ils suivent la saisie sans enregistrer ; H1 sans rapport avec le titre de la page', async () => {
+    await clickText(page, '[role=tab]', 'Référencement')
+    await retype(await input('title'), 'Avocat en droit immobilier à Lyon')
+    await clickText(page, '[role=tab]', 'Contenu')
+    const title = await field(page, 'Titre')
+    await title.evaluate((e) => { e.focus(); e.select() })
+    await page.keyboard.press('Backspace')
+    await title.type('Bienvenue chez nous')
+    await clickText(page, '[role=tab]', 'Référencement')
+    await waitH1('Bienvenue chez nous', 'le H1 ne suit pas la saisie')
+    await waitTips(['h1-unrelated'])
+    check(/« Bienvenue chez nous ».+« Avocat en droit immobilier à Lyon »/.test(await text('[data-seo-tip=h1-unrelated]')), 'conseil : ' + await text('[data-seo-tip=h1-unrelated]'))
+    // Rien n'a été enregistré.
+    const saved = (await visitor.get('/api/content/services/droit-immobilier')).json
+    check(saved.title === 'Droit immobilier', 'titre enregistré : ' + saved.title)
+    // Un titre en rapport : le conseil disparaît.
+    await clickText(page, '[role=tab]', 'Contenu')
+    await (await field(page, 'Titre')).type(' en droit immobilier')
+    await clickText(page, '[role=tab]', 'Référencement')
+    await waitTips([], ['h1-unrelated'])
+  })
+
+  await step('texte long sans intertitre : conseil dans l\'onglet et dans la vue d\'ensemble ; contenu jamais enregistré', async () => {
+    ids.e = (await claire.json('/api/cms/entries/services', {
+      method: 'POST', body: { values: { title: 'Droit de la famille', onQuote: true, body: `<p>${words(320)}</p>`, seo: { description: DESCRIPTION, image: media.id } }, publish: ['fr'] },
+    })).id
+    await openSeo(`/admin/services/${ids.e}`)
+    await waitTips(['headings-none'])
+    check(/Texte long sans intertitre \(32\d mots\)/.test(await text('[data-seo-tip=headings-none]')), 'conseil : ' + await text('[data-seo-tip=headings-none]'))
+    const row = (await claire.json('/api/cms/seo')).find(r => r.id === ids.e)
+    check(row?.tips.some(tip => tip.id === 'headings-none'), 'vue d\'ensemble : ' + JSON.stringify(row?.tips))
+    // Page jamais enregistrée : pas de page à lire, et c'est dit.
+    await page.goto(`${B}/admin/services/new`, { waitUntil: 'networkidle0' })
+    await clickText(page, '[role=tab]', 'Référencement')
+    await page.waitForSelector('[data-seo-outline][data-state=unavailable] [data-seo-outline-unavailable]')
   })
 }

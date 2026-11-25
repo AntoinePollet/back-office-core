@@ -13,21 +13,8 @@ export const mediaUrl = (key: string) => `/media/${key}`
 /** Adresse d'une vignette. Pour un fichier qui ne se redimensionne pas (SVG, PDF), le paramètre est ignoré. */
 export const thumbUrl = (key: string, width = 160) => `/media/${key}?w=${width}`
 
-/**
- * Ce que le core utilise du bucket R2. Décrit ici pour ne pas dépendre de la façon dont le projet client
- * installe ses paquets : selon les cas, TypeScript voit les liaisons Cloudflare comme `any` ou comme `unknown`.
- */
-type MediaBucket = {
-  get: (key: string) => Promise<{ body: ReadableStream; size: number; httpEtag: string; httpMetadata?: { contentType?: string } } | null>
-  put: (key: string, value: ArrayBuffer | ArrayBufferView | ReadableStream | string, options?: { httpMetadata?: { contentType?: string } }) => Promise<unknown>
-  delete: (key: string | string[]) => Promise<void>
-}
-
-export function useBucket(event: H3Event) {
-  const bucket = event.context.cloudflare?.env?.MEDIA as MediaBucket | undefined
-  if (!bucket) throw createError({ statusCode: 500, message: 'Bucket R2 introuvable : la liaison « MEDIA » manque dans wrangler.jsonc.' })
-  return bucket
-}
+/** Le stockage des fichiers de la médiathèque (R2 chez Cloudflare, disque ou S3 ailleurs). */
+export const useBucket = (event: H3Event) => usePlatform().mediaBucket(event)
 
 /** Un fichier tel que le back-office le reçoit. */
 export function toAdminMedia(row: MediaRow) {

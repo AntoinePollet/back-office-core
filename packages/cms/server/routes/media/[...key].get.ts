@@ -1,16 +1,8 @@
 import { isPrivateKey } from '../../../shared/backup'
 import { eq } from 'drizzle-orm'
-import { type Focus, RESIZABLE_TYPES, cropRect, imageQuery, imageVariant } from '../../../shared/media'
+import { RESIZABLE_TYPES, cropRect, imageQuery, imageVariant } from '../../../shared/media'
 import { canSeeTrashItem } from '../../../shared/trash'
-
-type Transform = { width: number; height?: number; fit: 'scale-down' | 'cover'; gravity?: Focus | 'left' | 'right' | 'top' | 'bottom' }
-type ImagesBinding = {
-  input: (stream: ReadableStream) => {
-    transform: (options: Transform) => {
-      output: (options: { format: string; quality: number }) => Promise<{ image: () => ReadableStream; contentType: () => string }>
-    }
-  }
-}
+import type { ImagesBinding } from '../../platform/types'
 
 /**
  * Recadrage autour du point d'intérêt avec le moteur local de wrangler, qui ne connaît de `gravity` que les bords
@@ -27,7 +19,8 @@ async function cropLocally(images: ImagesBinding, body: ReadableStream, source: 
 }
 
 /**
- * Sert un fichier de la médiathèque depuis R2. L'adresse contient un identifiant unique : la réponse se garde sans limite.
+ * Sert un fichier de la médiathèque depuis le stockage du site (R2 chez Cloudflare, disque ou S3 ailleurs).
+ * L'adresse contient un identifiant unique : la réponse se garde sans limite.
  * Avec `?w=800`, une image est réduite à cette largeur et convertie en WebP si le navigateur l'accepte.
  * Avec `?w=800&r=16x9`, elle est en plus recadrée à ces proportions autour du point d'intérêt du fichier.
  * Seules les largeurs et proportions des listes fermées de shared/media.ts sont servies (voir `imageVariant`).
@@ -50,7 +43,7 @@ export default defineEventHandler(async (event) => {
     'cache-control': trashed ? NO_CACHE : 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
   }
-  const images = event.context.cloudflare?.env?.IMAGES as ImagesBinding | undefined
+  const images = usePlatform().images(event)
   const query = getQuery(event)
 
   if (Number(query.w) > 0 && RESIZABLE_TYPES.includes(type)) {
@@ -86,7 +79,7 @@ export default defineEventHandler(async (event) => {
           const rect = cropRect(media, variant.ratio)
           // `cover` remplit exactement les dimensions demandées (calculées pour ne jamais agrandir) ; `gravity` garde
           // le point d'intérêt à la même position relative dans le cadre que dans l'image.
-          result = import.meta.dev && variant.focus && rect && media.width && media.height
+          result = import.meta.dev && usePlatform().name === 'cloudflare' && variant.focus && rect && media.width && media.height
             ? await cropLocally(images, object.body, { width: media.width, height: media.height }, crop, rect, output)
             : await images.input(object.body).transform({ ...crop, fit: 'cover', ...(variant.focus ? { gravity: variant.focus } : {}) }).output(output)
           // Le cadrage servi, pour le vérifier d'un coup d'œil (`curl -I`) : en ligne, ce sont les paramètres transmis au service d'images.

@@ -9,11 +9,10 @@ Site vitrine avec son back-office. Le projet étend `backoffice-core` : le core 
 | `app/pages/` | Les pages du site (Vue, Tailwind 4, daisyUI 5) |
 | `app/layouts/default.vue` | En-tête et pied de page communs |
 | `app/app.config.ts` | Nom du site affiché dans les pages |
-| `wrangler.jsonc` | Ressources Cloudflare : Worker `__ID__`, base D1 `__ID__`, bucket R2 `__BUCKET__` |
-| `.npmrc` | Réglage de pnpm indispensable avec la dépendance git vers le core (voir le commentaire du fichier) |
+__HOSTING_FILES__| `.npmrc` | Réglage de pnpm indispensable avec la dépendance git vers le core (voir le commentaire du fichier) |
 | `renovate.json`, `.github/workflows/` | Mises à jour du core et mises en ligne automatiques (voir « Mettre à jour le core ») |
 
-## Lancer en local
+__HOSTING_NOTE__## Lancer en local
 
 Il faut Node 22.21 ou plus récent (ou 24.11 et plus) et pnpm 9 ou plus récent.
 
@@ -98,6 +97,11 @@ site: {
   l'accueil (le site écrit déjà le sien) : `useCmsSeo(home, { structuredData: false })`.
 - Les valeurs sont aussi dans `entry.seo` (`title`, `description`, `shareTitle`, `shareDescription`, `image`, `noindex`).
 - Les seuils des conseils (longueurs, taille d'image…) sont regroupés et expliqués dans `shared/seo.ts` du core.
+- L'onglet montre aussi les **titres de la page** (H1 à H6), lus dans la page elle-même, affichée sans être vue avec la
+  saisie en cours. C'est donc le gabarit du site qui décide : chaque page doit avoir **un seul `<h1>`**, en général le
+  titre du contenu (ou l'accroche d'une page unique), puis des `<h2>` et `<h3>` sans sauter de niveau. Les boutons
+  « Titre de section (H2) » et « Sous-titre (H3) » des textes mis en forme produisent ces deux niveaux : dans le
+  gabarit, ne mettez pas ce texte sous un titre de niveau plus bas que H1.
 
 ## Reprendre des contenus existants
 
@@ -356,6 +360,148 @@ envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 j
 Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
 « Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
 `{{ fields.email }}` dans « Répondre à ».
+
+### Provenance des contacts (annonces, e-mails, moteurs de recherche)
+
+Rien à écrire dans les pages : le core relève d'où vient chaque visiteur et le joint à ses messages (`useCmsForm`) et
+à ses paiements (`useCmsCheckout`). Dans « Messages reçus » et « Paiements », un tableau dit combien viennent de
+Google Ads, d'une autre publicité, d'un e-mail, d'un réseau social, d'un moteur de recherche, d'un autre site ou d'un
+accès direct, avec le détail par campagne ; un clic sur un canal filtre la liste, et l'export CSV a les colonnes de
+provenance. Les workflows reçoivent `{{ origin.channel }}`, `{{ origin.campaign }}`, `{{ origin.term }}` et
+`{{ origin.source }}`.
+
+- **Ce qui est relevé** : les paramètres `utm_source`, `utm_medium`, `utm_campaign`, `utm_id`, `utm_term`, `utm_content` de la
+  page d'arrivée, l'identifiant de clic des régies (`gclid` de Google Ads — à laisser activé dans Google Ads,
+  « Balisage automatique » —, `msclkid`, `fbclid`…), le domaine du site précédent (pas son adresse complète, qui peut
+  contenir la recherche du visiteur) et la page d'arrivée. Le serveur contrôle tout et décide lui-même du canal.
+- **Pour les autres régies et les e-mails**, ajouter les paramètres `utm_*` aux liens : `utm_medium=cpc` (ou `paid_social`)
+  pour une publicité, `utm_medium=email` pour une lettre d'information.
+- **Par défaut, la provenance n'est gardée qu'en mémoire, le temps de la visite** (navigation dans le site comprise) :
+  rien n'est écrit sur l'appareil du visiteur, aucun bandeau n'est nécessaire pour cela. Un visiteur qui revient plus
+  tard compte en « Accès direct ».
+- **La garder plusieurs jours** demande l'accord du visiteur : `site: { attribution: { rememberDays: 30 } }` dans
+  `cms.config.ts`, et le module **Consentement** (ci-dessous), qui demande cet accord. Sans accord, rien n'est écrit.
+  Avec un autre bandeau que celui du core, appelez `cmsAttributionConsent(true)` quand le visiteur accepte (à chaque
+  chargement de page où son accord est connu) et `cmsAttributionConsent(false)` s'il le retire.
+- **Désactiver** : `site: { attribution: false }`.
+
+### Consentement des visiteurs (bandeau)
+
+Le module **Consentement** s'active dans l'écran Modules. Le core pose alors un bandeau en bas des pages du site
+(jamais dans le back-office ni dans un aperçu) : « Tout refuser » et « Tout accepter » ont la même forme, côte à côte,
+« Personnaliser » montre chaque finalité sans rien cocher d'avance. Rien n'est écrit sur l'appareil avant le choix ; le
+choix est gardé six mois, puis redemandé (ou dès qu'une finalité s'ajoute). Le bandeau est en français ou en anglais
+selon la langue de la page.
+
+**À faire dans le site** : placer le lien qui permet de changer d'avis, dans le pied de page par exemple. Il n'affiche
+rien tant que le module n'est pas actif.
+
+```vue
+<CmsConsentLink />                                  <!-- « Gérer mes cookies » -->
+<CmsConsentLink>Mes choix de confidentialité</CmsConsentLink>
+```
+
+Dans **Modules → Consentement**, saisir l'adresse de la page « politique de confidentialité » : le bandeau y renvoie.
+
+- **Finalité « Mesure de la publicité »** : proposée par le core dès que la provenance des contacts est relevée. Avec
+  l'accord du visiteur, sa provenance peut être gardée d'une visite à l'autre (`site.attribution.rememberDays`) et
+  l'accord est enregistré avec son message ou son paiement. Vous n'avez alors plus à appeler vous-même
+  `cmsAttributionConsent` : le bandeau s'en charge.
+- **Vos propres finalités** (vidéos YouTube, carte, discussion en ligne…) se déclarent dans `cms.config.ts`, et la page
+  les respecte elle-même :
+
+  ```ts
+  consent({ purposes: { video: { label: 'Vidéos YouTube', description: 'Afficher les vidéos hébergées par YouTube.' } } })
+  ```
+
+  ```vue
+  <script setup lang="ts">
+  const consent = useCmsConsent()
+  </script>
+  <template>
+    <iframe v-if="consent.allows('video')" src="https://www.youtube-nocookie.com/embed/…" />
+    <button v-else @click="consent.open()">Accepter les vidéos YouTube pour l'afficher</button>
+  </template>
+  ```
+
+  Tant que le visiteur n'a pas choisi, `allows()` répond non. Chaque changement est aussi annoncé par l'événement
+  `cms:consent` de `window`, pour un script qui n'est pas dans une page Vue.
+- **Couleurs** : `--cms-consent-accent` (boutons) et `--cms-consent-accent-text` (leur texte), à poser sur `:root`.
+  Le bandeau suit le mode clair ou sombre de l'appareil.
+- **Quand l'activer** : seulement s'il y a quelque chose à demander. La mesure d'audience du core (Cloudflare Web
+  Analytics, Plausible) est sans cookie et n'en a pas besoin, pas plus que la provenance gardée le temps de la visite.
+- Le choix reste sur l'appareil du visiteur : le serveur n'en tient pas de registre.
+
+### Google Ads : dépense des campagnes et coût par contact
+
+Le module **Google Ads** s'active dans l'écran Modules (ou `googleAds()` dans `cms.config.ts`). Il lit les campagnes
+du compte (affichages, clics, dépense, conversions vues par Google) et les rapproche des contacts que le site a
+enregistrés lui-même (messages reçus, paiements réussis venus d'une annonce) : l'écran « Annonces Google » donne les
+contacts et le **coût par contact** de chaque campagne.
+
+L'administrateur peut aussi, depuis cet écran, **mettre une campagne en pause, la relancer et changer son budget par
+jour**. Rien d'autre n'est modifié dans Google Ads. Chaque action demande une confirmation, relit d'abord l'état de la
+campagne chez Google (un budget changé entre-temps dans Google Ads n'est jamais écrasé) et est inscrite au journal
+d'activité. Le budget ne se change d'ici que dans le cas simple : un budget par jour, propre à la campagne. Un budget
+partagé entre plusieurs campagnes, ou fixé pour toute une période, se règle dans Google Ads. Pour ces actions, le
+compte Google qui a créé le jeton doit avoir l'accès « Standard » ou « Administrateur » au compte Google Ads ; avec un
+accès en lecture seule, les chiffres s'affichent et les actions sont refusées avec un message clair.
+
+**Côté Google, une fois** (les mêmes identifiants peuvent servir à tous vos sites) :
+
+1. Dans la [console Google Cloud](https://console.cloud.google.com), créer un projet, y activer **Google Ads API**,
+   puis, sur la page « Google Ads API → Overview », demander le niveau d'accès **Explorer** (le niveau « Test » de
+   départ ne lit que des comptes de test). Il n'y a plus de « jeton développeur » à demander.
+2. « Identifiants » → « Créer des identifiants » → **ID client OAuth** (type « Application Web », avec
+   `https://developers.google.com/oauthplayground` comme URI de redirection). Passer l'écran de consentement OAuth en
+   production : en mode « Test », le jeton créé à l'étape suivante cesse de marcher au bout de 7 jours.
+3. Créer le **jeton d'actualisation** : sur [OAuth Playground](https://developers.google.com/oauthplayground), roue
+   dentée → « Use your own OAuth credentials » (ID client et secret), autorisation
+   `https://www.googleapis.com/auth/adwords` (et `https://www.googleapis.com/auth/datamanager` si vous comptez
+   signaler les contacts à Google, voir plus bas), se connecter avec un compte Google qui a accès au compte Google Ads
+   (directement, ou par un compte administrateur), puis « Exchange authorization code for tokens » : copier le
+   *Refresh token*.
+
+**Dans le back-office**, **Modules → Google Ads** : numéro du compte Google Ads (dix chiffres), numéro du compte
+administrateur (MCC) si l'accès passe par lui, ID client, secret et jeton d'actualisation, puis « Vérifier la
+connexion ». Pour une agence, ces trois derniers et le compte administrateur peuvent venir de l'hébergement
+(`NUXT_GOOGLE_ADS_CLIENT_ID`, `NUXT_GOOGLE_ADS_CLIENT_SECRET`, `NUXT_GOOGLE_ADS_REFRESH_TOKEN`,
+`NUXT_GOOGLE_ADS_LOGIN_CUSTOMER_ID`) : il ne reste alors que le numéro du compte à saisir pour chaque site.
+
+**Signaler les contacts à Google Ads (conversions).** Facultatif. Un message reçu ou un paiement réussi venu d'une
+annonce peut être signalé à Google Ads comme conversion : Google sait alors quels mots-clés amènent des contacts, et
+peut régler ses enchères dessus.
+
+- Dans Google Ads, créer une action de conversion de type **« Importation depuis les clics »** (Objectifs →
+  Conversions). L'écran « Annonces Google » liste celles du compte avec leur numéro.
+- Dans **Modules → Google Ads**, saisir ce numéro pour les messages, et un autre (ou le même) pour les paiements.
+  « Vérifier la connexion » contrôle qu'elles existent.
+- Côté Google Cloud, activer aussi la **Data Manager API** dans le projet, et créer le jeton d'actualisation avec les
+  **deux** autorisations : `https://www.googleapis.com/auth/adwords` et `https://www.googleapis.com/auth/datamanager`.
+  (Depuis juin 2026, Google n'ouvre plus l'ancien envoi de conversions de l'API Google Ads aux nouvelles intégrations.)
+- **Seuls partent les contacts dont le visiteur a donné son accord** : il faut donc le module Consentement. Sans
+  accord, le contact est compté par le site, mais rien n'est transmis.
+- Ce qui part : l'identifiant du clic (`gclid`), la date du contact, le montant d'un paiement et un identifiant
+  interne qui évite les doublons. Ni nom, ni e-mail, ni contenu du message.
+- L'envoi est fait par la tâche planifiée du site (toutes les cinq minutes), au plus tôt six heures après le clic :
+  Google ne connaît pas un clic plus récent. Une panne de Google est réessayée toutes les heures ; un réglage en cause
+  (jeton sans l'autorisation, action introuvable) arrête les envois sans rien perdre, et l'écran « Annonces Google »
+  le dit. L'état de chaque contact se lit dans son détail (« Messages reçus », « Paiements »).
+- Seuls les contacts arrivés après le réglage sont envoyés ; les paiements de test ne le sont jamais.
+
+**Rattacher les contacts aux campagnes.** Trois moyens, du plus sûr au moins sûr :
+
+- le **suffixe d'URL finale** du compte Google Ads (Administration → Paramètres du compte → Suivi) :
+  `utm_source=google&utm_medium=cpc&utm_id={campaignid}&utm_term={keyword}`. Google remplit lui-même l'identifiant de
+  la campagne, et le site le retient ;
+- sans suffixe, avec le seul **balisage automatique** (`gclid`), le module demande à Google à quelle campagne
+  appartient le clic et l'enregistre avec le contact. Google ne garde ce détail que 90 jours, et quelques heures
+  peuvent passer avant qu'il soit disponible ;
+- à défaut, un `utm_campaign` égal au nom de la campagne.
+
+Les contacts venus de Google Ads dont la campagne reste inconnue sont comptés à part. Les chiffres de Google sont
+relus au plus toutes les cinq minutes ; chaque lecture compte dans le quota du projet (2 880 opérations par jour au
+niveau « Explorer »). L'écran est ouvert aux administrateurs et aux éditeurs.
 
 ### Protéger un formulaire des robots
 

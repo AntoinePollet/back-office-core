@@ -1,0 +1,49 @@
+# À chaque fusion sur main : construction de l'image Docker du site, publiée dans le registre de GitHub
+# (ghcr.io/<compte>/<dépôt>, étiquettes « latest » et le numéro du commit).
+#
+# Le serveur prend ensuite la nouvelle image : `docker compose pull && docker compose up -d` (voir HEBERGEMENT.md).
+# La base est mise à niveau par le site lui-même à son démarrage : il n'y a pas d'étape de migration ici.
+# Si la construction échoue, rien n'est publié et un ticket (« issue ») est ouvert dans ce dépôt pour le signaler.
+name: Déployer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Pour publier l'image dans le registre de GitHub.
+  packages: write
+  # Pour ouvrir un ticket dans ce dépôt quand la construction échoue.
+  issues: write
+
+concurrency:
+  group: deployer
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Construction et publication de l'image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Connexion au registre
+        run: echo "${{ github.token }}" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Construction et publication
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build --tag "$IMAGE:latest" --tag "$IMAGE:$GITHUB_SHA" .
+          docker push --all-tags "$IMAGE"
+          echo "::notice::Image publiée : $IMAGE:latest (et $IMAGE:$GITHUB_SHA)"
+      - name: Signaler l'échec
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "La construction de l'image a échoué ($(date -u +%F))" \
+            --body "Le flux « Déployer » a échoué pour le commit $GITHUB_SHA : aucune nouvelle image n'a été publiée, le site en ligne n'a pas changé. Journal : $RUN_URL" \
+            || echo "::warning::Impossible d'ouvrir un ticket pour signaler l'échec (les tickets sont-ils activés sur ce dépôt ?)."

@@ -56,6 +56,7 @@ const secretOf = uri => new URL(uri).searchParams.get('secret')
 // ───── Lecture directe de la base locale (ce que contiendrait une copie de la base) ─────
 
 function databaseFile() {
+  if (config.target === 'node') return path.join(config.tmpDir, 'etat', 'cms.sqlite')
   const dir = path.join(config.tmpDir, 'etat', 'v3', 'd1', 'miniflare-D1DatabaseObject')
   const file = fs.readdirSync(dir).find(f => f.endsWith('.sqlite') && f !== 'metadata.sqlite')
   return path.join(dir, file)

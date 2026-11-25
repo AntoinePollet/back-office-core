@@ -8,8 +8,8 @@ const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.jso
 export default defineNuxtConfig({
   compatibilityDate: '2026-01-01',
 
+  // Le module branche aussi l'hébergement (Cloudflare ou serveur Node) : voir `cms: { target }` dans module.ts.
   modules: [
-    'nitro-cloudflare-dev',
     fileURLToPath(new URL('./module.ts', import.meta.url)),
   ],
 
@@ -24,6 +24,8 @@ export default defineNuxtConfig({
       cmsVersion: version,
       /** Réglages de référencement du site (`site.name`, `site.titleSuffix`, `site.shareImage` de cms.config.ts), remplis par le module. */
       cmsSeo: { siteName: '', titleSuffix: '', shareImage: '' },
+      /** Provenance des contacts (`site.attribution` de cms.config.ts), remplie par le module. */
+      cmsAttribution: { enabled: true, rememberDays: 0 },
       /** Script de Cloudflare Turnstile (module « turnstile »). Ne se change que pour les tests : NUXT_PUBLIC_TURNSTILE_SCRIPT_URL. */
       turnstileScriptUrl: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
     },
@@ -45,6 +47,16 @@ export default defineNuxtConfig({
     cloudflareApiUrl: 'https://api.cloudflare.com/client/v4',
     /** Adresse de l'API de statistiques de Plausible. Ne se change que pour les tests : NUXT_PLAUSIBLE_API_URL. Vide : l'adresse réglée dans le module. */
     plausibleApiUrl: '',
+    /** Google Ads (module « google-ads ») : client OAuth et jeton communs à plusieurs sites, s'ils ne sont pas saisis dans le back-office. */
+    googleAdsClientId: '',
+    googleAdsClientSecret: '',
+    googleAdsRefreshToken: '',
+    googleAdsLoginCustomerId: '',
+    /** Adresses de Google. Ne se changent que pour les tests : NUXT_GOOGLE_ADS_API_URL, NUXT_GOOGLE_OAUTH_TOKEN_URL. */
+    googleAdsApiUrl: 'https://googleads.googleapis.com/v26',
+    googleOauthTokenUrl: 'https://oauth2.googleapis.com/token',
+    /** Data Manager API de Google (envoi des conversions). Ne se change que pour les tests : NUXT_GOOGLE_DATA_MANAGER_URL. */
+    googleDataManagerUrl: 'https://datamanager.googleapis.com/v1',
     /** Nombre de jours pendant lesquels une sauvegarde est conservée : variable NUXT_BACKUP_RETENTION_DAYS. */
     backupRetentionDays: 30,
     /** Adresse de l'API Turnstile (vérification Siteverify). Ne se change que pour les tests : NUXT_TURNSTILE_API_URL. */
@@ -53,10 +65,21 @@ export default defineNuxtConfig({
     cmsUpdateCheck: true,
     /** Adresse interrogée (une fois par jour au plus) pour connaître la dernière version du core. Ne se change que pour les tests : NUXT_CMS_UPDATE_URL. */
     cmsUpdateUrl: 'https://api.github.com/repos/AntoinePollet/back-office-core/releases/latest',
-  },
 
-  nitro: {
-    preset: 'cloudflare_module',
+    // ───── Serveur Node seulement (`cms: { target: 'node' }`) ; sans effet chez Cloudflare. ─────
+    /** Dossier des données à conserver (base SQLite, fichiers de la médiathèque) : variable NUXT_DATA_DIR. */
+    dataDir: '.data',
+    /** Stockage compatible S3 pour la médiathèque, à la place du disque : NUXT_S3_ENDPOINT et NUXT_S3_BUCKET, avec les clés d'accès. */
+    s3Endpoint: '',
+    s3Bucket: '',
+    /** Bucket à part pour les sauvegardes (facultatif) : NUXT_S3_BACKUP_BUCKET. */
+    s3BackupBucket: '',
+    /** Région attendue par le service S3 : NUXT_S3_REGION. */
+    s3Region: 'us-east-1',
+    s3AccessKeyId: '',
+    s3SecretAccessKey: '',
+    /** Le site est derrière un serveur frontal (Caddy, Nginx…) qui transmet l'adresse du visiteur : NUXT_TRUST_PROXY=true. */
+    trustProxy: false,
   },
 
   vite: {

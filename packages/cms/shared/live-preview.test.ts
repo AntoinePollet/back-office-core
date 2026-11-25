@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { LIVE_PREVIEW_TAG, type LiveDraft, applyLiveDraft, applyLiveDrafts, clampLiveShare, liveFrameUrl, liveScale, parseReadKey, readLiveMessage } from './live-preview.ts'
+import { LIVE_PREVIEW_TAG, type LiveDraft, applyLiveDraft, applyLiveDrafts, clampLiveShare, liveFrameUrl, liveScale, parseReadKey, readLiveMessage, readOutline } from './live-preview.ts'
 
 // Clés telles que `useCms.ts` les construit.
 const key = (kind: string, target: string, query: Record<string, unknown>) => `cms:${kind}:${target}:${JSON.stringify(query)}`
@@ -127,4 +127,43 @@ test('cadre : adresse d\'aperçu, réduction et partage de la largeur', () => {
   assert.equal(clampLiveShare(0.9), 0.7)
   assert.equal(clampLiveShare(0.55), 0.55)
   assert.equal(clampLiveShare(Number.NaN), 0.5)
+})
+
+test('titres de la page : message du cadre contrôlé', () => {
+  const source = {}, origin = 'https://site.example'
+  const read = (data: unknown) => readLiveMessage({ origin, source, data }, { origin, source })
+  const outline = { tag: LIVE_PREVIEW_TAG, kind: 'outline', path: '/services/x', headings: [{ level: 1, text: 'Titre', place: 'main' }, { level: 2, text: '', place: 'footer' }] }
+  assert.deepEqual(read(outline), outline)
+  assert.deepEqual(read({ ...outline, headings: [] }), { ...outline, headings: [] })
+  for (const headings of [undefined, 'x', [{ level: 0, text: 'a', place: 'main' }], [{ level: 7, text: 'a', place: 'main' }], [{ level: 1.5, text: 'a', place: 'main' }],
+    [{ level: 1, text: 3, place: 'main' }], [{ level: 1, text: 'a', place: 'ailleurs' }], [{ level: 1, text: 'a'.repeat(201), place: 'main' }],
+    Array.from({ length: 301 }, () => ({ level: 2, text: 'a', place: 'main' }))])
+    assert.equal(read({ ...outline, headings }), null, JSON.stringify(headings)?.slice(0, 80))
+  assert.equal(read({ ...outline, path: '' }), null)
+  // Ce qui dépasse de la forme prévue n'est pas transmis.
+  assert.deepEqual(read({ ...outline, headings: [{ level: 1, text: 'Titre', place: 'main', html: '<b>' }] }), { ...outline, headings: [{ level: 1, text: 'Titre', place: 'main' }] })
+})
+
+test('titres de la page : lus dans l\'ordre, avec leur place, sans le bandeau d\'aperçu', () => {
+  // Document minimal : chaque titre sait dans quels blocs il se trouve.
+  const node = (tag: string, text: string, inside: string[] = [], alts: string[] = []) => ({
+    tagName: tag.toUpperCase(), textContent: text,
+    closest: (selector: string) => selector.split(',').some(s => s.trim().split(' ').every(part => inside.includes(part))) || null,
+    querySelectorAll: () => alts.map(alt => ({ getAttribute: () => alt })),
+  })
+  const doc = (nodes: unknown[]) => ({ querySelectorAll: () => nodes })
+  assert.deepEqual(readOutline(doc([
+    node('h2', '  Menu ', ['header']),
+    node('h1', 'Droit\n  des affaires', ['main']),
+    node('h2', '', ['main'], ['Logo du cabinet']),
+    node('h3', 'Signature', ['main', 'article', 'footer']),
+    node('h2', 'Aperçu', ['[data-cms-preview-banner]']),
+    node('h4', 'Contact', ['footer']),
+  ])), [
+    { level: 2, text: 'Menu', place: 'header' },
+    { level: 1, text: 'Droit des affaires', place: 'main' },
+    { level: 2, text: 'Logo du cabinet', place: 'main' },
+    { level: 3, text: 'Signature', place: 'main' },
+    { level: 4, text: 'Contact', place: 'footer' },
+  ])
 })
