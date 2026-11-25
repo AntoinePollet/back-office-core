@@ -36,7 +36,7 @@ function onKeydown(event: KeyboardEvent) {
     <button
       type="button" class="cms-nav-star btn btn-ghost btn-xs btn-square" :class="{ 'is-favorite': favorite }"
       :aria-pressed="favorite" :aria-label="favorite ? `Retirer « ${item.label} » des favoris` : `Ajouter « ${item.label} » aux favoris`"
-      :title="favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'" data-nav-star @click.prevent.stop="emit('favorite')"
+      :title="favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'" data-nav-star data-cms-busy-off @click.prevent.stop="emit('favorite')"
     >
       <Star :size="14" :fill="favorite ? 'currentColor' : 'none'" />
     </button>

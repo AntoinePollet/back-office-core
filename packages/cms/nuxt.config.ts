@@ -18,6 +18,9 @@ export default defineNuxtConfig({
     '/admin/**': { ssr: false },
   },
 
+  // Écran affiché pendant le démarrage du back-office, à la place d'une page blanche.
+  spaLoadingTemplate: fileURLToPath(new URL('./app/spa-loading-template.html', import.meta.url)),
+
   runtimeConfig: {
     public: {
       /** Version du core installée dans ce projet. */

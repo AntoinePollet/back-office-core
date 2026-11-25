@@ -1,0 +1,60 @@
+<!--
+  Écran de chargement du back-office : affiché dès la réponse du serveur, pendant que le navigateur télécharge
+  et démarre l'application (les pages /admin ne sont pas rendues sur le serveur). Nuxt le retire quand l'écran est prêt.
+  Tout est écrit ici, sans fichier à télécharger : il doit s'afficher avant tout le reste.
+-->
+<div class="cms-boot" role="status" aria-live="polite">
+  <svg class="cms-boot-art" viewBox="0 0 120 88" width="120" height="88" aria-hidden="true">
+    <rect class="cms-boot-frame" x="2" y="2" width="116" height="84" rx="14" />
+    <rect class="cms-boot-menu" x="12" y="12" width="26" height="64" rx="7" />
+    <rect class="cms-boot-part cms-boot-accent" style="--i:0" x="48" y="14" width="38" height="9" rx="4.5" />
+    <rect class="cms-boot-part" style="--i:1" x="48" y="31" width="60" height="6" rx="3" />
+    <rect class="cms-boot-part" style="--i:2" x="48" y="43" width="48" height="6" rx="3" />
+    <rect class="cms-boot-part" style="--i:3" x="48" y="55" width="56" height="6" rx="3" />
+    <rect class="cms-boot-part cms-boot-accent" style="--i:4" x="48" y="67" width="22" height="9" rx="4.5" />
+  </svg>
+  <p class="cms-boot-text">Chargement du back-office<span class="cms-boot-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></p>
+</div>
+<script>
+  // Couleur du back-office choisie dans « Apparence », retenue par le navigateur à la visite précédente.
+  try {
+    var c = localStorage.getItem('cms-admin-color')
+    if (c && /^#[0-9a-f]{6}$/i.test(c)) document.currentScript.previousElementSibling.style.setProperty('--cms-boot-color', c)
+  } catch (e) {}
+</script>
+<style>
+  .cms-boot {
+    --cms-boot-color: #4f46e5;
+    position: fixed; inset: 0; z-index: 2147483647;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    background: #f8f8f8; color: #5f6368;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    /* Un chargement très court ne fait pas clignoter l'écran. */
+    animation: cms-boot-in 0.25s 0.15s both;
+  }
+  .cms-boot-art { overflow: visible; animation: cms-boot-float 2.4s ease-in-out infinite; }
+  .cms-boot-frame { fill: #fff; stroke: #e2e3e7; stroke-width: 2; }
+  .cms-boot-menu { fill: #eeeef1; }
+  .cms-boot-part {
+    fill: #d9dae0;
+    transform-box: fill-box; transform-origin: left center;
+    animation: cms-boot-write 2.4s calc(var(--i) * 0.16s) cubic-bezier(0.3, 0.7, 0.2, 1) infinite both;
+  }
+  .cms-boot-accent { fill: var(--cms-boot-color); }
+  .cms-boot-text { margin: 0; }
+  .cms-boot-dots i { font-style: normal; animation: cms-boot-dot 1.2s infinite both; }
+  .cms-boot-dots i:nth-child(2) { animation-delay: 0.2s; }
+  .cms-boot-dots i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes cms-boot-in { from { opacity: 0; } }
+  @keyframes cms-boot-float { 50% { transform: translateY(-4px); } }
+  /* Chaque ligne « s'écrit » de gauche à droite, reste en place, puis s'efface avant de recommencer. */
+  @keyframes cms-boot-write {
+    0% { transform: scaleX(0); opacity: 0; }
+    25%, 75% { transform: scaleX(1); opacity: 1; }
+    90%, 100% { transform: scaleX(1); opacity: 0; }
+  }
+  @keyframes cms-boot-dot { 0%, 60%, 100% { opacity: 0.2; } 30% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .cms-boot-art, .cms-boot-part { animation: none; }
+  }
+</style>
