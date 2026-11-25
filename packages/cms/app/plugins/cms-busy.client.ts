@@ -12,7 +12,9 @@ export default defineNuxtPlugin(() => {
   // En phase de capture : avant le code de l'écran, qui ne reçoit donc pas une demande refusée.
   document.addEventListener('click', (event) => {
     if (!inAdmin()) return
-    const el = (event.target as Element | null)?.closest<HTMLElement>(TRIGGER) ?? null
+    const hit = (event.target as Element | null)?.closest<HTMLElement>(TRIGGER) ?? null
+    // Un onglet change seulement ce qui est affiché : ce que charge l'écran qu'il ouvre ne doit pas le bloquer.
+    const el = hit?.matches('[role="tab"]') ? null : hit
     if (cmsIsBusy(el)) return refuse(event)
     cmsBusyTrigger(el)
   }, true)

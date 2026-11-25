@@ -79,5 +79,15 @@ export default async function (t) {
     await clickText(page, 'button', 'Inviter')
     await page.waitForSelector('.modal-open')
     check(await page.evaluate(() => !document.querySelector('[data-cms-busy]')), 'un élément est bloqué sans action en cours')
+    // Onglet « Référencement » d'un contenu : l'écran qu'il ouvre prépare un aperçu (une écriture), l'onglet reste libre.
+    const claire = t.http()
+    await claire.signIn(t.admin.email, t.admin.password)
+    const { id } = await claire.json('/api/cms/entries/services', { method: 'POST', body: { values: { title: 'Droit immobilier', onQuote: true }, publish: ['fr'] } })
+    await page.goto(B + '/admin/services/' + id, { waitUntil: 'networkidle0' })
+    const sent = page.waitForRequest(r => r.url().includes('/live-preview'))
+    await clickText(page, '[role=tab]', 'Référencement')
+    check(await page.evaluate(() => !document.querySelector('[data-cms-busy]')), 'un onglet est bloqué par ce que charge son écran')
+    await sent
+    check(await page.evaluate(() => !document.querySelector('[data-cms-busy]')), 'la préparation de l\'aperçu bloque un élément')
   })
 }
