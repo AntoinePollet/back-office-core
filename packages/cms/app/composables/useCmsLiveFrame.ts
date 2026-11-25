@@ -69,7 +69,7 @@ export function useCmsLiveFrame(options: {
     status.value = 'updating'
     try {
       const { entry } = await cmsApi<{ entry: Record<string, unknown> & { path: string | null } }>(
-        `/api/cms/entries/${type}/${id}/live-preview`, { method: 'POST', body: body(), signal: controller.signal })
+        `/api/cms/entries/${type}/${id}/live-preview`, { method: 'POST', body: body(), signal: controller.signal, busy: false })
       if (mine !== request) return
       unavailable.value = problem.value = null
       draft = { type, id, locale: options.locale(), defaultLocale: options.defaultLocale(), entry }

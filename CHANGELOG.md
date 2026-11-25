@@ -13,6 +13,14 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Écran de chargement du back-office.** À l'ouverture ou au rechargement d'une page `/admin`, une animation
+  remplace la page blanche pendant que le back-office démarre. Elle reprend la couleur du back-office.
+- **Bouton bloqué pendant son action.** Le bouton qui lance une action (créer un compte, changer de mot de passe,
+  enregistrer, supprimer…) est grisé et montre un indicateur jusqu'à la réponse du serveur : une action ne peut plus
+  partir deux fois. C'est automatique pour tous les écrans, sans rien écrire dans chacun.
+
 ## 0.12.0 — 2026-11-25
 
 ### Nouveautés

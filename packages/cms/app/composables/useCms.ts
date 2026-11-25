@@ -7,6 +7,7 @@ import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
 import { seoPageTitle } from '../../shared/seo'
 import { cmsLiveRead } from './useCmsLive'
+import { cmsBusyTrack } from './cmsBusy'
 
 type ReadOptions = { locale?: string }
 
@@ -518,9 +519,14 @@ export function useCmsAdminStyle() {
 /**
  * Appel à l'API du back-office. Même comportement que `$fetch`, mais l'adresse est traitée comme un simple texte :
  * le typage automatique des routes de Nuxt, appliqué à des adresses construites dynamiquement, fait échouer TypeScript.
+ * Dans le back-office, le bouton qui a lancé une écriture reste bloqué jusqu'à la réponse (voir cmsBusy.ts),
+ * sauf avec l'option `busy: false`.
  */
 export function cmsApi<T = unknown>(url: string, options?: Record<string, any>): Promise<T> {
-  return ($fetch<T>(url, options) as Promise<T>).catch((error) => {
+  // `busy: false` : une écriture qui n'est pas une action de la personne (préparation de l'aperçu) ne bloque rien.
+  const { busy, ...fetchOptions } = options ?? {}
+  const request = $fetch<T>(url, fetchOptions) as Promise<T>
+  return (busy === false ? request : cmsBusyTrack(request, fetchOptions.method)).catch((error) => {
     // Le site vient d'exiger la double authentification pour ce compte : le serveur refuse tout, on conduit à l'activation.
     if (import.meta.client && error?.status === 403 && error?.data?.data?.code === 'two-factor-required' && location.pathname !== CMS_TWO_FACTOR_SETUP_PATH)
       location.assign(CMS_TWO_FACTOR_SETUP_PATH)
