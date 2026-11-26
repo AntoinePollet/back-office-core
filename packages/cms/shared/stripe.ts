@@ -30,11 +30,28 @@ export type SellableCollection = {
   available?: string
   /** Quantité maximale par paiement. Défaut : 10. */
   maxQuantity?: number
+  /**
+   * Abonnement : le prix est prélevé chaque semaine, chaque mois ou chaque année, jusqu'à résiliation. Sans ce
+   * réglage, c'est un paiement en une fois.
+   */
+  recurring?: RecurringInterval
+  /**
+   * Champ nombre qui porte le stock : un achat est refusé au-delà, et chaque paiement réussi le diminue. Vide : stock
+   * illimité. Le champ ne doit pas être traduit.
+   */
+  stock?: string
 }
 
+export const RECURRING_INTERVALS = ['week', 'month', 'year'] as const
+export type RecurringInterval = typeof RECURRING_INTERVALS[number]
+export const INTERVAL_LABELS: Record<RecurringInterval, string> = { week: 'par semaine', month: 'par mois', year: 'par an' }
+
 export type StripeOptions<K extends string = string> = {
-  /** Collections vendables, par identifiant de collection : `{ products: { price: 'price' } }`. */
-  collections: Record<K, SellableCollection>
+  /**
+   * Collections vendables, par identifiant de collection : `{ products: { price: 'price' } }`. Sans collection,
+   * Stripe ne sert qu'aux acomptes des rendez-vous (module `appointments`).
+   */
+  collections?: Record<K, SellableCollection>
   /** Devise des prix, code ISO en minuscules. Défaut : 'eur'. */
   currency?: string
   /** Demande l'adresse de livraison, dans ces pays (codes ISO à deux lettres) : `{ countries: ['FR', 'BE'] }`. */
@@ -43,6 +60,13 @@ export type StripeOptions<K extends string = string> = {
   successPath?: string
   /** Page où Stripe renvoie l'acheteur qui abandonne. Défaut : la page d'où il est parti, sinon l'accueil. */
   cancelPath?: string
+  /** Affiche sur la page de paiement le champ « Code promo ». Les codes se créent dans le tableau de bord Stripe. */
+  promoCodes?: boolean
+  /**
+   * Fait établir par Stripe une facture PDF pour chaque paiement en une fois (un abonnement en a toujours une),
+   * envoyée à l'acheteur et téléchargeable depuis « Paiements ». Stripe facture ce service à part.
+   */
+  invoices?: boolean
 }
 
 export const STRIPE_DEFAULTS = { currency: 'eur', successPath: '/merci', maxQuantity: 10 } as const
@@ -64,13 +88,14 @@ const isPath = (p: unknown) => typeof p === 'string' && p.startsWith('/') && !p.
  * Ce qui ne dépend que des options est vérifié ici ; ce qui dépend des collections (champs existants, types)
  * l'est par `defineCms`, grâce à `check`.
  */
-export function stripe<const K extends string>(options: StripeOptions<K>) {
+export function stripe<const K extends string = never>(options: StripeOptions<K> = {}) {
   const collections = (options?.collections ?? {}) as Record<string, SellableCollection>
-  if (!Object.keys(collections).length) fail('aucune collection vendable (option collections)')
   for (const [key, c] of Object.entries(collections)) {
     if (!c || typeof c.price !== 'string' || !c.price) fail(`collections.${key} : indiquez le champ du prix (price: 'price')`)
     const max = c.maxQuantity
     if (max !== undefined && (!Number.isInteger(max) || max < 1 || max > MAX_QUANTITY_LIMIT)) fail(`collections.${key}.maxQuantity : un nombre entier entre 1 et ${MAX_QUANTITY_LIMIT}`)
+    if (c.recurring !== undefined && !(RECURRING_INTERVALS as readonly string[]).includes(c.recurring)) fail(`collections.${key}.recurring : '${RECURRING_INTERVALS.join('\', \'')}' attendu`)
+    if (c.stock !== undefined && (typeof c.stock !== 'string' || !c.stock)) fail(`collections.${key}.stock : indiquez le champ du stock (stock: 'stock')`)
   }
   const currency = options.currency ?? STRIPE_DEFAULTS.currency
   if (!/^[a-z]{3}$/.test(currency)) fail(`currency : code de devise en trois lettres minuscules attendu ('eur'), reçu « ${currency} »`)
@@ -84,11 +109,13 @@ export function stripe<const K extends string>(options: StripeOptions<K>) {
   return {
     id: 'stripe' as const,
     options: {
-      collections: options.collections,
+      collections: (options.collections ?? {}) as Record<K, SellableCollection>,
       currency,
       shipping: options.shipping ? { countries: [...options.shipping.countries] } : null,
       successPath: options.successPath ?? STRIPE_DEFAULTS.successPath,
       cancelPath: options.cancelPath ?? null,
+      promoCodes: options.promoCodes === true,
+      invoices: options.invoices === true,
     },
     /** Appelé par `defineCms` : vérifie les collections et les champs désignés. Retiré de la configuration publiée. */
     check: (config: ConfigLike) => checkStripe(collections, config),
@@ -126,6 +153,8 @@ export function checkStripe(collections: Record<string, SellableCollection>, con
     want('name', c.name, 'text', 'un texte (f.text)')
     want('image', c.image, 'image', 'une image (f.image)')
     want('available', c.available, 'boolean', 'un interrupteur (f.boolean)')
+    const stock = want('stock', c.stock, 'number', 'un nombre (f.number)')
+    if (stock?.type === 'number' && stock.localized) errors.push(`${at}.stock : le stock doit être le même dans toutes les langues (retirez localized: true)`)
   }
   return errors
 }
@@ -191,6 +220,18 @@ export function checkQuantity(quantity: unknown, sell: SellableCollection): stri
   return null
 }
 
+/**
+ * Reste-t-il assez de stock ? Null si oui (ou si le stock n'est pas suivi : pas de champ, ou champ vide), sinon le
+ * message à montrer au visiteur.
+ */
+export function checkStock(sell: SellableCollection, values: Record<string, unknown>, quantity: number): string | null {
+  if (!sell.stock) return null
+  const left = values[sell.stock]
+  if (typeof left !== 'number' || !Number.isFinite(left)) return null
+  if (left <= 0) return 'Ce produit est épuisé.'
+  return left < quantity ? `Il n'en reste que ${Math.floor(left)}.` : null
+}
+
 // ───────────────────────── Session Checkout ─────────────────────────
 
 /** Langues de la page de paiement de Stripe : celle du site si Stripe la connaît, sinon celle du navigateur. */
@@ -199,7 +240,7 @@ export const stripeLocale = (locale: string) => (STRIPE_LOCALES.includes(locale)
 
 /** Métadonnées posées sur la session et le paiement : c'est ainsi que le webhook retrouve le produit. */
 /** Métadonnées de la session : le produit, et la provenance de l'acheteur (`cms_o_*`, voir `shared/attribution.ts`). */
-export type CheckoutMetadata = { cms_collection: string; cms_entry: string; cms_title: string; cms_quantity: string; cms_unit_amount: string; cms_locale: string } & { [key: `cms_o_${string}`]: string }
+export type CheckoutMetadata = { cms_collection: string; cms_entry: string; cms_title: string; cms_quantity: string; cms_unit_amount: string; cms_locale: string; /** Abonnement : sa périodicité. */ cms_interval?: string } & { [key: `cms_o_${string}`]: string }
 
 export type CheckoutInput = {
   currency: string
@@ -213,6 +254,12 @@ export type CheckoutInput = {
   locale: string
   metadata: CheckoutMetadata
   shippingCountries: readonly string[] | null
+  /** Abonnement : périodicité du prélèvement. Absent : paiement en une fois. */
+  recurring?: RecurringInterval | null
+  /** Champ « Code promo » sur la page de paiement. */
+  promoCodes?: boolean
+  /** Facture PDF pour un paiement en une fois. */
+  invoices?: boolean
 }
 
 /**
@@ -221,12 +268,16 @@ export type CheckoutInput = {
  */
 export function checkoutParams(input: CheckoutInput): [string, string][] {
   const p: [string, string][] = [
-    ['mode', 'payment'],
+    ['mode', input.recurring ? 'subscription' : 'payment'],
     ['line_items[0][quantity]', String(input.quantity)],
     ['line_items[0][price_data][currency]', input.currency],
     ['line_items[0][price_data][unit_amount]', String(input.unitAmount)],
     ['line_items[0][price_data][product_data][name]', input.name.slice(0, 250)],
   ]
+  if (input.recurring) p.push(['line_items[0][price_data][recurring][interval]', input.recurring])
+  if (input.promoCodes) p.push(['allow_promotion_codes', 'true'])
+  // Un abonnement a toujours ses factures ; pour un paiement en une fois, il faut la demander.
+  if (input.invoices && !input.recurring) p.push(['invoice_creation[enabled]', 'true'])
   if (input.image) p.push(['line_items[0][price_data][product_data][images][0]', input.image])
   p.push(
     ['success_url', input.successUrl],
@@ -237,7 +288,8 @@ export function checkoutParams(input: CheckoutInput): [string, string][] {
     ['client_reference_id', `${input.metadata.cms_collection}:${input.metadata.cms_entry}`.slice(0, 200)],
   )
   for (const [key, value] of Object.entries(input.metadata)) {
-    p.push([`metadata[${key}]`, value], [`payment_intent_data[metadata][${key}]`, value])
+    // Les métadonnées suivent le paiement, ou l'abonnement : c'est par elles que les échéances suivantes sont reconnues.
+    p.push([`metadata[${key}]`, value], [`${input.recurring ? 'subscription_data' : 'payment_intent_data'}[metadata][${key}]`, value])
   }
   input.shippingCountries?.forEach((country, i) => p.push([`shipping_address_collection[allowed_countries][${i}]`, country]))
   return p
@@ -324,6 +376,11 @@ export type PaymentFromSession = {
   livemode: boolean
   /** D'où venait l'acheteur, lu dans les métadonnées de la session. */
   origin: StoredOrigin | null
+  /** Facture Stripe (in_…) et abonnement (sub_…), s'il y en a. */
+  invoice: string | null
+  subscription: string | null
+  /** Remise obtenue par un code promo, en plus petite unité de la devise. */
+  discountAmount: number
 }
 
 export type ShippingAddress = { name: string | null; line1: string | null; line2: string | null; postalCode: string | null; city: string | null; state: string | null; country: string | null }
@@ -360,6 +417,61 @@ export function paymentFromSession(session: Obj): PaymentFromSession | null {
       : null,
     livemode: session.livemode === true,
     origin: originFromMetadata(session?.metadata),
+    invoice: str(typeof session.invoice === 'object' ? session.invoice?.id : session.invoice),
+    subscription: str(typeof session.subscription === 'object' ? session.subscription?.id : session.subscription),
+    discountAmount: Number(session.total_details?.amount_discount) || 0,
+  }
+}
+
+// ───────────────────────── Abonnements ─────────────────────────
+
+/** États d'un abonnement chez Stripe, tels qu'on les garde. */
+export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'unpaid' | 'canceled' | 'incomplete' | 'incomplete_expired' | 'paused'
+export const SUBSCRIPTION_STATUS_LABELS: Record<SubscriptionStatus, string> = {
+  active: 'En cours', trialing: 'Période d\'essai', past_due: 'Paiement en retard', unpaid: 'Impayé', canceled: 'Résilié',
+  incomplete: 'Premier paiement en attente', incomplete_expired: 'Premier paiement jamais abouti', paused: 'En pause',
+}
+const SUBSCRIPTION_STATUSES = Object.keys(SUBSCRIPTION_STATUS_LABELS)
+const seconds = (value: unknown) => (Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) * 1000 : null)
+
+/**
+ * Ce qu'on garde d'un abonnement reçu par le webhook (`customer.subscription.updated` / `.deleted`). La fin de la
+ * période en cours est lue aux deux endroits possibles selon la version d'API (sur l'abonnement avant 2025, sur sa
+ * première ligne depuis).
+ */
+export function subscriptionFromObject(sub: Obj) {
+  const id = str(sub?.id)
+  if (!id || !SUBSCRIPTION_STATUSES.includes(String(sub.status))) return null
+  return {
+    subscriptionId: id,
+    status: sub.status as SubscriptionStatus,
+    cancelAtPeriodEnd: sub.cancel_at_period_end === true || (sub.cancel_at != null && sub.status !== 'canceled'),
+    currentPeriodEnd: seconds(sub.current_period_end ?? sub.items?.data?.[0]?.current_period_end),
+    canceledAt: seconds(sub.canceled_at ?? sub.ended_at),
+  }
+}
+
+/**
+ * Une facture d'abonnement reçue par le webhook (`invoice.paid`, `invoice.payment_failed`). null si elle ne vient pas
+ * d'un abonnement. L'abonnement est lu aux deux endroits possibles selon la version d'API.
+ */
+export function invoiceFromObject(invoice: Obj) {
+  const id = str(invoice?.id)
+  const parent = invoice?.parent?.subscription_details?.subscription
+  const subscription = str(typeof invoice?.subscription === 'object' ? invoice.subscription?.id : invoice?.subscription) ?? str(typeof parent === 'object' ? parent?.id : parent)
+  if (!id || !subscription) return null
+  return {
+    invoiceId: id,
+    subscriptionId: subscription,
+    /** `subscription_create` : la première échéance, déjà enregistrée avec la session de paiement. */
+    reason: String(invoice.billing_reason ?? ''),
+    amount: Number(invoice.amount_paid) || 0,
+    currency: String(invoice.currency ?? '').toLowerCase(),
+    email: str(invoice.customer_email),
+    name: str(invoice.customer_name),
+    paymentIntent: str(typeof invoice.payment_intent === 'object' ? invoice.payment_intent?.id : invoice.payment_intent),
+    livemode: invoice.livemode === true,
+    periodEnd: seconds(invoice.lines?.data?.[0]?.period?.end),
   }
 }
 
@@ -389,4 +501,4 @@ export const formatShipping = (s: ShippingAddress | null) =>
 
 /** Lien vers le paiement dans le tableau de bord Stripe (mode test ou production). */
 export const dashboardUrl = (p: { paymentIntent: string | null; sessionId: string; livemode: boolean }) =>
-  `https://dashboard.stripe.com/${p.livemode ? '' : 'test/'}${p.paymentIntent ? `payments/${p.paymentIntent}` : `checkout/sessions/${p.sessionId}`}`
+  `https://dashboard.stripe.com/${p.livemode ? '' : 'test/'}${p.paymentIntent ? `payments/${p.paymentIntent}` : p.sessionId.startsWith('in_') ? `invoices/${p.sessionId}` : `checkout/sessions/${p.sessionId}`}`

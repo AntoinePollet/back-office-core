@@ -36,8 +36,16 @@ const config = defineCms({
     }),
     // Paiement en ligne des produits de la boutique : le prix vient du champ « price », saisi dans le back-office.
     stripe({
-      collections: { products: { price: 'price', image: 'image', available: 'onSale', maxQuantity: 5 } },
+      collections: {
+        // Le stock du champ « stock » diminue à chaque vente ; vide, il est illimité.
+        products: { price: 'price', image: 'image', available: 'onSale', maxQuantity: 5, stock: 'stock' },
+        // Abonnement : le prix est prélevé chaque mois, jusqu'à résiliation.
+        plans: { price: 'price', recurring: 'month', maxQuantity: 1 },
+      },
       currency: 'eur',
+      // Champ « Code promo » sur la page de paiement (les codes se créent dans Stripe), et facture PDF de chaque achat.
+      promoCodes: true,
+      invoices: true,
       shipping: { countries: ['FR', 'BE'] },
       successPath: '/merci',
     }),
@@ -192,6 +200,21 @@ const config = defineCms({
         image: f.image({ label: 'Photo' }),
         price: f.number({ label: 'Prix', unit: '€ TTC', min: 0, step: 0.01, width: 'half', help: 'Prix payé en ligne, avec les centimes (49,90). Laissé vide : le produit ne peut pas être acheté.' }),
         onSale: f.boolean({ label: 'En vente', default: true, width: 'half' }),
+        stock: f.number({ label: 'Stock', min: 0, step: 1, width: 'half', help: 'Diminue à chaque vente. Laissé vide : stock illimité.' }),
+      },
+    }),
+
+    plans: collection({
+      label: 'Abonnements',
+      icon: 'repeat',
+      labelSingular: 'offre d\'abonnement',
+      access: { edit: ['editor'], publish: ['editor'], delete: ['editor'] },
+      titleField: 'title',
+      list: { columns: ['price'] },
+      fields: {
+        title: f.text({ label: 'Nom de l\'offre', required: true }),
+        description: f.textarea({ label: 'Ce que comprend l\'offre', max: 300 }),
+        price: f.number({ label: 'Prix par mois', unit: '€ TTC', min: 0, step: 0.01, width: 'half' }),
       },
     }),
 

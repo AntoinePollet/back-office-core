@@ -22,7 +22,7 @@ export default async function (t) {
     check(states.availability.level === 'ok' && states.availability.value === 'En ligne', JSON.stringify(states.availability))
     check(states.backups.level === 'warning' && states.backups.to === '/admin/backups', JSON.stringify(states.backups))
     check(states.mail.level === 'warning' && states.mail.value.startsWith('Non réglé'), JSON.stringify(states.mail))
-    check(JSON.stringify(d.create.map(c => c.type)) === JSON.stringify(['services', 'categories', 'testimonials', 'products', 'documents']) && d.create[0].label === 'service' && d.create[0].to === '/admin/services/new', JSON.stringify(d.create))
+    check(JSON.stringify(d.create.map(c => c.type)) === JSON.stringify(['services', 'categories', 'testimonials', 'products', 'plans', 'documents']) && d.create[0].label === 'service' && d.create[0].to === '/admin/services/new', JSON.stringify(d.create))
     check(d.audience === true && d.health === true, 'audience ou santé non proposées')
     check(JSON.stringify(keys(d.figures)) === JSON.stringify(['messages', 'payments']) && d.figures[0].value === '0', JSON.stringify(d.figures))
     check((await visitor.get('/api/cms/dashboard')).status === 401, 'accueil lisible sans connexion')

@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import type { AnyField, CmsDefinition } from '../../shared/format'
+import { googleOpeningHours } from '../cms-modules/google-business'
 import { type JsonLd, type StructuredContext, breadcrumbBlock, breadcrumbName, breadcrumbTrail, contentBlocks, parentPaths, specsOf } from '../../shared/structured-data'
 
 type Values = Record<string, unknown>
@@ -50,6 +51,13 @@ export async function attachStructuredData(event: H3Event, type: string, def: Cm
       const page = { url: b.entry.url ?? base, title: '', description: '' }
       shared.push(...contentBlocks({ fields: b.def.fields as Record<string, AnyField>, structuredData: specsOf(b.def).filter(s => s.kind === 'organization') }, b.entry as Values, page, ctx))
     }
+  }
+
+  // Organisme sans horaires déclarés : ceux de la fiche Google (module « Avis Google »), s'il est réglé.
+  const organization = shared.find(block => String(block['@id'] ?? '').endsWith('#organization'))
+  if (organization && !organization.openingHoursSpecification) {
+    const hours = await googleOpeningHours(event, locale).catch(() => [])
+    if (hours.length) organization.openingHoursSpecification = hours
   }
 
   for (const item of items) {

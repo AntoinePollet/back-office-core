@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, HeartPulse, Images, Inbox, LayoutDashboard, LayoutList, LogOut, Megaphone, Menu, Newspaper, Palette, Puzzle, ScrollText, SearchCheck, Settings, ShieldCheck, Signpost, Trash2, Users, Workflow } from '@lucide/vue'
+import { Activity, ArrowLeftRight, CalendarCheck, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, HeartPulse, Images, Inbox, LayoutDashboard, LayoutList, LogOut, Megaphone, Menu, Newspaper, Palette, Puzzle, ScrollText, Search, SearchCheck, Settings, ShieldCheck, Signpost, Star, Trash2, Users, Workflow } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { type AvailabilityMode, MODE_LABELS } from '../../shared/availability'
@@ -148,6 +148,8 @@ const nav = computed<NavSection[]>(() => {
       hasForms.value && { key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value },
       // Module « Lettre d'information » : les inscrits, pour l'administrateur et l'éditeur (ce sont des adresses e-mail).
       hasModule(m => m.id === 'newsletter') && staff && { key: 'newsletter', label: 'Lettre d\'information', icon: Newspaper, to: '/admin/newsletter' },
+      // Module « Prise de rendez-vous » : l'agenda et ses réglages, pour l'administrateur et l'éditeur.
+      hasModule(m => m.id === 'appointments') && staff && { key: 'appointments', label: 'Rendez-vous', icon: CalendarCheck, to: '/admin/appointments' },
       // Mesure d'audience (Cloudflare Web Analytics, Plausible) : pour l'administrateur et l'éditeur.
       hasModule(m => m.category === 'audience') && staff && { key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' },
       // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
@@ -165,6 +167,10 @@ const nav = computed<NavSection[]>(() => {
     folder('seo', 'Référencement', SearchCheck, [
       // Vue d'ensemble des pages, pour qui peut modifier au moins un contenu qui a l'onglet Référencement.
       all.some(([, def]) => def.seo) && { key: 'seo', label: 'Pages et titres', icon: FileSearch, to: '/admin/seo' },
+      // Module « Search Console » : recherches, clics et position dans Google, pour l'administrateur et l'éditeur.
+      hasModule(m => m.id === 'search-console') && staff && { key: 'search-console', label: 'Recherche Google', icon: Search, to: '/admin/search-console' },
+      // Module « Avis Google » : la note et les avis de l'établissement sur Google Maps.
+      hasModule(m => m.id === 'google-business') && { key: 'google-business', label: 'Avis Google', icon: Star, to: '/admin/google-business' },
       // Redirections et pages introuvables : pour l'administrateur et l'éditeur.
       staff && { key: 'redirections', label: 'Redirections', icon: Signpost, to: '/admin/redirections' },
     ]),
@@ -181,6 +187,8 @@ const nav = computed<NavSection[]>(() => {
           { key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' },
           { key: 'activity', label: 'Activité', icon: ScrollText, to: '/admin/activity' },
           { key: 'backups', label: 'Sauvegardes', icon: DatabaseBackup, to: '/admin/backups' },
+          // Module « Suivi des erreurs et surveillance » : erreurs relevées, vérifications du site.
+          hasModule(m => m.id === 'monitoring') && { key: 'monitoring', label: 'Surveillance', icon: Activity, to: '/admin/monitoring' },
           canOpenTrash(user.value) && { key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' },
           { key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' },
         ]

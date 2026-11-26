@@ -490,11 +490,16 @@ export default defineCms({
 | `brevo()` | L'envoi des e-mails. Réglages : clé d'API, expéditeur. |
 | `resend()` | L'envoi des e-mails par Resend, à la place de Brevo. Réglages : clé d'API, expéditeur (domaine vérifié dans Resend). |
 | `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
-| `stripe({ … })` | Le paiement en ligne d'un produit à prix fixe, sur la page de paiement de Stripe. Le prix vient du back-office. Paiements visibles dans « Paiements » (administrateurs et éditeurs). Réglages : clé d'API, secret du webhook. |
+| `stripe({ … })` | Le paiement en ligne d'un produit à prix fixe ou d'un abonnement, sur la page de paiement de Stripe ; codes promo, factures PDF et stock en option. Le prix vient du back-office. Paiements visibles dans « Paiements » (administrateurs et éditeurs). Réglages : clé d'API, secret du webhook. |
 | `analytics()` | La fréquentation du site dans l'écran « Audience » (administrateurs et éditeurs) : visites, pages vues, courbe par jour, pages les plus vues, sites d'origine. Par Cloudflare Web Analytics, sans cookie ni bandeau de consentement. Réglages : jeton de la balise, identifiant du site, identifiant du compte, jeton d'API en lecture. |
 | `plausible()` | La même chose par Plausible (plausible.io ou votre propre instance), sans cookie. Réglages : domaine du site, clé « Stats API », adresse de l'instance (facultative). `analytics({ provider: 'plausible' })` revient au même. |
 | `turnstile()` | Un anti-robots pour les formulaires du site (Cloudflare Turnstile), le plus souvent invisible pour les visiteurs. Réglages : clé du site, clé secrète. Côté page : `<CmsTurnstile />`. |
 | `newsletter()` | L'inscription à la lettre d'information, confirmée par e-mail. Inscrits visibles dans « Lettre d'information » (administrateurs et éditeurs), exportables, et reportés dans une liste Brevo ou une audience Resend. Réglage : la liste (facultative). Demande `brevo()` ou `resend()` réglé. Côté page : `useCmsNewsletter()`. |
+| `appointments()` | La prise de rendez-vous en ligne : prestations, créneaux libres, confirmation et rappel par e-mail, annulation par le visiteur, acompte par Stripe en option. Réglages et agenda dans « Rendez-vous » (administrateurs et éditeurs). Côté page : `useCmsAppointments()`. |
+| `googleBusiness()` | La note, les avis et les horaires de l'établissement sur Google Maps, à afficher avec `<CmsGoogleReviews />`. Réglages : identifiant de l'établissement, clé d'API Google Maps. |
+| `assistant()` | Trois aides à la rédaction par l'API de Claude : texte alternatif d'une image, description d'une page, traduction d'un contenu. Toujours relues avant d'être enregistrées. Réglages : clé d'API Anthropic, modèle (facultatif). |
+| `monitoring()` | Le suivi des erreurs (serveur et navigateur) et la surveillance du site toutes les cinq minutes, avec un e-mail quand il ne répond plus. Écran « Surveillance » (administrateurs). Réglages : destinataires, adresse surveillée, service extérieur, Sentry (tous facultatifs). |
+| `searchConsole()` | Les chiffres de Google Search Console (recherches, clics, position) dans « Recherche Google » et « Pages et titres ». Lecture seule. Réglages : propriété, client OAuth, jeton. |
 
 ### Brancher un formulaire sur une page
 
@@ -566,6 +571,61 @@ const newsletter = useCmsNewsletter()
   `{{ subscriber.unsubscribeUrl }}`.
 - Les liens envoyés par e-mail sont signés avec `NUXT_AUTH_SECRET` : s'il change, les liens déjà envoyés ne valent plus.
 - « Effacer » un inscrit supprime son adresse du back-office et de la liste du service d'envoi (demande d'effacement).
+
+### Prise de rendez-vous
+
+Le module **Prise de rendez-vous** s'active dans l'écran Modules (ou `appointments()` dans `cms.config.ts`). Le
+visiteur choisit une prestation et un créneau libre, laisse son nom et son e-mail, et reçoit une confirmation avec un
+lien pour ajouter le rendez-vous à son agenda ou l'annuler. Il n'a pas de compte à créer.
+
+Tout se règle dans l'écran **Rendez-vous**, onglet « Réglages » (administrateur) : les prestations et leur durée, les
+horaires de la semaine, l'écart entre deux créneaux, le battement après un rendez-vous, les délais (réserver au moins
+tant d'heures à l'avance, jusqu'à tant de jours, annuler en ligne jusqu'à tant d'heures avant), le rappel par e-mail,
+les fermetures (congés, jours fériés) et le lieu. Les heures sont celles du site (`site.timeZone`, Paris par défaut).
+
+```vue
+<script setup lang="ts">
+const booking = useCmsAppointments()
+</script>
+
+<template>
+  <button v-for="s in booking.services.value" :key="s.id" @click="booking.service.value = s.id">{{ s.label }}</button>
+  <div v-for="day in booking.days.value" :key="day.date">
+    {{ day.date }}
+    <button v-for="slot in day.slots" :key="slot.at" @click="booking.slot.value = slot.at">{{ slot.time }}</button>
+  </div>
+  <form v-if="booking.slot.value" @submit.prevent="booking.submit()">
+    <input v-model="booking.values.name"> <input v-model="booking.values.email" type="email">
+    <button :disabled="booking.pending.value">Réserver</button>
+    <p v-if="booking.error.value">{{ booking.error.value }}</p>
+  </form>
+  <p v-if="booking.done.value">Votre rendez-vous est confirmé : un e-mail vient de vous être envoyé.</p>
+</template>
+```
+
+`booking.next()` et `booking.previous()` changent de semaine ; `booking.errors` donne le message de chaque champ ;
+`booking.trap` et `<CmsTurnstile />` s'emploient comme pour un formulaire. La page d'exemple du modèle est
+`app/pages/rendez-vous.vue`.
+
+À savoir :
+
+- **Un seul agenda.** Deux rendez-vous ne se chevauchent jamais, quelle que soit la prestation. Deux visiteurs qui
+  demandent le même créneau au même instant : un seul l'obtient, l'autre est invité à en choisir un autre.
+- **E-mails.** La confirmation, le rappel et l'annulation partent par le module d'envoi d'e-mails (Brevo ou Resend),
+  en français ou en anglais selon la langue de la page. Sans envoi réglé, les rendez-vous sont enregistrés mais rien
+  ne part : l'écran le signale.
+- **Le professionnel** voit ses rendez-vous jour par jour, peut en saisir un lui-même (pris par téléphone : sans les
+  délais imposés aux visiteurs), en annuler un avec un mot d'explication, exporter le tout en CSV, et **abonner son
+  agenda** (Google Agenda, Outlook, Apple) à l'adresse donnée en bas des réglages. Cette adresse donne accès aux noms
+  et coordonnées : elle ne se partage pas.
+- **Acompte.** Avec le module Stripe actif et réglé, une prestation peut demander un acompte : le visiteur est conduit
+  à la page de paiement de Stripe, son créneau est gardé une demi-heure, et le rendez-vous n'est confirmé qu'à
+  réception du paiement (qui figure dans « Paiements »). Un acompte jamais réglé rend le créneau. Le remboursement
+  d'un acompte se fait dans Stripe. Pour un site qui ne vend rien d'autre, déclarer `stripe()` sans collection suffit.
+- **Workflows** : « Un rendez-vous est pris » et « Un rendez-vous est annulé », avec la prestation, la date et les
+  coordonnées, pour prévenir quelqu'un par e-mail ou appeler un autre outil.
+- **Données personnelles** : un rendez-vous terminé est effacé au bout de treize mois ; on peut en effacer un à la
+  main (demande d'effacement).
 
 ### Provenance des contacts (annonces, e-mails, moteurs de recherche)
 
@@ -708,6 +768,141 @@ peut régler ses enchères dessus.
 Les contacts venus de Google Ads dont la campagne reste inconnue sont comptés à part. Les chiffres de Google sont
 relus au plus toutes les cinq minutes ; chaque lecture compte dans le quota du projet (2 880 opérations par jour au
 niveau « Explorer »). L'écran est ouvert aux administrateurs et aux éditeurs.
+
+### Search Console : recherches, clics et position dans Google
+
+Le module **Google Search Console** s'active dans l'écran Modules (ou `searchConsole()` dans `cms.config.ts`). Il lit,
+sans rien modifier chez Google, ce que Google montre du site dans ses résultats :
+
+- l'écran **Recherche Google** (menu Référencement) : clics, affichages, taux de clic et position moyenne sur 7, 28 ou
+  90 jours, les recherches tapées par les visiteurs, et les pages montrées par Google (une page connue du back-office
+  mène à son onglet Référencement) ;
+- **Pages et titres** gagne deux colonnes, « Clics » et « Position » (28 jours), sur lesquelles on peut trier : les
+  pages bien placées mais peu cliquées sont celles dont le titre et la description méritent d'être retravaillés ;
+- le **tableau de bord** affiche les clics depuis Google.
+
+Google publie ces chiffres avec deux à trois jours de retard : la période affichée s'arrête avant-hier. Ils sont
+réservés à l'administrateur et à l'éditeur.
+
+**Côté Google, une fois** :
+
+1. Le site doit être une **propriété validée** dans [Search Console](https://search.google.com/search-console), et son
+   plan du site (`/sitemap.xml`) y être envoyé.
+2. Dans la [console Google Cloud](https://console.cloud.google.com), activer **Google Search Console API** dans un
+   projet, et y avoir un **ID client OAuth** (celui du module Google Ads convient, voir plus haut).
+3. Créer le **jeton d'actualisation** sur [OAuth Playground](https://developers.google.com/oauthplayground), avec
+   l'autorisation `https://www.googleapis.com/auth/webmasters.readonly`, en se connectant avec un compte Google qui a
+   accès à la propriété (un accès « restreint » suffit). Pour un seul jeton commun à Google Ads et à Search Console,
+   cocher les autorisations des deux.
+
+**Dans le back-office**, **Modules → Google Search Console** : le nom de la propriété, écrit comme dans Search
+Console (`https://www.exemple.fr/` pour une propriété « Préfixe de l'URL », `sc-domain:exemple.fr` pour une propriété
+« Domaine »), l'ID client, son secret et le jeton, puis « Vérifier la connexion ». Pour une agence, ces trois derniers
+peuvent venir de l'hébergement (`NUXT_GOOGLE_ADS_CLIENT_ID`, `NUXT_GOOGLE_ADS_CLIENT_SECRET`,
+`NUXT_GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN`) : il ne reste alors que la propriété à saisir pour chaque site.
+
+### Avis Google et horaires de l'établissement
+
+Le module **Avis Google** s'active dans l'écran Modules (ou `googleBusiness()` dans `cms.config.ts`). Il lit sur
+Google Maps la note de l'établissement, son nombre d'avis, cinq avis et ses horaires, pour les montrer sur le site :
+
+```vue
+<CmsGoogleReviews />                            <!-- la note, puis les avis -->
+<CmsGoogleReviews :max="3" :min-rating="4" />   <!-- trois avis au plus, de quatre étoiles ou plus -->
+<CmsGoogleReviews summary />                    <!-- la note et le nombre d'avis seulement (pied de page) -->
+```
+
+Le composant n'affiche rien tant que le module n'est pas réglé, que Google ne répond pas ou que l'établissement n'a
+pas d'avis. Il reprend la police et les couleurs de la page ; `--cms-reviews-star` et `--cms-reviews-border` règlent
+les siennes. Pour une mise en page à soi : `const { data: place } = await useCmsGoogleBusiness()`.
+
+À savoir :
+
+- **Les règles de Google.** Chaque avis affiché porte le nom, la photo et le lien de son auteur, un lien vers l'avis,
+  et l'ensemble porte la mention « Google Maps » et dit comment les avis sont rangés. Le composant le fait ; un
+  affichage écrit à la main doit le faire aussi.
+- **Cinq avis au plus**, « les plus pertinents » selon Google : le site ne choisit pas lesquels (`min-rating` permet
+  seulement de n'en garder que les mieux notés). On répond aux avis dans Google : l'écran « Avis Google » y conduit,
+  et donne le lien « Laisser un avis » à envoyer aux clients.
+- **Rien n'est enregistré** : Google l'interdit. La fiche est relue chez lui au plus une fois par heure.
+- **Horaires.** Si le site ne déclare pas ses horaires dans `sd.organization()`, ceux de la fiche Google sont
+  transmis aux moteurs de recherche avec la page d'accueil. La note, elle, n'y figure jamais (Google le refuse pour
+  les avis qu'un site publie sur lui-même).
+- **Mise en route** : dans la [console Google Cloud](https://console.cloud.google.com), activer **Places API (New)**
+  dans un projet où la facturation est activée, créer une **clé API** restreinte à cette seule API (sans restriction
+  « Sites web » : elle ne sort jamais du serveur), puis trouver l'identifiant de l'établissement avec le
+  [Place ID Finder](https://developers.google.com/maps/documentation/places/web-service/place-id). Les deux se
+  saisissent dans **Modules → Avis Google** (la clé peut venir de `NUXT_GOOGLE_PLACES_API_KEY`). Google facture
+  chaque lecture, au tarif « Enterprise + Atmosphere » de l'API Places : à une lecture par heure et par langue au
+  plus, cela reste en général dans le quota gratuit du mois, mais c'est à vérifier dans votre compte Google Cloud.
+
+### Assistant de rédaction (Claude)
+
+Le module **Assistant de rédaction** s'active dans l'écran Modules (ou `assistant()` dans `cms.config.ts`). Il ajoute
+trois boutons au back-office, pour qui peut modifier le contenu concerné :
+
+- **Proposer** un texte alternatif, sous le champ de la fiche d'un fichier (médiathèque) et à côté de chaque image
+  listée par « Santé du site » : l'image est décrite en une phrase, dans la langue du champ ;
+- **Proposer une description**, dans l'onglet Référencement d'un contenu : une ou deux phrases tirées du texte de la
+  page tel qu'il est dans le formulaire ;
+- **Traduire depuis le français** (la langue par défaut), dans le volet d'une langue pas encore traduite : les textes
+  sont traduits à leur place, mise en forme comprise ; images, nombres, choix et adresses sont repris tels quels.
+
+L'assistant propose, la personne relit : une description ou une traduction n'est gardée qu'à l'enregistrement du
+contenu, un texte alternatif proposé depuis « Santé du site » se corrige avant d'être enregistré. Depuis la fiche d'un
+fichier, la proposition est placée dans le champ et enregistrée comme une saisie, à corriger sur place.
+
+À savoir :
+
+- **Ce qui part chez Anthropic** : l'image, ou les textes du contenu, le temps de la demande. À ne pas activer pour
+  des contenus qui ne doivent pas quitter le site avant leur publication.
+- **Coût** : l'usage est facturé par Anthropic au compte de la clé, selon le texte envoyé et reçu. Chaque personne
+  est limitée à trente demandes par dix minutes. Le modèle est `claude-opus-5-5` ; le réglage « Modèle » permet d'en
+  choisir un plus petit (`claude-sonnet-5-5`, `claude-haiku-5-5`), moins cher par demande.
+- **Limites** : images JPEG, PNG, GIF ou WebP de 4,5 Mo au plus ; 60 000 caractères de texte par demande (au-delà,
+  la demande est refusée, rien n'est coupé en silence).
+- **Mise en route** : créer une clé d'API dans la [console d'Anthropic](https://platform.claude.com) et la saisir
+  dans **Modules → Assistant de rédaction** (ou `NUXT_ANTHROPIC_API_KEY` dans l'hébergement). « Vérifier la
+  connexion » contrôle la clé et le modèle sans rien faire rédiger.
+
+### Suivi des erreurs et surveillance du site
+
+Le module **Suivi des erreurs et surveillance** s'active dans l'écran Modules (ou `monitoring()` dans
+`cms.config.ts`). L'écran **Surveillance** (menu Administration) réunit deux choses.
+
+**Les erreurs.** Les erreurs inattendues du serveur (réponses 500) et celles du navigateur des visiteurs y sont
+regroupées : une ligne par erreur distincte, avec son nombre, sa dernière date, la page concernée et sa pile
+d'appels. On la marque « Corrigée » (elle se rouvre si elle se reproduit) ou on l'efface. Ce qui est gardé : le
+message, la pile, la page sans ses paramètres, la famille du navigateur. Ni adresse IP, ni contenu de formulaire.
+Le bruit est écarté (extensions de navigateur, coupures de réseau, robots), et chaque visiteur est limité à vingt
+erreurs par dix minutes.
+
+**La vérification.** Toutes les cinq minutes, le site demande sa propre page d'accueil et interroge sa base. Une
+réponse en erreur, absente, ou qui met plus de cinq secondes compte comme un échec. L'écran donne la part du temps où
+le site a répondu (24 heures, sept jours), son temps de réponse et l'historique des pannes. Un site fermé exprès
+(construction, maintenance) n'est pas vérifié.
+
+Réglages, dans **Modules → Suivi des erreurs et surveillance** :
+
+- **Destinataires des alertes** : ils reçoivent un e-mail quand le site ne répond plus (au deuxième échec de suite,
+  pour ne pas alerter sur un simple raté), un autre quand il répond de nouveau, et un à la première apparition de
+  chaque erreur. Demande Brevo ou Resend réglé.
+- **Adresse à surveiller** : par défaut `site.url`.
+- **Adresse de battement** : un site ne peut pas constater sa propre disparition. Si tout l'hébergement tombe, sa
+  vérification ne tourne plus et aucun e-mail ne part. Un service extérieur (Healthchecks, Better Stack, UptimeRobot
+  en mode « heartbeat »…) donne une adresse à appeler régulièrement et alerte quand les appels cessent : le site
+  l'appelle après chaque vérification réussie. C'est le seul moyen d'être prévenu d'une panne complète.
+- **Adresse Sentry (DSN)** : avec elle, chaque erreur est aussi transmise à Sentry, qui apporte ses propres alertes
+  et son historique. Peut venir de `NUXT_SENTRY_DSN`.
+
+Workflows : « Le site ne répond plus » et « Le site répond de nouveau » (`{{ monitor.url }}`,
+`{{ monitor.detail }}`, `{{ monitor.since }}`, `{{ monitor.duration }}`), « Une erreur nouvelle apparaît sur le
+site » (`{{ error.type }}`, `{{ error.message }}`, `{{ error.path }}`), pour prévenir ailleurs que par e-mail.
+
+La vérification demande la tâche planifiée du site (le déclencheur `*/5 * * * *` chez Cloudflare ; sur un serveur
+Node, le core la lance lui-même). Chez Cloudflare, selon la façon dont le domaine est relié au Worker, une demande
+du Worker à sa propre adresse peut ne pas passer par lui : « Vérifier la connexion » dit ce que la vérification
+voit, à regarder une fois après la mise en ligne.
 
 ### Protéger un formulaire des robots
 
@@ -867,6 +1062,46 @@ le back-office. Cartes de test (date future, code quelconque) : `4242 4242 4242 
 `4000 0000 0000 9995` (refusé), `4000 0025 0000 3155` (authentification 3D Secure). Les paiements de test sont rangés à
 part dans l'écran « Paiements ». Passer en production : remplacer la clé et le secret du webhook par ceux du mode
 production.
+
+#### Abonnements, codes promo, factures, stock
+
+Quatre réglages de `stripe({ … })`, indépendants les uns des autres :
+
+```ts
+stripe({
+  collections: {
+    products: { price: 'price', stock: 'stock' },    // le champ nombre « stock » diminue à chaque vente
+    plans: { price: 'price', recurring: 'month' },   // abonnement : prélevé chaque mois ('week', 'month', 'year')
+  },
+  promoCodes: true,   // champ « Code promo » sur la page de paiement
+  invoices: true,     // facture PDF de chaque achat en une fois
+})
+```
+
+- **Abonnement** (`recurring`). Le même `checkout('plans', id)` conduit à une page de paiement en mode abonnement :
+  Stripe prélève ensuite le prix à chaque échéance. Chaque échéance payée est un paiement de l'écran « Paiements », qui
+  liste aussi les abonnements (en cours, en retard de paiement, résiliés) et la date du prochain prélèvement.
+  L'administrateur peut y **résilier** un abonnement : il prend fin à la fin de la période déjà payée, sans
+  remboursement. Une résiliation immédiate ou un remboursement se font dans Stripe. Pour que l'abonné résilie
+  lui-même, activez le « portail client » de Stripe et donnez-en le lien sur le site. Le prix d'un abonnement en
+  cours ne suit pas un changement de prix dans le back-office : il vaut pour les nouveaux abonnés. Déclencheurs de
+  workflow : « Un abonnement est souscrit », « Le prélèvement d'un abonnement échoue », « Un abonnement prend fin ».
+- **Codes promo** (`promoCodes`). Les codes se créent dans Stripe (« Catalogue de produits » → « Bons de
+  réduction »). Le montant enregistré est celui que l'acheteur a payé ; la remise figure dans le détail du paiement
+  et dans `{{ payment.discount }}`.
+- **Factures** (`invoices`). Stripe établit une facture PDF pour chaque achat, l'envoie à l'acheteur et la garde ; le
+  bouton « Facture PDF » du détail d'un paiement l'ouvre. Un abonnement a toujours ses factures, sans ce réglage.
+  Stripe facture ce service à part : voyez ses tarifs « Invoicing ». Les mentions légales de la facture (numéro de
+  TVA, adresse) se règlent dans Stripe.
+- **Stock** (`stock`). Un champ nombre de la collection, non traduit. Un achat qui dépasse le stock est refusé (« Il
+  n'en reste que 2 »), chaque paiement confirmé le diminue, et le déclencheur « Un produit est épuisé » prévient quand
+  il tombe à zéro. Champ vide : stock illimité. Le stock n'est pas réservé pendant que l'acheteur est sur la page
+  de paiement : deux acheteurs simultanés du dernier exemplaire peuvent payer tous les deux (le stock reste à
+  zéro, et les deux paiements sont dans « Paiements »). Un remboursement ne remet rien en stock.
+
+Côté Stripe : cochez aussi, sur le webhook, `invoice.paid`, `invoice.payment_failed`,
+`customer.subscription.updated` et `customer.subscription.deleted` (abonnements), et donnez à la clé limitée
+« Lecture » sur « Invoices » (bouton « Facture PDF ») et « Écriture » sur « Subscriptions » (résiliation).
 
 ## Sauvegardes
 

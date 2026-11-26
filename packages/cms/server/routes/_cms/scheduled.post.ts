@@ -1,4 +1,6 @@
 import { isFrequentCron } from '../../../shared/schedule'
+import { runAppointmentTasks } from '../../cms-modules/appointments'
+import { runMonitoringCheck } from '../../cms-modules/monitoring'
 import { sendPendingConversions } from '../../cms-modules/google-conversions'
 
 /**
@@ -28,6 +30,14 @@ export default defineEventHandler(async (event) => {
   const conversions = frequent
     ? await sendPendingConversions(event).catch((error) => { console.error('[cms] les conversions n\'ont pas pu être envoyées à Google', error); return null })
     : null
+  // Rendez-vous (module `appointments`) : rappels par e-mail, créneaux abandonnés rendus, vieux rendez-vous effacés.
+  const appointments = frequent
+    ? await runAppointmentTasks(event).catch((error) => { console.error('[cms] les rappels de rendez-vous n\'ont pas pu être traités', error); return null })
+    : null
+  // Surveillance (module `monitoring`) : le site répond-il ? Alerte au deuxième échec de suite.
+  const monitoring = frequent
+    ? await runMonitoringCheck(event).catch((error) => { console.error('[cms] la vérification du site a échoué', error); return null })
+    : null
   const backup = await runAutoBackup(event, frequent ? { now } : { cron, now })
-  return { ...backup, schedules, conversions }
+  return { ...backup, schedules, conversions, appointments, monitoring }
 })

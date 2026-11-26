@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Download, ExternalLink, Mail } from '@lucide/vue'
+import { Download, ExternalLink, FileText, Mail, Repeat } from '@lucide/vue'
 import { CHANNELS, type Channel, type OriginPeriod, type StoredOrigin, channelOfRow, filterByOrigin } from '../../../shared/attribution'
-import { dashboardUrl, formatAmount, formatShipping, type PaymentStatus, type ShippingAddress } from '../../../shared/stripe'
+import { INTERVAL_LABELS, type RecurringInterval, SUBSCRIPTION_STATUS_LABELS, type SubscriptionStatus, dashboardUrl, formatAmount, formatShipping, type PaymentStatus, type ShippingAddress } from '../../../shared/stripe'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -10,11 +10,16 @@ type Payment = {
   quantity: number; unitAmount: number; amount: number; refundedAmount: number; currency: string
   email: string | null; name: string | null; shipping: ShippingAddress | null; status: PaymentStatus; livemode: boolean
   origin: StoredOrigin | null; conversion?: import('../../../shared/conversions').ConversionState | null; createdAt: string; updatedAt: string
+  invoice: string | null; subscription: string | null; discountAmount: number
+}
+type Subscription = {
+  id: string; subscriptionId: string; collection: string; title: string; amount: number; currency: string; interval: RecurringInterval; status: SubscriptionStatus
+  email: string | null; name: string | null; livemode: boolean; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; canceledAt: string | null; createdAt: string
 }
 
 const schema = await useCmsSchema()
 const route = useRoute()
-const data = ref(await cmsApi<{ payments: Payment[] }>('/api/cms/payments').catch((e) => { throw createError({ statusCode: e?.statusCode ?? 500, message: cmsErrorMessage(e), fatal: true }) }))
+const data = ref(await cmsApi<{ payments: Payment[]; subscriptions: Subscription[] }>('/api/cms/payments').catch((e) => { throw createError({ statusCode: e?.statusCode ?? 500, message: cmsErrorMessage(e), fatal: true }) }))
 
 // Les paiements de test et les vrais ne se mélangent pas : on montre les vrais, sauf s'il n'y a que des essais.
 const hasLive = computed(() => data.value.payments.some(p => p.livemode))
@@ -30,13 +35,39 @@ const oneCurrency = computed(() => { const c = new Set(paidRows.value.map(p => p
 const count = (live: boolean) => data.value.payments.filter(p => p.livemode === live).length
 const selected = ref<Payment | null>(null)
 
+// ───── Abonnements (collections déclarées `recurring`) ─────
+const user = useCmsUser()
+const toast = useCmsToast()
+const subscriptions = computed(() => (data.value.subscriptions ?? []).filter(s => s.livemode === (mode.value === 'live')))
+const SUBSCRIPTION_BADGE: Record<SubscriptionStatus, string> = { active: 'badge-success', trialing: 'badge-success', past_due: 'badge-warning', unpaid: 'badge-error', canceled: 'badge-neutral', incomplete: 'badge-warning', incomplete_expired: 'badge-neutral', paused: 'badge-neutral' }
+const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
+const subscriptionUrl = (s: Subscription) => `https://dashboard.stripe.com/${s.livemode ? '' : 'test/'}subscriptions/${s.subscriptionId}`
+const focusedSubscription = computed(() => (typeof route.query.subscription === 'string' ? route.query.subscription : null))
+const ending = ref<string | null>(null)
+async function endSubscription(s: Subscription) {
+  if (ending.value || !confirm(`Résilier l'abonnement « ${s.title} » de ${s.email ?? 'cette personne'} ?\n\nIl prendra fin ${s.currentPeriodEnd ? `le ${day(s.currentPeriodEnd)}, ` : ''}à la fin de la période déjà payée. Rien n'est remboursé.`)) return
+  ending.value = s.id
+  try {
+    const saved = await cmsApi<Subscription>(`/api/cms/subscriptions/${s.id}/cancel`, { method: 'POST' })
+    data.value.subscriptions = data.value.subscriptions.map(x => (x.id === s.id ? { ...x, ...saved } : x))
+    toast.success('Résiliation demandée à Stripe')
+  }
+  catch (e) {
+    toast.error(cmsErrorMessage(e, 'La résiliation n\'a pas pu être demandée.'))
+  }
+  finally {
+    ending.value = null
+  }
+}
+
 const STATUS: Record<PaymentStatus, { label: string; badge: string }> = {
   paid: { label: 'Payé', badge: 'badge-success' },
   pending: { label: 'En attente', badge: 'badge-warning' },
   failed: { label: 'Échoué', badge: 'badge-error' },
   refunded: { label: 'Remboursé', badge: 'badge-neutral' },
 }
-const collectionLabel = (key: string) => schema.value.collections?.[key]?.label ?? key
+// Un acompte de rendez-vous est rangé sous un nom réservé, qui n'est pas une collection.
+const collectionLabel = (key: string) => (key === 'appointments' ? 'Rendez-vous' : schema.value.collections?.[key]?.label ?? key)
 const money = (p: Payment, minor = p.amount) => formatAmount(minor, p.currency)
 const when = (p: Payment) => new Date(p.createdAt).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -80,7 +111,7 @@ onMounted(() => {
     <div class="flex flex-wrap items-center gap-3 mb-6">
       <div class="min-w-0">
         <h1 class="text-2xl font-bold">Paiements</h1>
-        <p class="text-sm text-base-content/60">Les paiements confirmés par Stripe. Remboursements et litiges se gèrent dans le tableau de bord Stripe.</p>
+        <p class="text-sm text-base-content/60">Les paiements confirmés par Stripe, et les abonnements en cours. Remboursements et litiges se gèrent dans le tableau de bord Stripe.</p>
       </div>
       <button class="btn btn-sm ml-auto" :disabled="!list.length" @click="exportCsv"><Download :size="16" />Exporter</button>
     </div>
@@ -94,6 +125,31 @@ onMounted(() => {
       v-if="paidRows.length" v-model:days="days" v-model:channel="channel" :rows="paidRows" :noun="['paiement réussi', 'paiements réussis']" class="mb-4"
       :amount="oneCurrency ? (p: Payment) => p.amount - p.refundedAmount : undefined" :format-amount="oneCurrency ? (n: number) => formatAmount(n, oneCurrency!) : undefined"
     />
+    <div v-if="subscriptions.length" class="card bg-base-100 border border-base-300 overflow-x-auto mb-4" data-subscriptions>
+      <h2 class="font-semibold px-4 py-3 border-b border-base-300 flex items-center gap-2"><Repeat :size="16" />Abonnements <span class="badge badge-sm badge-ghost">{{ subscriptions.filter(s => s.status !== 'canceled').length }} en cours</span></h2>
+      <table class="table table-sm">
+        <thead><tr><th>Abonné</th><th>Offre</th><th>État</th><th class="hidden sm:table-cell">Échéance</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          <tr v-for="s in subscriptions" :key="s.id" :class="{ 'bg-primary/5': focusedSubscription === s.id }" :data-subscription="s.subscriptionId" :data-status="s.status">
+            <td class="min-w-0"><div class="font-medium break-all">{{ s.email ?? '—' }}</div><div v-if="s.name" class="text-xs text-base-content/60">{{ s.name }}</div></td>
+            <td>{{ s.title }}<div class="text-xs text-base-content/60 whitespace-nowrap">{{ formatAmount(s.amount, s.currency) }} {{ INTERVAL_LABELS[s.interval] }}</div></td>
+            <td>
+              <span class="badge badge-sm badge-soft whitespace-nowrap" :class="SUBSCRIPTION_BADGE[s.status]">{{ SUBSCRIPTION_STATUS_LABELS[s.status] }}</span>
+              <div v-if="s.cancelAtPeriodEnd && s.status !== 'canceled'" class="text-xs text-base-content/60 mt-0.5" data-subscription-ending>Résiliation demandée</div>
+            </td>
+            <td class="hidden sm:table-cell text-base-content/70 whitespace-nowrap">
+              <template v-if="s.status === 'canceled'">Fin le {{ day(s.canceledAt) || '—' }}</template>
+              <template v-else-if="s.currentPeriodEnd">{{ s.cancelAtPeriodEnd ? 'Fin' : 'Prochain prélèvement' }} le {{ day(s.currentPeriodEnd) }}</template>
+              <template v-else>—</template>
+            </td>
+            <td class="text-right whitespace-nowrap">
+              <button v-if="user?.role === 'admin' && s.status !== 'canceled' && !s.cancelAtPeriodEnd" class="btn btn-ghost btn-xs" :disabled="ending === s.id" data-subscription-cancel @click="endSubscription(s)">Résilier</button>
+              <a class="btn btn-ghost btn-xs btn-square" :href="subscriptionUrl(s)" target="_blank" rel="noopener" title="Voir dans Stripe" aria-label="Voir dans Stripe"><ExternalLink :size="14" /></a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
     <p v-if="totals.length" class="text-sm mb-3">Encaissé : <strong>{{ totals.join(' · ') }}</strong> <span class="text-base-content/60">(paiements réussis, remboursements déduits<template v-if="days !== null || channel"> ; seulement la période et le canal choisis ci-dessus, comme l'export</template>)</span></p>
 
     <div class="grid lg:grid-cols-[1fr_24rem] gap-6 items-start">
@@ -128,7 +184,9 @@ onMounted(() => {
             <div><dt class="text-base-content/60">Produit</dt><dd>{{ selected.title }} <span class="text-base-content/60">({{ collectionLabel(selected.collection) }})</span></dd></div>
             <div><dt class="text-base-content/60">Quantité</dt><dd>{{ selected.quantity }} × {{ money(selected, selected.unitAmount) }}</dd></div>
             <div><dt class="text-base-content/60">Montant payé</dt><dd class="font-semibold">{{ money(selected) }}</dd></div>
+            <div v-if="selected.discountAmount"><dt class="text-base-content/60">Remise (code promo)</dt><dd data-detail-discount>{{ money(selected, selected.discountAmount) }}</dd></div>
             <div v-if="selected.refundedAmount"><dt class="text-base-content/60">Remboursé</dt><dd>{{ money(selected, selected.refundedAmount) }}</dd></div>
+            <div v-if="selected.subscription"><dt class="text-base-content/60">Abonnement</dt><dd class="font-mono text-xs break-all">{{ selected.subscription }}</dd></div>
             <div><dt class="text-base-content/60">Acheteur</dt><dd class="break-words">{{ [selected.name, selected.email].filter(Boolean).join(' · ') || '—' }}</dd></div>
             <div v-if="selected.shipping"><dt class="text-base-content/60">Adresse de livraison</dt><dd class="whitespace-pre-wrap">{{ formatShipping(selected.shipping) }}</dd></div>
             <div><dt class="text-base-content/60">Référence Stripe</dt><dd class="font-mono text-xs break-all">{{ selected.paymentIntent ?? selected.sessionId }}</dd></div>
@@ -137,6 +195,7 @@ onMounted(() => {
           <div v-if="selected.status === 'pending'" class="alert alert-soft alert-warning text-xs">Paiement différé (virement, prélèvement…) : Stripe préviendra le site quand il aboutira ou échouera.</div>
           <div class="flex flex-wrap gap-2 pt-1">
             <a class="btn btn-sm btn-primary grow" :href="dashboardUrl(selected)" target="_blank" rel="noopener"><ExternalLink :size="16" />Voir dans Stripe</a>
+            <a v-if="selected.invoice" class="btn btn-sm" :href="`/api/cms/payments/${selected.id}/invoice`" target="_blank" rel="noopener" data-detail-invoice><FileText :size="16" />Facture PDF</a>
             <a v-if="selected.email" class="btn btn-sm" :href="`mailto:${selected.email}`" title="Écrire à l'acheteur" aria-label="Écrire à l'acheteur"><Mail :size="16" /></a>
           </div>
         </div>

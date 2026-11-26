@@ -1,11 +1,13 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { CHANNELS, channelOfRow } from '../../shared/attribution'
 import {
-  type PaymentFromSession, type PaymentStatus, type StripeConfig, STATUS_FROM,
-  formatAmount, formatShipping, keyMode, paymentFromSession, sellableCollections, statusFromEvent,
+  INTERVAL_LABELS, type PaymentFromSession, type PaymentStatus, RECURRING_INTERVALS, type RecurringInterval, type StripeConfig, STATUS_FROM,
+  formatAmount, formatShipping, invoiceFromObject, keyMode, paymentFromSession, sellableCollections, statusFromEvent, subscriptionFromObject,
 } from '../../shared/stripe'
 import type { CmsModuleDefinition, TemplateContext } from '../utils/modules'
+import { APPOINTMENTS } from '../../shared/appointments'
+import { appointmentPaid } from './appointments'
 import { conversionForLead } from './google-conversions'
 
 /**
@@ -24,6 +26,11 @@ export const STRIPE_WEBHOOK_EVENTS = [
   'checkout.session.async_payment_succeeded',
   'checkout.session.async_payment_failed',
   'charge.refunded',
+  // Abonnements : échéances suivantes, échec d'un prélèvement, changement d'état, résiliation.
+  'invoice.paid',
+  'invoice.payment_failed',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
 ]
 
 /** Adresse de l'API Stripe. Ne se change que pour les tests (variable NUXT_STRIPE_API_URL). */
@@ -56,7 +63,7 @@ export async function stripeRequest<T>(event: H3Event, key: string, path: string
 const modeLabel = (livemode: boolean) => (livemode ? 'production' : 'test')
 
 /** Variables d'un paiement proposées aux workflows. */
-function paymentContext(p: Omit<PaymentFromSession, 'sessionId'> & { id: string; sessionId: string }, origin: string): TemplateContext {
+function paymentContext(p: Omit<PaymentFromSession, 'sessionId' | 'invoice' | 'subscription' | 'discountAmount'> & { id: string; sessionId: string; subscription?: string | null; discountAmount?: number }, origin: string): TemplateContext {
   return {
     payment: {
       product: p.title,
@@ -67,6 +74,8 @@ function paymentContext(p: Omit<PaymentFromSession, 'sessionId'> & { id: string;
       shipping: formatShipping(p.shipping),
       reference: p.paymentIntent ?? p.sessionId,
       mode: modeLabel(p.livemode),
+      discount: p.discountAmount ? formatAmount(p.discountAmount, p.currency) : '',
+      subscription: p.subscription ? 'oui' : 'non',
       adminUrl: `${origin}/admin/payments?payment=${p.id}`,
     },
     origin: { channel: CHANNELS[channelOfRow(p.origin)], campaign: p.origin?.campaign ?? '', term: p.origin?.term ?? '', source: p.origin?.source ?? p.origin?.referrer ?? '' },
@@ -104,6 +113,7 @@ export const stripeModule: CmsModuleDefinition = {
       key: 'secretKey', label: 'Clé d\'API', type: 'secret', required: true,
       help: 'Dans le tableau de bord Stripe : « Développeurs » → « Clés API » → « Créer une clé limitée ». Donnez-lui un nom (« Site »), '
         + 'le droit « Écriture » sur « Checkout Sessions » et rien d\'autre, puis copiez-la. Elle commence par « rk_test_ » (essais) ou « rk_live_ » (vrais paiements). '
+        + 'Pour télécharger les factures depuis « Paiements », ajoutez « Lecture » sur « Invoices » ; pour résilier un abonnement d\'ici, « Écriture » sur « Subscriptions ». '
         + 'La « Clé secrète » (sk_…) fonctionne aussi, mais donne tous les droits sur le compte : à éviter.',
       placeholder: 'rk_live_…',
     },
@@ -121,7 +131,7 @@ export const stripeModule: CmsModuleDefinition = {
       help: 'Dans Stripe : « Développeurs » → « Webhooks » (Workbench) → « Créer une destination d\'événements » → « Votre compte », '
         + 'format « Instantané » (snapshot), dernière version de l\'API ; type « Endpoint de webhook » ; collez cette adresse.',
     },
-    { label: 'Événements à cocher', value: STRIPE_WEBHOOK_EVENTS.join('\n'), help: 'Paiement terminé, paiement différé réussi ou échoué, remboursement.' },
+    { label: 'Événements à cocher', value: STRIPE_WEBHOOK_EVENTS.join('\n'), help: 'Paiement terminé, paiement différé réussi ou échoué, remboursement ; les quatre derniers ne servent qu\'aux abonnements.' },
   ],
 
   async test(event, settings) {
@@ -156,6 +166,8 @@ export const stripeModule: CmsModuleDefinition = {
       { key: 'payment.shipping', label: 'Adresse de livraison' },
       { key: 'payment.reference', label: 'Référence Stripe' },
       { key: 'payment.mode', label: 'Mode : test ou production' },
+      { key: 'payment.discount', label: 'Remise obtenue par un code promo' },
+      { key: 'payment.subscription', label: 'Échéance d\'un abonnement : oui ou non' },
       { key: 'payment.adminUrl', label: 'Adresse du paiement dans le back-office' },
       { key: 'origin.channel', label: 'Provenance : canal (Google Ads, e-mail, moteur de recherche…)' },
       { key: 'origin.campaign', label: 'Provenance : nom de la campagne' },
@@ -169,10 +181,95 @@ export const stripeModule: CmsModuleDefinition = {
       origin: { channel: 'google-ads', source: 'google', medium: 'cpc', campaign: 'printemps', term: 'avocat lyon' },
       shipping: { name: 'Jeanne Martin', line1: '12 rue des Lilas', line2: null, postalCode: '75011', city: 'Paris', state: null, country: 'FR' },
     }, '')
-    return (['payment.succeeded', 'payment.failed'] as const).map(name => ({
+    const payments = (['payment.succeeded', 'payment.failed'] as const).map(name => ({
       name, label: EVENT_LABELS[name].label, targets, targetsLabel: 'Pour quels produits', variables, sample: sample(name),
     }))
+    // Abonnements et stock : seulement si une collection s'en sert.
+    const sellable = Object.entries(sellableCollections(cmsConfig))
+    const pick = (test: (key: string) => boolean) => targets.filter(t => test(t.key))
+    const recurring = pick(key => !!sellableCollections(cmsConfig)[key]?.recurring)
+    const stocked = pick(key => !!sellableCollections(cmsConfig)[key]?.stock)
+    const subscriptionSample = (name: keyof typeof SUBSCRIPTION_EVENTS) => (target?: string) => subscriptionEvent(name, {
+      id: 'exemple', subscriptionId: 'sub_exemple', collection: target ?? recurring[0]?.key ?? '', entryId: 'exemple', title: 'Offre d\'exemple', amount: 2900,
+      currency: stripeOptions().currency ?? 'eur', interval: sellable.find(([, c]) => c.recurring)?.[1].recurring ?? 'month', status: 'active', email: 'abonne@example.com', name: 'Jeanne Martin',
+      livemode: false, currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000), cancelAtPeriodEnd: false, canceledAt: null, origin: null, createdAt: new Date(), updatedAt: new Date(),
+    }, '')
+    return [
+      ...payments,
+      ...(recurring.length
+        ? (Object.keys(SUBSCRIPTION_EVENTS) as (keyof typeof SUBSCRIPTION_EVENTS)[]).map(name => ({
+            name, label: SUBSCRIPTION_EVENTS[name], targets: recurring, targetsLabel: 'Pour quelles offres', variables: SUBSCRIPTION_VARIABLES, sample: subscriptionSample(name),
+          }))
+        : []),
+      ...(stocked.length
+        ? [{
+            name: 'product.out_of_stock', label: 'Un produit est épuisé', targets: stocked, targetsLabel: 'Pour quels produits',
+            variables: [{ key: 'product.title', label: 'Nom du produit' }, { key: 'product.adminUrl', label: 'Adresse du produit dans le back-office' }],
+            sample: (target?: string) => stockEvent(target ?? stocked[0]?.key ?? '', 'exemple', 'Produit d\'exemple', ''),
+          }]
+        : []),
+    ]
   },
+}
+
+// ───────────── Abonnements et stock : événements de workflow ─────────────
+
+type SubscriptionRow = typeof schema.subscriptions.$inferSelect
+
+const SUBSCRIPTION_EVENTS = {
+  'subscription.started': 'Un abonnement est souscrit',
+  'subscription.payment_failed': 'Le prélèvement d\'un abonnement échoue',
+  'subscription.canceled': 'Un abonnement prend fin',
+} as const
+const SUBSCRIPTION_VARIABLES = [
+  { key: 'subscription.offer', label: 'Offre souscrite' },
+  { key: 'subscription.amount', label: 'Montant de chaque échéance' },
+  { key: 'subscription.interval', label: 'Périodicité (par mois, par an…)' },
+  { key: 'subscription.email', label: 'E-mail de l\'abonné' },
+  { key: 'subscription.name', label: 'Nom de l\'abonné' },
+  { key: 'subscription.reference', label: 'Référence Stripe' },
+  { key: 'subscription.mode', label: 'Mode : test ou production' },
+  { key: 'subscription.adminUrl', label: 'Adresse de l\'abonnement dans le back-office' },
+]
+
+function subscriptionEvent(name: keyof typeof SUBSCRIPTION_EVENTS, s: SubscriptionRow, origin: string) {
+  const amount = `${formatAmount(s.amount, s.currency)} ${INTERVAL_LABELS[s.interval]}`
+  return {
+    name, module: 'stripe', target: s.collection,
+    summary: `${SUBSCRIPTION_EVENTS[name]} : « ${s.title} », ${amount}${s.livemode ? '' : ' (test)'}`,
+    context: {
+      subscription: {
+        offer: s.title, amount: formatAmount(s.amount, s.currency), interval: INTERVAL_LABELS[s.interval], email: s.email ?? '', name: s.name ?? '',
+        reference: s.subscriptionId, mode: modeLabel(s.livemode), adminUrl: `${origin}/admin/payments?subscription=${s.id}`,
+      },
+      origin: { channel: CHANNELS[channelOfRow(s.origin)], campaign: s.origin?.campaign ?? '' },
+    },
+  }
+}
+
+const stockEvent = (collection: string, entryId: string, title: string, origin: string) => ({
+  name: 'product.out_of_stock', module: 'stripe', target: collection, summary: `Un produit est épuisé : « ${title} »`,
+  context: { product: { title, adminUrl: `${origin}/admin/${collection}/${entryId}` } },
+})
+
+/**
+ * Diminue le stock d'un produit vendu (champ `stock` de sa collection), dans le brouillon comme dans la version en
+ * ligne, sans descendre sous zéro. L'opération est faite par la base en une seule requête : deux paiements
+ * simultanés ne se marchent pas dessus. Sans effet si le stock n'est pas suivi (champ absent ou vide).
+ */
+async function decrementStock(event: H3Event, collection: string, entryId: string, quantity: number, title: string) {
+  const field = sellableCollections(cmsConfig)[collection]?.stock
+  if (!field || !/^[a-z][a-zA-Z0-9]*$/.test(field)) return
+  const { entries } = schema
+  const path = sql.raw(`'$.${field}'`)
+  const left = (column: typeof entries.sharedDraft | typeof entries.sharedPublished) => sql`case when json_type(${column}, ${path}) in ('integer', 'real') then json_set(${column}, ${path}, max(0, json_extract(${column}, ${path}) - ${quantity})) else ${column} end`
+  const [row] = await useDb(event).update(entries).set({ sharedDraft: left(entries.sharedDraft) as never, sharedPublished: left(entries.sharedPublished) as never })
+    .where(and(eq(entries.id, entryId), eq(entries.type, collection))).returning({ published: entries.sharedPublished })
+  const now = (row?.published as Record<string, unknown> | null | undefined)?.[field]
+  if (typeof now !== 'number') return
+  // Le stock est affiché par le site : la page ne doit pas rester en retard.
+  await purgeSiteCache(event).catch(() => false)
+  if (now <= 0) emitCmsEvents(event, [stockEvent(collection, entryId, title, getRequestURL(event).origin)])
 }
 
 // ───────────── Enregistrement des paiements (webhook) ─────────────
@@ -189,6 +286,8 @@ export async function applyStripeEvent(event: H3Event, stripeEvent: { type?: str
   const type = String(stripeEvent.type ?? '')
   const object = stripeEvent.data?.object ?? {}
   if (type === 'charge.refunded') return applyRefund(event, object)
+  if (type === 'invoice.paid' || type === 'invoice.payment_failed') return applyInvoice(event, type, object)
+  if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') return applySubscription(event, type, object)
   const status = statusFromEvent(type, object)
   if (!status) return 'ignoré'
   const found = paymentFromSession(object)
@@ -204,16 +303,23 @@ export async function applyStripeEvent(event: H3Event, stripeEvent: { type?: str
     const from = STATUS_FROM[status]
     if (from.length) {
       ;[changed] = await db.update(schema.payments)
-        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, updatedAt: now, ...(conversion ? { conversion } : {}) })
+        .set({ status, paymentIntent: found.paymentIntent, email: found.email, name: found.name, shipping: found.shipping, amount: found.amount, invoice: found.invoice, discountAmount: found.discountAmount, updatedAt: now, ...(conversion ? { conversion } : {}) })
         .where(and(eq(schema.payments.sessionId, found.sessionId), inArray(schema.payments.status, from))).returning()
     }
   }
   if (!changed) return 'déjà enregistré'
+  // Paiement réussi : le stock du produit diminue, et un abonnement souscrit est enregistré.
+  if (changed.status === 'paid') {
+    await decrementStock(event, changed.collection, changed.entryId, changed.quantity, changed.title).catch(error => console.error('[stripe] stock non mis à jour', error))
+    if (changed.subscription) await startSubscription(event, changed, object).catch(error => console.error('[stripe] abonnement non enregistré', error))
+  }
+  // Acompte d'un rendez-vous (module `appointments`) : c'est ce paiement qui le confirme.
+  const appointment = changed.status === 'paid' && changed.collection === APPOINTMENTS.paymentCollection ? await appointmentPaid(event, changed.entryId) : null
   if (changed.status === 'paid' || changed.status === 'failed') {
     const name = changed.status === 'paid' ? 'payment.succeeded' : 'payment.failed'
     emitCmsEvents(event, [paymentEvent(name, { ...changed, shipping: changed.shipping ?? null }, getRequestURL(event).origin)])
   }
-  return inserted ? `enregistré (${status})` : `mis à jour (${status})`
+  return `${inserted ? `enregistré (${status})` : `mis à jour (${status})`}${appointment ? ` ; rendez-vous : ${appointment}` : ''}`
 }
 
 /** Remboursement fait dans le tableau de bord Stripe : montant remboursé, et statut « remboursé » s'il est total. */
@@ -227,6 +333,126 @@ async function applyRefund(event: H3Event, charge: Record<string, any>) {
     // Seul un paiement réussi peut être remboursé (un remboursement partiel peut être suivi d'un autre).
     .where(and(eq(schema.payments.paymentIntent, intent), inArray(schema.payments.status, ['paid', 'refunded']))).returning()
   return row ? `remboursement enregistré (${refunded})` : 'ignoré : paiement inconnu'
+}
+
+// ───────────── Abonnements (webhook) ─────────────
+
+/** Première échéance payée : l'abonnement est enregistré. Idempotent, grâce à la référence unique de l'abonnement. */
+async function startSubscription(event: H3Event, payment: PaymentRow, session: Record<string, any>) {
+  const interval = String(session.metadata?.cms_interval ?? sellableCollections(cmsConfig)[payment.collection]?.recurring ?? 'month')
+  const now = new Date()
+  const row: SubscriptionRow = {
+    id: crypto.randomUUID(), subscriptionId: payment.subscription!, collection: payment.collection, entryId: payment.entryId, title: payment.title,
+    // Le montant d'une échéance est le prix hors remise : un code promo ne vaut souvent que pour la première.
+    amount: payment.unitAmount * payment.quantity, currency: payment.currency,
+    interval: (RECURRING_INTERVALS as readonly string[]).includes(interval) ? interval as RecurringInterval : 'month',
+    status: 'active', email: payment.email, name: payment.name, livemode: payment.livemode, currentPeriodEnd: null, cancelAtPeriodEnd: false, canceledAt: null,
+    origin: payment.origin, createdAt: now, updatedAt: now,
+  }
+  const [inserted] = await useDb(event).insert(schema.subscriptions).values(row).onConflictDoNothing({ target: schema.subscriptions.subscriptionId }).returning()
+  if (inserted) emitCmsEvents(event, [subscriptionEvent('subscription.started', inserted, getRequestURL(event).origin)])
+}
+
+/**
+ * Facture d'un abonnement. Payée : une échéance suivante devient un paiement (la première l'est déjà, par la session
+ * de paiement). Impayée : l'abonnement est marqué en retard ; Stripe retente de lui-même, puis résilie.
+ */
+async function applyInvoice(event: H3Event, type: string, object: Record<string, any>) {
+  const invoice = invoiceFromObject(object)
+  if (!invoice) return 'ignoré : facture sans abonnement'
+  const db = useDb(event)
+  const { subscriptions: s, payments: p } = schema
+  const [subscription] = await db.select().from(s).where(eq(s.subscriptionId, invoice.subscriptionId))
+  if (!subscription) return 'ignoré : abonnement inconnu'
+  const now = new Date()
+  const origin = getRequestURL(event).origin
+  if (type === 'invoice.payment_failed') {
+    const [late] = await db.update(s).set({ status: 'past_due', updatedAt: now }).where(and(eq(s.id, subscription.id), inArray(s.status, ['active', 'trialing']))).returning()
+    if (late) emitCmsEvents(event, [subscriptionEvent('subscription.payment_failed', late, origin)])
+    return late ? 'abonnement en retard de paiement' : 'déjà enregistré'
+  }
+  await db.update(s).set({ status: subscription.status === 'canceled' ? 'canceled' : 'active', updatedAt: now, ...(invoice.periodEnd ? { currentPeriodEnd: new Date(invoice.periodEnd) } : {}) }).where(eq(s.id, subscription.id))
+  if (invoice.reason === 'subscription_create') return 'première échéance : déjà enregistrée avec la session'
+  if (!invoice.amount) return 'ignoré : facture à zéro'
+  const row: PaymentRow = {
+    id: crypto.randomUUID(), sessionId: invoice.invoiceId, paymentIntent: invoice.paymentIntent, collection: subscription.collection, entryId: subscription.entryId,
+    title: subscription.title, quantity: 1, unitAmount: invoice.amount, amount: invoice.amount, refundedAmount: 0, currency: invoice.currency || subscription.currency,
+    email: invoice.email ?? subscription.email, name: invoice.name ?? subscription.name, shipping: null, status: 'paid', livemode: invoice.livemode,
+    origin: subscription.origin, conversion: null, invoice: invoice.invoiceId, subscription: invoice.subscriptionId, discountAmount: 0, createdAt: now, updatedAt: now,
+  }
+  const [inserted] = await db.insert(p).values(row).onConflictDoNothing({ target: p.sessionId }).returning()
+  if (!inserted) return 'déjà enregistré'
+  emitCmsEvents(event, [paymentEvent('payment.succeeded', { ...inserted, shipping: null }, origin)])
+  return 'échéance enregistrée (paid)'
+}
+
+/** État d'un abonnement d'après Stripe : en cours, en retard, résiliation demandée, fin. Un abonnement résilié le reste. */
+async function applySubscription(event: H3Event, type: string, object: Record<string, any>) {
+  const found = subscriptionFromObject(type === 'customer.subscription.deleted' ? { ...object, status: 'canceled' } : object)
+  if (!found) return 'ignoré : abonnement illisible'
+  const db = useDb(event)
+  const { subscriptions: s } = schema
+  const [before] = await db.select().from(s).where(eq(s.subscriptionId, found.subscriptionId))
+  if (!before) return 'ignoré : abonnement inconnu'
+  if (before.status === 'canceled') return 'déjà résilié'
+  const now = new Date()
+  const [after] = await db.update(s).set({
+    status: found.status, cancelAtPeriodEnd: found.status === 'canceled' ? false : found.cancelAtPeriodEnd, updatedAt: now,
+    ...(found.currentPeriodEnd ? { currentPeriodEnd: new Date(found.currentPeriodEnd) } : {}),
+    ...(found.status === 'canceled' ? { canceledAt: new Date(found.canceledAt ?? now.getTime()) } : {}),
+  }).where(eq(s.id, before.id)).returning()
+  if (after?.status === 'canceled') emitCmsEvents(event, [subscriptionEvent('subscription.canceled', after, getRequestURL(event).origin)])
+  return `abonnement mis à jour (${found.status}${found.cancelAtPeriodEnd && found.status !== 'canceled' ? ', résiliation demandée' : ''})`
+}
+
+// ───────────── Back-office : facture, résiliation ─────────────
+
+type Actor = { id: string; name?: string | null; email?: string | null }
+
+/** Explique le refus de Stripe pour une clé limitée à qui il manque un droit. */
+function keyRefusal(error: unknown, right: string): never {
+  const status = (error as { status?: number }).status
+  if (status === 401 || status === 403) throw createError({ statusCode: 502, message: `Stripe refuse : la clé d'API du module n'a pas le droit ${right}. Ajoutez-le à la clé limitée dans Stripe (« Développeurs » → « Clés API »).` })
+  if (status === 404) throw createError({ statusCode: 404, message: 'Stripe ne trouve plus cet élément.' })
+  console.error('[stripe]', (error as Error).message)
+  throw createError({ statusCode: 502, message: 'Stripe n\'a pas répondu comme attendu. Réessayez dans un instant.' })
+}
+
+/** Adresse du PDF de la facture d'un paiement, demandée à Stripe à l'instant (elle n'est valable qu'un temps). */
+export async function invoicePdfUrl(event: H3Event, paymentId: string) {
+  const [payment] = await useDb(event).select().from(schema.payments).where(eq(schema.payments.id, paymentId))
+  if (!payment) throw createError({ statusCode: 404, message: 'Paiement introuvable.' })
+  if (!payment.invoice) throw createError({ statusCode: 404, message: 'Ce paiement n\'a pas de facture Stripe.' })
+  const { secretKey } = await moduleSettings(event, 'stripe')
+  if (!secretKey) throw createError({ statusCode: 503, message: 'La clé d\'API Stripe n\'est pas réglée.' })
+  const invoice = await stripeRequest<{ invoice_pdf?: string | null; hosted_invoice_url?: string | null }>(event, secretKey, `/v1/invoices/${encodeURIComponent(payment.invoice)}`).catch(error => keyRefusal(error, '« Lecture » sur « Invoices »'))
+  const url = invoice.invoice_pdf ?? invoice.hosted_invoice_url
+  if (!url || !/^https?:\/\//.test(url)) throw createError({ statusCode: 404, message: 'Stripe n\'a pas (encore) de PDF pour cette facture.' })
+  return url
+}
+
+/**
+ * Demande à Stripe de résilier un abonnement à la fin de la période déjà payée (l'abonné en profite jusque-là, rien
+ * n'est remboursé). Un remboursement ou une résiliation immédiate se font dans le tableau de bord Stripe.
+ */
+export async function cancelSubscription(event: H3Event, user: Actor, id: string) {
+  const db = useDb(event)
+  const { subscriptions: s } = schema
+  const [row] = await db.select().from(s).where(eq(s.id, id))
+  if (!row) throw createError({ statusCode: 404, message: 'Abonnement introuvable.' })
+  if (row.status === 'canceled') throw createError({ statusCode: 409, message: 'Cet abonnement a déjà pris fin.' })
+  if (row.cancelAtPeriodEnd) return row
+  const { secretKey } = await moduleSettings(event, 'stripe')
+  if (!secretKey) throw createError({ statusCode: 503, message: 'La clé d\'API Stripe n\'est pas réglée.' })
+  const answer = await stripeRequest<Record<string, any>>(event, secretKey, `/v1/subscriptions/${encodeURIComponent(row.subscriptionId)}`, { method: 'POST', body: 'cancel_at_period_end=true' })
+    .catch(error => keyRefusal(error, '« Écriture » sur « Subscriptions »'))
+  const fresh = subscriptionFromObject(answer)
+  const [saved] = await db.update(s).set({ cancelAtPeriodEnd: true, updatedAt: new Date(), ...(fresh?.currentPeriodEnd ? { currentPeriodEnd: new Date(fresh.currentPeriodEnd) } : {}) }).where(eq(s.id, row.id)).returning()
+  logActivity(event, {
+    action: 'stripe.subscription_cancel', category: 'settings', actor: user, target: { kind: 'stripe', id: row.id },
+    phrase: `a demandé la résiliation de l'abonnement « ${row.title} » (${formatAmount(row.amount, row.currency)} ${INTERVAL_LABELS[row.interval]}) à la fin de la période payée`,
+  })
+  return saved!
 }
 
 // ───────────── Droits ─────────────

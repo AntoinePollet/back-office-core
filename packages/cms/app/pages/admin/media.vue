@@ -4,7 +4,8 @@ import { adminEntryPath } from '../../../shared/admin-paths'
 import { canHaveFocus } from '../../../shared/media'
 import { folderLabel } from '../../../shared/media-folders'
 import { TRASH_DAYS } from '../../../shared/trash'
-import { Folder, FolderInput, Images } from '@lucide/vue'
+import { Folder, FolderInput, Images, Sparkles } from '@lucide/vue'
+import { isAssistantImage } from '../../../shared/assistant'
 
 definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 
@@ -44,6 +45,17 @@ onMounted(async () => {
   const file = typeof wanted === 'string' ? (await useCmsMedia().load().catch(() => [])).find(m => m.id === wanted) : undefined
   if (file) await select(file)
 })
+
+// Module « Assistant de rédaction » : le texte proposé est placé dans le champ et enregistré, comme une saisie.
+const assistant = useCmsAssistant()
+async function suggestAlt(locale: string) {
+  const media = selected.value
+  if (!media) return
+  const proposed = await assistant.alt(media.id, locale)
+  if (!proposed || selected.value?.id !== media.id) return
+  alt.value = { ...alt.value, [locale]: proposed }
+  await saveAlt()
+}
 
 async function saveAlt() {
   const media = selected.value
@@ -115,7 +127,11 @@ async function copyUrl() {
 
           <fieldset v-for="l in locales" :key="l" class="fieldset">
             <legend class="fieldset-legend">Texte alternatif<template v-if="locales.length > 1"> ({{ localeName(l) }})</template></legend>
-            <textarea v-model="alt[l]" class="textarea textarea-sm w-full" rows="2" placeholder="Décrivez l'image pour les lecteurs d'écran et Google" @blur="saveAlt" />
+            <textarea v-model="alt[l]" class="textarea textarea-sm w-full" rows="2" placeholder="Décrivez l'image pour les lecteurs d'écran et Google" :data-media-alt="l" @blur="saveAlt" />
+            <!-- Module « Assistant de rédaction » : une proposition d'après l'image, à relire. -->
+            <button v-if="assistant.active.value && isAssistantImage(selected.mime)" type="button" class="btn btn-xs self-start" :disabled="!!assistant.busy.value" :data-media-suggest="l" @click="suggestAlt(l)">
+              <span v-if="assistant.busy.value === `alt:${selected.id}:${l}`" class="loading loading-spinner loading-xs" /><Sparkles v-else :size="13" />Proposer
+            </button>
           </fieldset>
 
           <div>

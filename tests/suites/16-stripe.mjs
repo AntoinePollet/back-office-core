@@ -73,7 +73,7 @@ export default async function (t) {
     const url = await page.$eval('code[data-detail="Adresse du webhook"]', c => c.textContent)
     check(url === `${B}/api/stripe/webhook`, 'adresse : ' + url)
     const events = await page.$eval('code[data-detail="Événements à cocher"]', c => c.textContent)
-    check(events.split('\n').join() === 'checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,charge.refunded', events)
+    check(events.split('\n').join() === 'checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,charge.refunded,invoice.paid,invoice.payment_failed,customer.subscription.updated,customer.subscription.deleted', events)
     await says(page, 'Créer une clé limitée'); await says(page, '« Checkout Sessions »')
   })
   await t.shot(page, 'reglages')

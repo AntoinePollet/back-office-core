@@ -31,6 +31,8 @@ const unreachable = (what: string) => (error: Error) => {
 // ───────────── Jeton d'accès : valable une heure, gardé en mémoire ─────────────
 
 const tokens = new Map<string, { token: string; expires: number }>()
+/** Oublie les jetons d'accès gardés en mémoire : après un refus de Google, ou avant de vérifier des réglages. */
+export const forgetAccessTokens = () => tokens.clear()
 
 async function digest(parts: unknown[]) {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)))

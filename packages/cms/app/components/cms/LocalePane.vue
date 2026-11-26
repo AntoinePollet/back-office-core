@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Sparkles } from '@lucide/vue'
 import { isEmpty, slugify } from '../../../shared/content'
 
 /** Un volet du formulaire pour une langue : adresse, champs traduits, référencement. */
@@ -23,6 +24,17 @@ const autoSlug = computed(() => slugify(String(state.value.values[props.def.slug
 const untranslated = computed(() => props.loc !== props.defaultLocale && Object.values(state.value.values).every(isEmpty))
 const localeName = (l: string) => new Intl.DisplayNames(['fr'], { type: 'language' }).of(l) ?? l
 
+// Module « Assistant de rédaction » : traduction du contenu de la langue par défaut, à relire avant d'enregistrer.
+const assistant = useCmsAssistant()
+const toast = useCmsToast()
+async function translateFromDefault() {
+  const result = await assistant.translate(String(useRoute().params.type), props.defaultLocale, props.loc, props.doc.locales[props.defaultLocale]!.values)
+  if (!result) return
+  state.value.values = result.values
+  state.value.slug = ''
+  toast.success(result.translated < result.total ? `${result.translated} textes traduits sur ${result.total} : relisez, complétez, puis enregistrez.` : 'Traduction proposée : relisez-la, puis enregistrez.')
+}
+
 function copyFromDefault() {
   state.value.values = JSON.parse(JSON.stringify(props.doc.locales[props.defaultLocale]!.values))
   state.value.slug = ''
@@ -40,7 +52,12 @@ function copyFromDefault() {
 
     <div v-if="untranslated" class="alert alert-soft alert-warning text-sm">
       <span>Pas encore traduit en {{ localeName(loc) }} : ce contenu n'apparaît pas sur le site dans cette langue.</span>
-      <button type="button" class="btn btn-sm" @click="copyFromDefault">Copier depuis le {{ localeName(defaultLocale) }}</button>
+      <span class="flex flex-wrap gap-2">
+        <button v-if="assistant.active.value" type="button" class="btn btn-sm btn-primary" :disabled="!!assistant.busy.value" data-translate @click="translateFromDefault">
+          <span v-if="assistant.busy.value" class="loading loading-spinner loading-xs" /><Sparkles v-else :size="14" />Traduire depuis le {{ localeName(defaultLocale) }}
+        </button>
+        <button type="button" class="btn btn-sm" @click="copyFromDefault">Copier depuis le {{ localeName(defaultLocale) }}</button>
+      </span>
     </div>
 
     <div v-show="tab === 'content'" class="space-y-4">

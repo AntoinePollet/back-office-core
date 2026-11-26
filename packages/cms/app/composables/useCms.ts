@@ -415,6 +415,121 @@ export function useCmsNewsletter(options: { locale?: MaybeRefOrGetter<string | u
   return { email, error, pending, sent, trap, protection, submit }
 }
 
+// ───────────── Prise de rendez-vous (module `appointments`) ─────────────
+
+export type CmsAppointmentService = { id: string; label: string; duration: number; description: string; /** Acompte demandé, prêt à afficher (« 30,00 € »), ou null. */ deposit: string | null }
+export type CmsAppointmentDay = { /** Jour du site (AAAA-MM-JJ). */ date: string; slots: { /** Instant du créneau, à renvoyer tel quel. */ at: string; /** Heure du site (« 09:30 »). */ time: string }[] }
+type CmsAppointmentInfo = { services: CmsAppointmentService[]; timeZone: string; location: string; maxAdvanceDays: number; cancelNoticeHours: number; today: string }
+
+/**
+ * Prise de rendez-vous, prête à brancher sur une page :
+ *
+ *   const booking = useCmsAppointments()
+ *
+ *   <button v-for="s in booking.services.value" @click="booking.service.value = s.id">{{ s.label }}</button>
+ *   <template v-for="day in booking.days.value">
+ *     <button v-for="slot in day.slots" @click="booking.slot.value = slot.at">{{ slot.time }}</button>
+ *   </template>
+ *   <form @submit.prevent="booking.submit()">
+ *     <input v-model="booking.values.name"> <input v-model="booking.values.email" type="email">
+ *     <button :disabled="booking.pending.value">Réserver</button>
+ *   </form>
+ *   <p v-if="booking.done.value">Votre rendez-vous est confirmé : un e-mail vient de vous être envoyé.</p>
+ *
+ * Les créneaux se chargent quand `service` change ; `next()` et `previous()` changent de semaine. Les heures sont
+ * celles du site (`timeZone`). Avec un acompte, `submit()` conduit à la page de paiement de Stripe : le rendez-vous
+ * n'est confirmé qu'une fois l'acompte reçu. `trap` et `<CmsTurnstile />` s'emploient comme pour `useCmsForm`.
+ */
+export function useCmsAppointments(options: { locale?: MaybeRefOrGetter<string | undefined>; days?: number } = {}) {
+  const span = options.days ?? 7
+  const info = ref<CmsAppointmentInfo | null>(null)
+  const services = computed(() => info.value?.services ?? [])
+  const service = ref<string | null>(null)
+  const from = ref<string | null>(null)
+  const days = ref<CmsAppointmentDay[]>([])
+  const slot = ref<string | null>(null)
+  const loading = ref(false)
+  const values = reactive({ name: '', email: '', phone: '', note: '' })
+  const errors = ref<Partial<Record<'name' | 'email' | 'phone' | 'note', string>>>({})
+  const error = ref<string | null>(null)
+  const pending = ref(false)
+  /** Rendez-vous pris : son état, et l'adresse où le visiteur le retrouve (la même que dans l'e-mail). */
+  const done = ref<{ status: 'confirmed' | 'pending'; manageUrl: string | null } | null>(null)
+  const trap = ref('')
+  const protection = cmsFormProtection()
+  if (getCurrentInstance()) provide(CMS_FORM_PROTECTION, protection)
+
+  const shift = (date: string, by: number) => new Date(Date.parse(`${date}T12:00:00Z`) + by * 86_400_000).toISOString().slice(0, 10)
+  let request = 0
+  async function loadSlots() {
+    if (!service.value) { days.value = []; return }
+    const mine = ++request
+    loading.value = true
+    try {
+      const result = await cmsApi<{ days: CmsAppointmentDay[] }>('/api/appointments/slots', { query: { service: service.value, from: from.value ?? undefined, days: span } })
+      if (mine !== request) return
+      days.value = result.days
+      from.value = result.days[0]?.date ?? from.value
+      if (slot.value && !result.days.some(d => d.slots.some(s => s.at === slot.value))) slot.value = null
+    }
+    catch (e) {
+      if (mine === request) error.value = cmsErrorMessage(e, 'Les créneaux n\'ont pas pu être lus. Réessayez dans un instant.')
+    }
+    finally {
+      if (mine === request) loading.value = false
+    }
+  }
+  async function load() {
+    info.value = await cmsApi<CmsAppointmentInfo>('/api/appointments').catch(() => null)
+    // Une seule prestation : inutile de la faire choisir.
+    if (info.value?.services.length === 1) service.value = info.value.services[0]!.id
+  }
+  onMounted(load)
+  watch(service, () => { slot.value = null; from.value = null; loadSlots() })
+  const canGoBack = computed(() => !!from.value && !!info.value && from.value > info.value.today)
+  const canGoOn = computed(() => !!from.value && !!info.value && shift(from.value, span) <= shift(info.value.today, info.value.maxAdvanceDays))
+  const next = () => { if (canGoOn.value) { from.value = shift(from.value!, span); return loadSlots() } }
+  const previous = () => { if (canGoBack.value) { from.value = shift(from.value!, -span); return loadSlots() } }
+
+  async function submit() {
+    if (pending.value) return false
+    errors.value = {}
+    error.value = null
+    if (!service.value || !slot.value) { error.value = 'Choisissez d\'abord un créneau.'; return false }
+    if (protection.active.value && !protection.token.value) {
+      error.value = 'La vérification anti-robots n\'est pas terminée. Patientez une seconde, puis renvoyez le formulaire.'
+      return false
+    }
+    pending.value = true
+    let consumed = protection.active.value
+    try {
+      const origin = cmsOriginToSend()
+      const result = await cmsApi<{ status: 'confirmed' | 'pending'; payUrl: string | null; manageUrl: string | null }>('/api/appointments', {
+        method: 'POST',
+        body: { ...values, service: service.value, start: slot.value, locale: toValue(options.locale), website: trap.value, ...(origin ? { origin } : {}), ...(protection.active.value ? { turnstile: protection.token.value } : {}) },
+      })
+      // Acompte demandé : la page part chez Stripe, le bouton reste désactivé jusque-là.
+      if (result.payUrl) { window.location.assign(result.payUrl); return true }
+      done.value = { status: result.status, manageUrl: result.manageUrl }
+      pending.value = false
+      return true
+    }
+    catch (e: any) {
+      if (e?.statusCode === 422 || e?.statusCode === 429) consumed = false
+      errors.value = e?.data?.data?.errors ?? {}
+      error.value = Object.keys(errors.value).length ? 'Certains champs sont à corriger.' : cmsErrorMessage(e, 'La réservation a échoué. Réessayez dans un instant.')
+      // Créneau pris entre-temps : la liste est relue, le visiteur en choisit un autre.
+      if (e?.statusCode === 409) { slot.value = null; loadSlots() }
+      pending.value = false
+      return false
+    }
+    finally {
+      if (consumed) protection.reset()
+    }
+  }
+  return { info, services, service, days, slot, from, loading, values, errors, error, pending, done, trap, protection, next, previous, canGoBack, canGoOn, reload: loadSlots, submit }
+}
+
 /** Ce qui relie un formulaire du site à son anti-robots (`<CmsTurnstile>`). */
 export type CmsFormProtection = {
   /** Vrai quand un anti-robots est affiché dans le formulaire : son jeton est alors exigé. */

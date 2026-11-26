@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, Info, Lightbulb, Monitor, Smartphone, TriangleAlert } from '@lucide/vue'
+import { CircleCheck, Info, Lightbulb, Monitor, Smartphone, TriangleAlert, Sparkles } from '@lucide/vue'
 import { slugify } from '../../../shared/content'
 import { cmsImageUrl } from '../../../shared/media'
 import { breadcrumbBlock, breadcrumbName, breadcrumbTrail, contentBlocks, specsOf, structuredDataJson, summarizeBlock } from '../../../shared/structured-data'
@@ -27,6 +27,13 @@ const type = route.params.type as string
 const site = useState<{ site: SeoSite } | null>('cms-schema').value!.site
 const { items: mediaItems, load: loadMedia } = useCmsMedia()
 const state = computed(() => props.doc.locales[props.loc]!)
+
+// Module « Assistant de rédaction » : description proposée d'après le contenu du formulaire (enregistré ou non).
+const assistant = useCmsAssistant()
+async function suggestDescription() {
+  const proposed = await assistant.description(type, props.loc, { ...props.doc.shared, ...state.value.values })
+  if (proposed) state.value.values.seo.description = proposed
+}
 const device = ref<'desktop' | 'mobile'>('desktop')
 
 // Les autres pages du site (pour les doublons) et la médiathèque (tailles et textes alternatifs), à la première ouverture.
@@ -184,6 +191,10 @@ const shareImage = computed(() => {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">Description</legend>
           <textarea v-model="state.values.seo.description" class="textarea w-full" rows="3" data-seo-input="description" />
+          <!-- Module « Assistant de rédaction » : une proposition tirée du contenu de la page, à relire avant d'enregistrer. -->
+          <button v-if="assistant.active.value" type="button" class="btn btn-xs self-start mt-1" :disabled="!!assistant.busy.value" data-seo-suggest @click="suggestDescription">
+            <span v-if="assistant.busy.value" class="loading loading-spinner loading-xs" /><Sparkles v-else :size="13" />{{ state.values.seo.description ? 'Proposer une autre description' : 'Proposer une description' }}
+          </button>
           <p class="label flex justify-between gap-2 whitespace-normal">
             <span>Une ou deux phrases qui résument la page et donnent envie de cliquer.</span>
             <span class="shrink-0" :class="{ 'text-warning': view.description.length > SEO_LIMITS.descriptionMaxChars }">{{ view.description.length }} / {{ SEO_LIMITS.descriptionMaxChars }}</span>

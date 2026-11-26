@@ -33,8 +33,10 @@ export const MODULE_CATEGORIES = {
   email: 'Envoi d\'e-mails',
   audience: 'Mesure d\'audience',
   forms: 'Formulaires',
+  booking: 'Rendez-vous',
   payment: 'Paiement',
   ads: 'Publicité',
+  seo: 'Référencement',
   privacy: 'Vie privée',
   security: 'Sécurité',
   other: 'Autres',
@@ -64,6 +66,42 @@ export function consent(options: { purposes?: ConsentPurposeOptions } = {}) {
  * NUXT_GOOGLE_ADS_* de l'hébergement).
  */
 export const googleAds = () => ({ id: 'google-ads' as const })
+
+// ───────────────────────── Search Console ─────────────────────────
+
+/**
+ * Google Search Console en lecture : recherches, clics et position du site dans Google, dans l'écran « Recherche
+ * Google » et dans « Pages et titres ». Réglages dans le back-office (ou, pour le client OAuth et le jeton, par les
+ * variables NUXT_GOOGLE_ADS_CLIENT_ID, NUXT_GOOGLE_ADS_CLIENT_SECRET et NUXT_GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN).
+ */
+export const searchConsole = () => ({ id: 'search-console' as const })
+
+// ───────────────────────── Avis Google ─────────────────────────
+
+/**
+ * Note, avis et horaires de l'établissement sur Google Maps (API Places), à afficher sur le site avec
+ * `<CmsGoogleReviews />` ou `useCmsGoogleBusiness()`. Réglages dans le back-office (identifiant de l'établissement,
+ * clé d'API ; ou NUXT_GOOGLE_PLACES_API_KEY pour la clé).
+ */
+export const googleBusiness = () => ({ id: 'google-business' as const })
+
+// ───────────────────────── Assistant de rédaction ─────────────────────────
+
+/**
+ * Assistant de rédaction (voir `shared/assistant.ts`) : propose le texte alternatif d'une image, la description
+ * d'une page et la traduction d'un contenu, par l'API de Claude. La clé d'API se règle dans le back-office (ou par
+ * NUXT_ANTHROPIC_API_KEY). Les contenus concernés sont envoyés à Anthropic, le temps de la demande.
+ */
+export const assistant = () => ({ id: 'assistant' as const })
+
+// ───────────────────────── Suivi des erreurs et surveillance ─────────────────────────
+
+/**
+ * Suivi des erreurs et surveillance du site (voir `shared/monitoring.ts`) : erreurs du serveur et du navigateur
+ * regroupées dans l'écran « Surveillance », vérification du site toutes les cinq minutes avec un e-mail quand il ne
+ * répond plus, transmission à Sentry en option. Réglages dans le back-office.
+ */
+export const monitoring = () => ({ id: 'monitoring' as const })
 
 // ───────────────────────── Brevo ─────────────────────────
 
@@ -109,6 +147,16 @@ export function newsletter(options: NewsletterOptions = {}) {
   }
   return { id: 'newsletter' as const, options: { ...options } }
 }
+
+// ───────────────────────── Prise de rendez-vous ─────────────────────────
+
+/**
+ * Prise de rendez-vous en ligne (voir `shared/appointments.ts`) : le visiteur choisit une prestation et un créneau
+ * libre, reçoit une confirmation par e-mail avec un fichier d'agenda, et peut annuler par le lien reçu. Prestations,
+ * horaires et fermetures se règlent dans l'écran « Rendez-vous ». Un acompte peut être demandé si le module Stripe
+ * est actif. Côté site : `const booking = useCmsAppointments()`. Peut aussi s'activer depuis le back-office, sans cette ligne.
+ */
+export const appointments = () => ({ id: 'appointments' as const })
 
 // ───────────────────────── Mesure d'audience ─────────────────────────
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleCheck, ExternalLink, FileSearch, HeartPulse, ImageOff, Link2Off, RefreshCw, Trash2, Weight } from '@lucide/vue'
+import { CircleCheck, ExternalLink, FileSearch, HeartPulse, ImageOff, Link2Off, RefreshCw, Sparkles, Trash2, Weight } from '@lucide/vue'
 import { HEALTH_LIMITS, type HealthReport, type HealthUse, type LinkVerdict, VERDICT_LABELS, healthCertainCount, verdictForStatus } from '../../../shared/health'
 
 /**
@@ -13,6 +13,30 @@ definePageMeta({ layout: 'admin', middleware: 'cms-auth' })
 type Checked = { href: string; internal: boolean; verdict: LinkVerdict; detail: string; uses: HealthUse[] }
 
 const load = () => cmsApi<HealthReport>('/api/cms/health')
+
+// Module « Assistant de rédaction » : texte alternatif proposé pour une image, relu ici puis enregistré.
+const assistant = useCmsAssistant()
+const assistantToast = useCmsToast()
+const proposals = reactive<Record<string, string>>({})
+const defaultLocale = useState<{ site: { defaultLocale: string } } | null>('cms-schema').value?.site.defaultLocale ?? 'fr'
+async function proposeAlt(id: string) {
+  const proposed = await assistant.alt(id, defaultLocale)
+  if (proposed) proposals[id] = proposed
+}
+async function saveAlt(id: string) {
+  try {
+    // L'enregistrement remplace le texte de toutes les langues : celui des autres langues est relu, puis renvoyé tel quel.
+    const current = (await useCmsMedia().load()).find(m => m.id === id)?.alt ?? {}
+    const { purgeFailed } = await cmsApi<{ purgeFailed: boolean }>(`/api/cms/media/${id}`, { method: 'PATCH', body: { alt: { ...current, [defaultLocale]: proposals[id]!.trim() } } })
+    cmsSiteUpdated({ purgeFailed })
+    delete proposals[id]
+    report.value = { ...report.value, images: { ...report.value.images, withoutAlt: report.value.images.withoutAlt.filter(file => file.id !== id) } }
+    assistantToast.success('Texte alternatif enregistré')
+  }
+  catch (e) {
+    assistantToast.error(cmsErrorMessage(e))
+  }
+}
 const report = ref(await load().catch((e) => { throw createError({ statusCode: e?.statusCode ?? 500, message: cmsErrorMessage(e), fatal: true }) }))
 const schema = await useCmsSchema()
 const multi = (schema.value.site.locales as readonly string[]).length > 1
@@ -174,6 +198,17 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
         <li v-for="file in report.images.withoutAlt" :key="file.id" class="flex flex-wrap items-baseline gap-x-3" data-health-issue="alt">
           <NuxtLink :to="file.to" class="link link-primary break-all">{{ file.name }}</NuxtLink>
           <span class="text-base-content/50">{{ plural(file.uses, 'utilisation', 'utilisations') }}</span>
+          <!-- Module « Assistant de rédaction » : proposition à relire, puis à enregistrer d'ici. -->
+          <template v-if="assistant.active.value">
+            <button v-if="proposals[file.id] === undefined" type="button" class="btn btn-xs" :disabled="!!assistant.busy.value" data-health-suggest @click="proposeAlt(file.id)">
+              <span v-if="assistant.busy.value?.startsWith(`alt:${file.id}:`)" class="loading loading-spinner loading-xs" /><Sparkles v-else :size="13" />Proposer
+            </button>
+            <form v-else class="basis-full flex flex-wrap items-center gap-2 mt-1" data-health-proposal @submit.prevent="saveAlt(file.id)">
+              <input v-model="proposals[file.id]" class="input input-sm grow min-w-48" maxlength="300" :aria-label="`Texte alternatif de ${file.name}`">
+              <button class="btn btn-sm btn-primary" :disabled="!proposals[file.id]?.trim()">Enregistrer</button>
+              <button type="button" class="btn btn-sm btn-ghost" @click="delete proposals[file.id]">Annuler</button>
+            </form>
+          </template>
         </li>
         <li v-if="!report.images.withoutAlt.length" class="text-base-content/60">Toutes les images utilisées en ont un.</li>
       </ul>

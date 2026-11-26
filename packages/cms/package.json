@@ -18,6 +18,7 @@
     "test": "node --import jiti/register --test \"shared/**/*.test.ts\" \"cli/**/*.test.ts\" \"server/platform/**/*.test.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "@lucide/vue": "^1.75.0",
     "@tailwindcss/vite": "^4.3.5",
     "@tiptap/pm": "^3.34.0",
@@ -31,7 +32,8 @@
     "nitro-cloudflare-dev": "^0.2.2",
     "tailwindcss": "^4.3.5",
     "uqr": "^0.1.3",
-    "xss": "^1.0.17"
+    "xss": "^1.0.17",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@nuxt/kit": "^4.6.4",

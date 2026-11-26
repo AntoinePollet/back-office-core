@@ -1,4 +1,4 @@
-// Ce que le faux service répond à la place de Google : jeton d'accès (OAuth) et API REST de Google Ads.
+// Ce que le faux service répond à la place de Google : jeton d'accès (OAuth), API REST de Google Ads, Search Console.
 
 /** Jeton d'actualisation refusé (expiré ou révoqué), et secret de client OAuth inconnu. */
 export const TOKEN_REVOKED = 'jeton-revoque'
@@ -22,6 +22,94 @@ export const GCLID_GOOGLE_DOWN = 'GCLID-PANNE-000000'
 
 /** Compte où le jeton n'a qu'un accès en lecture : les chiffres se lisent, toute modification est refusée. */
 export const CUSTOMER_READ_ONLY = '2222222222'
+
+// ───── Search Console ─────
+/** Propriétés qui changent la réponse du faux Search Console. Toute autre propriété reçoit les chiffres d'exemple. */
+export const SC_UNKNOWN = 'https://inconnu.fr/' // le compte Google n'y a pas accès
+export const SC_UNVERIFIED = 'sc-domain:pas-validee.fr'
+export const SC_DOWN = 'https://en-panne.fr/'
+export const SC_EMPTY = 'https://tout-neuf.fr/' // aucun affichage
+/** Jeton d'actualisation créé sans l'autorisation « webmasters.readonly ». */
+export const TOKEN_WITHOUT_WEBMASTERS = 'jeton-sans-webmasters'
+/** Recherches et pages d'exemple. Deux adresses de Google désignent la même page du site (« /services/droit-des-affaires »). */
+export const SC_QUERIES = [
+  { keys: ['avocat droit des affaires lyon'], clicks: 30, impressions: 600, ctr: 0.05, position: 4.2 },
+  { keys: ['cabinet durand'], clicks: 12, impressions: 40, ctr: 0.3, position: 1.1 },
+  { keys: ['créer une sarl'], clicks: 0, impressions: 260, ctr: 0, position: 18.4 },
+]
+export const SC_PAGES = [
+  { keys: ['https://cabinet-durand.fr/'], clicks: 20, impressions: 300, ctr: 0.0667, position: 2 },
+  { keys: ['https://cabinet-durand.fr/services/droit-des-affaires'], clicks: 18, impressions: 400, ctr: 0.045, position: 4 },
+  { keys: ['https://www.cabinet-durand.fr/services/droit-des-affaires/'], clicks: 2, impressions: 100, ctr: 0.02, position: 9 },
+  { keys: ['https://cabinet-durand.fr/ancienne-page'], clicks: 2, impressions: 100, ctr: 0.02, position: 30 },
+]
+export const SC_TOTALS = { clicks: 42, impressions: 900, ctr: 42 / 900, position: 6.5 }
+
+function searchConsole(req, body) {
+  const error = (code, message, reason, status) => ({ status: code, json: { error: { code, message, errors: [{ message, domain: 'global', reason }], ...(status ? { status } : {}) } } })
+  const match = /^\/google-sc\/webmasters\/v3\/sites\/([^/]+)(\/searchAnalytics\/query)?$/.exec(req.url)
+  if (!match) return error(404, 'Not Found', 'notFound')
+  const auth = req.headers.authorization ?? ''
+  if (!/^Bearer acces-/.test(auth)) return error(401, 'Request had invalid authentication credentials.', 'authError', 'UNAUTHENTICATED')
+  if (auth === `Bearer acces-${TOKEN_WITHOUT_WEBMASTERS}`) return error(403, 'Request had insufficient authentication scopes.', 'insufficientPermissions', 'PERMISSION_DENIED')
+  const site = decodeURIComponent(match[1])
+  if (site === SC_DOWN) return error(503, 'The service is currently unavailable.', 'backendError', 'UNAVAILABLE')
+  if (site === SC_UNKNOWN) return error(403, `User does not have sufficient permission for site '${site}'. See also: https://support.google.com/webmasters/answer/2451999.`, 'forbidden')
+  if (!match[2]) {
+    if (req.method !== 'GET') return error(405, 'Method Not Allowed', 'httpMethodNotAllowed')
+    return { status: 200, json: { siteUrl: site, permissionLevel: site === SC_UNVERIFIED ? 'siteUnverifiedUser' : 'siteFullUser' } }
+  }
+  const day = /^\d{4}-\d{2}-\d{2}$/
+  if (req.method !== 'POST' || !day.test(body?.startDate ?? '') || !day.test(body?.endDate ?? '') || body.startDate > body.endDate) return error(400, 'Invalid date range.', 'invalidParameter')
+  if (site === SC_EMPTY) return { status: 200, json: { responseAggregationType: 'byProperty' } }
+  const dimension = body.dimensions?.[0]
+  const rows = !dimension ? [SC_TOTALS]
+    : dimension === 'date' ? [{ keys: [body.startDate], clicks: 10, impressions: 200, ctr: 0.05, position: 7 }, { keys: [body.endDate], clicks: 32, impressions: 700, ctr: 0.0457, position: 6.4 }]
+      : dimension === 'query' ? SC_QUERIES
+        : dimension === 'page' ? SC_PAGES : null
+  if (!rows) return error(400, `Invalid value '${dimension}'.`, 'invalidParameter')
+  return { status: 200, json: { rows: rows.slice(0, body.rowLimit ?? 1000), responseAggregationType: dimension === 'page' ? 'byPage' : 'byProperty' } }
+}
+
+// ───── API Places (avis Google) ─────
+/** Établissements qui changent la réponse du faux Google Maps. Tout autre identifiant reçoit la fiche d'exemple. */
+export const PLACE_UNKNOWN = 'ChIJ-etablissement-inconnu-0000'
+export const PLACE_NEW = 'ChIJ-etablissement-sans-avis-00' // ni note, ni avis, ni horaires
+export const PLACE_DOWN = 'ChIJ-etablissement-en-panne-000'
+/** Clés refusées : inconnue de Google, puis valable mais sans l'API Places activée. */
+export const PLACES_KEY_INVALID = 'AIza-cle-inconnue'
+export const PLACES_KEY_NO_API = 'AIza-cle-sans-api-places'
+
+const day = (d, from, to) => ({ open: { day: d, hour: from, minute: 0 }, close: { day: d, hour: to, minute: 0 } })
+const samplePlace = (id, language) => ({
+  id, displayName: { text: 'Cabinet Durand', languageCode: 'fr' }, rating: 4.7, userRatingCount: 128, businessStatus: 'OPERATIONAL',
+  googleMapsUri: `https://maps.google.com/?cid=${id}`, googleMapsLinks: { reviewsUri: `https://maps.google.com/reviews/${id}`, writeAReviewUri: `https://maps.google.com/write/${id}` },
+  formattedAddress: '12 rue des Lilas, 69003 Lyon, France', nationalPhoneNumber: '04 72 00 00 00',
+  regularOpeningHours: {
+    periods: [1, 2, 3, 4, 5].map(d => day(d, 9, 18)),
+    weekdayDescriptions: language === 'en' ? ['Monday: 9:00 AM – 6:00 PM', 'Saturday: Closed'] : ['lundi: 09:00 – 18:00', 'samedi: Fermé'],
+  },
+  reviews: [
+    { name: `places/${id}/reviews/1`, rating: 5, text: { text: language === 'en' ? 'Very clear advice.' : 'Conseils très clairs, <b>merci</b> !', languageCode: language }, originalText: { text: 'Conseils très clairs, <b>merci</b> !', languageCode: 'fr' }, authorAttribution: { displayName: 'Jeanne Martin', uri: 'https://www.google.com/maps/contrib/1', photoUri: 'https://lh3.googleusercontent.com/a/photo-1' }, publishTime: '2026-10-02T10:00:00Z', relativePublishTimeDescription: language === 'en' ? 'a month ago' : 'il y a un mois', googleMapsUri: 'https://www.google.com/maps/reviews/1', flagContentUri: 'https://www.google.com/local/review/rap/1', visitDate: { year: 2026, month: 9 } },
+    { name: `places/${id}/reviews/2`, rating: 4, text: { text: 'Bon accueil.', languageCode: 'fr' }, originalText: { text: 'Bon accueil.', languageCode: 'fr' }, authorAttribution: { displayName: 'Paul Tardif', uri: 'https://www.google.com/maps/contrib/2', photoUri: 'https://lh3.googleusercontent.com/a/photo-2' }, publishTime: '2026-06-02T10:00:00Z', relativePublishTimeDescription: language === 'en' ? '5 months ago' : 'il y a 5 mois', googleMapsUri: 'https://www.google.com/maps/reviews/2' },
+    { name: `places/${id}/reviews/3`, rating: 2, text: { text: 'Trop d\'attente.', languageCode: 'fr' }, authorAttribution: { displayName: 'Anonyme', uri: 'https://www.google.com/maps/contrib/3', photoUri: 'https://lh3.googleusercontent.com/a/photo-3' }, publishTime: '2025-06-02T10:00:00Z', relativePublishTimeDescription: language === 'en' ? 'a year ago' : 'il y a un an', googleMapsUri: 'https://www.google.com/maps/reviews/3' },
+  ],
+})
+
+function places(req) {
+  const error = (code, status, message, reason) => ({ status: code, json: { error: { code, message, status, details: reason ? [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: 'googleapis.com' }] : [] } } })
+  const url = new URL(req.url, 'http://faux')
+  const id = /^\/google-places\/v1\/places\/([^/]+)$/.exec(url.pathname)?.[1]
+  if (!id || req.method !== 'GET') return error(404, 'NOT_FOUND', 'Not found.')
+  const key = req.headers['x-goog-api-key']
+  if (!key || key === PLACES_KEY_INVALID) return error(400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.', 'API_KEY_INVALID')
+  if (key === PLACES_KEY_NO_API) return error(403, 'PERMISSION_DENIED', 'Places API (New) has not been used in project 1 before or it is disabled.', 'SERVICE_DISABLED')
+  if (!req.headers['x-goog-fieldmask']) return error(400, 'INVALID_ARGUMENT', 'FieldMask is a required parameter.')
+  if (id === PLACE_DOWN) return error(503, 'UNAVAILABLE', 'The service is currently unavailable.')
+  if (id === PLACE_UNKNOWN) return error(404, 'NOT_FOUND', 'Place ID not found.')
+  if (id === PLACE_NEW) return { status: 200, json: { id, displayName: { text: 'Cabinet tout neuf', languageCode: 'fr' }, businessStatus: 'OPERATIONAL', googleMapsUri: `https://maps.google.com/?cid=${id}` } }
+  return { status: 200, json: samplePlace(id, url.searchParams.get('languageCode') ?? 'en') }
+}
 
 /**
  * Campagnes d'exemple, telles que l'API les renvoie (grands entiers en texte). « Printemps » a son propre budget par
@@ -54,6 +142,8 @@ export function createGoogle() {
       return { status: 200, json: { access_token: `acces-${body.refresh_token}`, expires_in: 3599, scope: 'https://www.googleapis.com/auth/adwords', token_type: 'Bearer' } }
     }
     if (req.url === '/google-datamanager/v1/events:ingest') return ingest(req, body)
+    if (req.url.startsWith('/google-sc/')) return searchConsole(req, body)
+    if (req.url.startsWith('/google-places/')) return places(req)
     const match = /^\/google-ads\/v26\/customers\/(\d+)\/(googleAds:search|campaigns:mutate|campaignBudgets:mutate)$/.exec(req.url)
     if (!match || req.method !== 'POST') return { status: 404, json: { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } } }
     if (!/^Bearer acces-/.test(req.headers.authorization ?? '')) return failure(401, 'UNAUTHENTICATED', 'Request had invalid authentication credentials.', { authenticationError: 'OAUTH_TOKEN_INVALID' })

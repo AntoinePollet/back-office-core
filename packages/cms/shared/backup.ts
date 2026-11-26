@@ -88,9 +88,10 @@ export function isSealedColumn(table: string, column: string) {
  * - Les comptes : chacun garde son accès, son mot de passe et son rôle d'aujourd'hui ; les comptes créés depuis la
  *   sauvegarde restent. Les tables de Better Auth n'ont pas le préfixe `cms_`.
  * - Ce qui s'est réellement passé et ne doit pas être effacé en revenant en arrière : le journal d'activité,
- *   le journal des workflows, les paiements reçus (pièces comptables) et les messages envoyés par les visiteurs.
+ *   le journal des workflows, les paiements reçus (pièces comptables), les messages envoyés par les visiteurs et les
+ *   rendez-vous qu'ils ont pris.
  */
-const KEPT_ON_RESTORE = ['cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_form_submissions', 'cms_not_found']
+const KEPT_ON_RESTORE = ['cms_user_access', 'cms_roles', 'cms_invites', 'cms_activity', 'cms_workflow_runs', 'cms_payments', 'cms_subscriptions', 'cms_form_submissions', 'cms_not_found', 'cms_appointments', 'cms_appointment_slots', 'cms_errors', 'cms_uptime_checks']
 export const isKeptOnRestore = (table: string) => !table.startsWith('cms_') || KEPT_ON_RESTORE.includes(table)
 
 /**

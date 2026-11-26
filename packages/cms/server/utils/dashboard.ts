@@ -4,6 +4,8 @@ import { adminEntryPath } from '../../shared/admin-paths'
 import { MODE_LABELS } from '../../shared/availability'
 import type { CmsDefinition } from '../../shared/format'
 import { audienceModules, canReadAudience } from '../cms-modules/audience'
+import { upcomingAppointments } from '../cms-modules/appointments'
+import { monitoringSummary } from '../cms-modules/monitoring'
 import { newsletterCounts } from '../cms-modules/newsletter'
 
 type User = Awaited<ReturnType<typeof requireUser>>
@@ -116,6 +118,16 @@ export async function dashboard(event: H3Event, user: User) {
     states.push({ key: 'availability', label: 'Disponibilité', value: mode === 'online' ? 'En ligne' : `Fermé au public (${MODE_LABELS[mode].toLowerCase()})`, level: mode === 'online' ? 'ok' : 'warning', to: '/admin/availability' })
     if (backups) states.push({ key: 'backups', label: 'Sauvegardes', value: backups.status.title, level: backups.status.level, to: '/admin/backups' })
     states.push({ key: 'mail', label: 'Envoi d\'e-mails', value: mail.configured ? `Réglé (${mail.module!.label})` : 'Non réglé : pas de lien de mot de passe ni de notification', level: mail.configured ? 'ok' : 'warning', to: mail.module ? `/admin/modules/${mail.module.id}` : '/admin/modules' })
+    if (active.has('monitoring')) {
+      const watch = await monitoringSummary(event).catch(() => null)
+      if (watch) {
+        states.push({
+          key: 'monitoring', label: 'Surveillance', to: '/admin/monitoring',
+          value: watch.down ? `Le site ne répond plus : ${watch.detail}` : watch.open ? plural(watch.open, 'erreur à regarder cette semaine', 'erreurs à regarder cette semaine') : 'Le site répond, aucune erreur ouverte',
+          level: watch.down ? 'error' : watch.open ? 'warning' : 'ok',
+        })
+      }
+    }
     for (const definition of allModules()) {
       if (!active.has(definition.id) || definition.mail) continue
       const state = await describeModule(event, definition)
@@ -151,6 +163,11 @@ export async function dashboard(event: H3Event, user: User) {
     figures.push({ key: 'newsletter', label: 'Inscrits à la lettre', value: String(counts.confirmed), hint: `${fresh?.n ? `+${fresh.n}` : 'aucun nouveau'} en 30 jours`, to: '/admin/newsletter' })
   }
 
+  if (staff && active.has('appointments')) {
+    const [week, all] = await Promise.all([upcomingAppointments(event, now + 7 * DAY), upcomingAppointments(event)])
+    figures.push({ key: 'appointments', label: 'Rendez-vous à venir', value: String(all), hint: week ? `dont ${week} dans les 7 jours` : 'aucun dans les 7 jours', to: '/admin/appointments' })
+  }
+
   return {
     tasks,
     states,
@@ -161,6 +178,8 @@ export async function dashboard(event: H3Event, user: User) {
     create: defs.filter(([, def]) => def.kind === 'collection').map(([type, def]) => ({ type, label: (def as { labelSingular?: string }).labelSingular ?? def.label, to: `/admin/${type}/new` })),
     /** L'audience des sept derniers jours est disponible (lue à part : elle dépend d'un service externe). */
     audience: staff && canReadAudience(user) && (await audienceModules(event)).length > 0,
+    /** Les clics depuis Google (module Search Console) sont disponibles ; lus à part, pour la même raison. */
+    searchConsole: staff && active.has('search-console'),
     health: types.length > 0,
   }
 }

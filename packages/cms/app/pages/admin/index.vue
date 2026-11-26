@@ -20,6 +20,7 @@ type Data = {
   recent: Entry[]
   create: { type: string; label: string; to: string }[]
   audience: boolean
+  searchConsole: boolean
   health: boolean
 }
 
@@ -42,8 +43,13 @@ const audience = ref<Audience | null>(null)
 const health = ref<{ certain: number; toCheck: number; seo: number } | null>(null)
 onMounted(() => {
   if (data.value.audience) cmsApi<Audience>('/api/cms/audience', { query: { period: 7 } }).then((r) => { audience.value = r }, () => {})
+  if (data.value.searchConsole) cmsApi<Google>('/api/cms/search-console', { query: { days: 28 } }).then((r) => { google.value = r }, () => {})
   if (data.value.health) cmsApi<HealthReport>('/api/cms/health').then((r) => { health.value = { certain: healthCertainCount(r), toCheck: r.links.internal.length + r.links.external.length, seo: r.seo?.improve ?? 0 } }, () => {})
 })
+// Clics depuis Google sur 28 jours (module Search Console), lus de la même façon.
+type Google = { state: 'ok'; report: { totals: { clicks: number; impressions: number } } } | { state: string; message: string }
+const google = ref<Google | null>(null)
+const googleOk = computed(() => (google.value?.state === 'ok' ? (google.value as Extract<Google, { state: 'ok' }>).report.totals : null))
 const audienceOk = computed(() => (audience.value?.state === 'ok' ? (audience.value as Extract<Audience, { state: 'ok' }>).stats : null))
 const tallest = computed(() => Math.max(1, ...(audienceOk.value?.days ?? []).map(d => d.pageViews)))
 const dayName = (date: string) => new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
@@ -64,7 +70,7 @@ const dayName = (date: string) => new Date(date).toLocaleDateString('fr-FR', { w
       </div>
     </div>
 
-    <div v-if="data.figures.length || data.audience" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-dashboard-figures>
+    <div v-if="data.figures.length || data.audience || data.searchConsole" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-dashboard-figures>
       <NuxtLink v-if="data.audience" to="/admin/audience" class="card bg-base-100 border border-base-300 p-4 hover:border-primary/50 transition-colors" data-dashboard-figure="audience">
         <div class="text-sm text-base-content/60 flex items-center gap-1.5"><ChartLine :size="14" />Pages vues</div>
         <template v-if="audienceOk">
@@ -75,6 +81,15 @@ const dayName = (date: string) => new Date(date).toLocaleDateString('fr-FR', { w
           </div>
         </template>
         <div v-else-if="audience" class="text-sm text-base-content/60 mt-2">{{ (audience as { message?: string }).message }}</div>
+        <div v-else class="mt-3"><span class="loading loading-dots loading-sm text-base-content/40" /></div>
+      </NuxtLink>
+      <NuxtLink v-if="data.searchConsole" to="/admin/search-console" class="card bg-base-100 border border-base-300 p-4 hover:border-primary/50 transition-colors" data-dashboard-figure="search-console">
+        <div class="text-sm text-base-content/60">Clics depuis Google</div>
+        <template v-if="googleOk">
+          <div class="text-3xl font-bold mt-1">{{ googleOk.clicks.toLocaleString('fr-FR') }}</div>
+          <div class="text-xs text-base-content/50">28 jours · {{ googleOk.impressions.toLocaleString('fr-FR') }} affichage{{ googleOk.impressions > 1 ? 's' : '' }}</div>
+        </template>
+        <div v-else-if="google" class="text-sm text-base-content/60 mt-2">{{ (google as { message?: string }).message }}</div>
         <div v-else class="mt-3"><span class="loading loading-dots loading-sm text-base-content/40" /></div>
       </NuxtLink>
       <NuxtLink v-for="f in data.figures" :key="f.key" :to="f.to" class="card bg-base-100 border border-base-300 p-4 hover:border-primary/50 transition-colors" :data-dashboard-figure="f.key">
