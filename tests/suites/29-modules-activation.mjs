@@ -39,7 +39,7 @@ export default async function (t) {
   await step('tous les modules sont listés : déclarés activés, les autres désactivés, avec leur famille', async () => {
     const list = await modules()
     const state = Object.fromEntries(list.map(m => [m.id, `${m.category}:${m.enabled ? 'on' : 'off'}`]))
-    const expected = { brevo: 'email:on', resend: 'email:on', analytics: 'audience:on', plausible: 'audience:off', forms: 'forms:on', stripe: 'payment:on', turnstile: 'security:on', 'google-ads': 'ads:off', consent: 'privacy:off', appointments: 'booking:off', 'search-console': 'seo:off', 'google-business': 'seo:off', monitoring: 'security:off', assistant: 'other:off' }
+    const expected = { brevo: 'email:on', resend: 'email:on', analytics: 'audience:on', plausible: 'audience:off', 'google-analytics': 'audience:off', forms: 'forms:on', stripe: 'payment:on', turnstile: 'security:on', 'google-ads': 'ads:off', consent: 'privacy:off', appointments: 'booking:off', 'search-console': 'seo:off', 'google-business': 'seo:off', monitoring: 'security:off', assistant: 'other:off' }
     for (const [id, value] of Object.entries(expected)) check(state[id] === value, `${id} : ${state[id]} au lieu de ${value}`)
     check(list.every(m => m.canEnable && m.needsCode === null), 'un module déclaré annoncé comme à déclarer')
     check((await claire.get('/api/cms/modules/plausible')).status === 200, 'réglages d\'un module désactivé inaccessibles')

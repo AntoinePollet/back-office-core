@@ -179,6 +179,12 @@ export function analytics(options: { provider?: AnalyticsProviderId } = {}) {
 /** Mesure d'audience par Plausible (plausible.io ou une instance hébergée par le client). Réglages dans le back-office. */
 export const plausible = () => ({ id: 'plausible' as const })
 
+/**
+ * Mesure d'audience par Google Analytics 4. Il dépose des cookies : à déclarer avec `consent()`, dont le bandeau
+ * demande l'accord du visiteur. Réglages (identifiant de mesure, propriété, connexion Google) dans l'écran Modules.
+ */
+export const googleAnalytics = () => ({ id: 'google-analytics' as const })
+
 // ───────────────────────── Anti-robots ─────────────────────────
 
 /**

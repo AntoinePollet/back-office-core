@@ -1,4 +1,4 @@
-// Ce que le faux service répond à la place de Google : jeton d'accès (OAuth), API REST de Google Ads, Search Console.
+// Ce que le faux service répond à la place de Google : jeton d'accès (OAuth), API REST de Google Ads, Search Console, Google Analytics.
 
 /** Jeton d'actualisation refusé (expiré ou révoqué), et secret de client OAuth inconnu. */
 export const TOKEN_REVOKED = 'jeton-revoque'
@@ -69,6 +69,52 @@ function searchConsole(req, body) {
         : dimension === 'page' ? SC_PAGES : null
   if (!rows) return error(400, `Invalid value '${dimension}'.`, 'invalidParameter')
   return { status: 200, json: { rows: rows.slice(0, body.rowLimit ?? 1000), responseAggregationType: dimension === 'page' ? 'byPage' : 'byProperty' } }
+}
+
+// ───── Google Analytics (API de données) ─────
+/** Propriétés qui changent la réponse du faux Google Analytics. Toute autre propriété reçoit les chiffres d'exemple. */
+export const GA_UNKNOWN = '999999999' // le compte Google n'y a pas accès
+export const GA_DOWN = '888888888'
+export const GA_EMPTY = '777777777' // aucune visite
+export const GA_NO_API = '666666666' // API de données non activée dans le projet Google Cloud
+/** Jeton d'actualisation créé sans l'autorisation « analytics.readonly ». */
+export const TOKEN_WITHOUT_ANALYTICS = 'jeton-sans-analytics'
+/** Chiffres d'exemple : deux jours avec des visites (le premier et le dernier de la période), trois pages, quatre sources. */
+export const GA_TOTALS = { visits: 40, pageViews: 95 }
+export const GA_PAGES = [['/', 60], ['/contact', 35]]
+export const GA_SOURCES = [['google', 18], ['(direct)', 12], ['facebook.com', 7], ['(not set)', 3]]
+
+function analyticsData(req, body) {
+  const error = (code, status, message, reason) => ({ status: code, json: { error: { code, message, status, details: reason ? [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: 'googleapis.com' }] : [] } } })
+  const property = /^\/google-analytics\/v1beta\/properties\/(\d+):batchRunReports$/.exec(req.url)?.[1]
+  if (!property || req.method !== 'POST') return error(404, 'NOT_FOUND', 'Not found.')
+  const auth = req.headers.authorization ?? ''
+  if (!/^Bearer acces-/.test(auth)) return error(401, 'UNAUTHENTICATED', 'Request had invalid authentication credentials.')
+  if (auth === `Bearer acces-${TOKEN_WITHOUT_ANALYTICS}`) return error(403, 'PERMISSION_DENIED', 'Request had insufficient authentication scopes.', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT')
+  if (property === GA_NO_API) return error(403, 'PERMISSION_DENIED', 'Google Analytics Data API has not been used in project 1 before or it is disabled.', 'SERVICE_DISABLED')
+  if (property === GA_DOWN) return error(503, 'UNAVAILABLE', 'The service is currently unavailable.')
+  if (property === GA_UNKNOWN) return error(403, 'PERMISSION_DENIED', 'User does not have sufficient permissions for this property.')
+  const requests = body?.requests
+  if (!Array.isArray(requests) || !requests.length || requests.length > 5) return error(400, 'INVALID_ARGUMENT', 'Invalid requests.')
+  const day = /^\d{4}-\d{2}-\d{2}$/
+  const row = (dimension, ...values) => ({ ...(dimension === null ? {} : { dimensionValues: [{ value: dimension }] }), metricValues: values.map(v => ({ value: String(v) })) })
+  const reports = []
+  for (const request of requests) {
+    const range = request.dateRanges?.[0]
+    if (!day.test(range?.startDate ?? '') || !day.test(range?.endDate ?? '') || range.startDate > range.endDate) return error(400, 'INVALID_ARGUMENT', 'Invalid date range.')
+    const metrics = (request.metrics ?? []).map(m => m.name)
+    if (!metrics.length || metrics.some(m => !['sessions', 'screenPageViews'].includes(m))) return error(400, 'INVALID_ARGUMENT', `Field ${metrics.join(',')} is not a valid metric.`)
+    const dimension = request.dimensions?.[0]?.name
+    if (property === GA_EMPTY) { reports.push({ kind: 'analyticsData#runReport', rowCount: 0 }); continue }
+    const compact = d => d.replaceAll('-', '')
+    const rows = !dimension ? [row(null, GA_TOTALS.visits, GA_TOTALS.pageViews)]
+      : dimension === 'date' ? [row(compact(range.startDate), 10, 20), row(compact(range.endDate), 30, 75)]
+        : dimension === 'pagePath' ? GA_PAGES.map(([path, views]) => row(path, views))
+          : dimension === 'sessionSource' ? GA_SOURCES.map(([source, visits]) => row(source, visits)) : null
+    if (!rows) return error(400, 'INVALID_ARGUMENT', `Field ${dimension} is not a valid dimension.`)
+    reports.push({ kind: 'analyticsData#runReport', rows, rowCount: rows.length })
+  }
+  return { status: 200, json: { kind: 'analyticsData#batchRunReports', reports } }
 }
 
 // ───── API Places (avis Google) ─────
@@ -144,6 +190,7 @@ export function createGoogle() {
     if (req.url === '/google-datamanager/v1/events:ingest') return ingest(req, body)
     if (req.url.startsWith('/google-sc/')) return searchConsole(req, body)
     if (req.url.startsWith('/google-places/')) return places(req)
+    if (req.url.startsWith('/google-analytics/')) return analyticsData(req, body)
     const match = /^\/google-ads\/v26\/customers\/(\d+)\/(googleAds:search|campaigns:mutate|campaignBudgets:mutate)$/.exec(req.url)
     if (!match || req.method !== 'POST') return { status: 404, json: { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } } }
     if (!/^Bearer acces-/.test(req.headers.authorization ?? '')) return failure(401, 'UNAUTHENTICATED', 'Request had invalid authentication credentials.', { authenticationError: 'OAUTH_TOKEN_INVALID' })

@@ -13,6 +13,26 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Module Google Analytics** (`googleAnalytics()`, ou à activer dans l'écran Modules) : la fréquentation du site
+  mesurée par Google Analytics 4, et ses chiffres (visites, pages vues, pages les plus vues, sources) dans l'écran
+  « Audience ». Google Analytics dépose des cookies : le script de Google n'est chargé qu'après l'accord du visiteur,
+  demandé par le bandeau du module Consentement (nouvelle finalité « Mesure d'audience »), et la mesure s'arrête dès
+  qu'il le retire. La connexion Google est celle de Google Ads et de Search Console. Voir le README du site.
+- **Écran « Audience » : plusieurs sources.** Quand plusieurs modules de mesure sont réglés (Cloudflare et Google
+  Analytics, par exemple), l'écran propose de passer de l'un à l'autre.
+
+### À faire dans votre site
+
+- Rien pour un site qui n'active pas Google Analytics.
+- Pour l'activer : activer aussi le module Consentement et placer `<CmsConsentLink />` dans le pied de page, s'ils n'y
+  sont pas déjà. Sans le module Consentement, Google Analytics ne mesure rien.
+- Une finalité déclarée par le site dans `consent({ purposes })` ne peut plus s'appeler `audience` : ce nom est
+  maintenant celui de la finalité du core. Renommez-la si c'est le cas (le site refuse de démarrer sinon).
+- Avec un en-tête `Content-Security-Policy` et Google Analytics : autoriser `https://www.googletagmanager.com`
+  (script) et `https://*.google-analytics.com` (envoi des mesures).
+
 ## 0.14.0 — 2026-11-26
 
 ### Nouveautés

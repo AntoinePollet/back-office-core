@@ -60,6 +60,10 @@ export default defineNuxtConfig({
     googleOauthTokenUrl: 'https://oauth2.googleapis.com/token',
     /** Data Manager API de Google (envoi des conversions). Ne se change que pour les tests : NUXT_GOOGLE_DATA_MANAGER_URL. */
     googleDataManagerUrl: 'https://datamanager.googleapis.com/v1',
+    /** Google Analytics (module « google-analytics ») : jeton commun à plusieurs sites, s'il n'est pas saisi dans le back-office. */
+    googleAnalyticsRefreshToken: '',
+    /** API de données de Google Analytics. Ne se change que pour les tests : NUXT_GOOGLE_ANALYTICS_API_URL. */
+    googleAnalyticsApiUrl: 'https://analyticsdata.googleapis.com/v1beta',
     /** Search Console (module « search-console ») : jeton commun à plusieurs sites, s'il n'est pas saisi dans le back-office. */
     googleSearchConsoleRefreshToken: '',
     /** Adresse de l'API Search Console. Ne se change que pour les tests : NUXT_GOOGLE_SEARCH_CONSOLE_API_URL. */
