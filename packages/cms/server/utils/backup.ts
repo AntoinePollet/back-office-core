@@ -45,12 +45,6 @@ const d1Of = (event: H3Event) => usePlatform().database(event)
 /** Où vont les sauvegardes : un stockage à part si le site en déclare un, sinon celui de la médiathèque. */
 export const backupBucket = (event: H3Event) => usePlatform().backupBucket(event)
 
-function siteSecret(event: H3Event) {
-  const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
-  if (!secret) throw createError({ statusCode: 500, message: 'Variable NUXT_AUTH_SECRET manquante.' })
-  return secret
-}
-
 export const backupRetentionDays = (event: H3Event) => retentionDays((useRuntimeConfig(event) as { backupRetentionDays?: unknown }).backupRetentionDays)
 
 // ───────────── Structure de la base ─────────────

@@ -27,6 +27,22 @@ export const localized = (value: string | Record<string, string> | undefined, lo
 export const siteBase = (event: H3Event) => (cmsConfig.site.url ?? getRequestURL(event).origin).replace(/\/$/, '')
 
 /**
+ * Adresse à écrire dans un lien qui sort du site : e-mail (mot de passe, confirmation, notification), agenda, appel
+ * d'un workflow. Sans barre finale.
+ *
+ * L'adresse d'une requête vient de son en-tête `Host`. Chez Cloudflare, le réseau achemine la requête d'après lui :
+ * il est fiable. Sur un serveur Node, c'est l'expéditeur de la requête qui l'écrit : en demandant un lien de mot de
+ * passe pour quelqu'un d'autre avec un `Host` à lui, il ferait partir ce lien, dans un vrai e-mail du site, vers son
+ * propre serveur. On écrit donc là l'adresse officielle (`site.url`), dès qu'elle est déclarée.
+ * En développement, toujours l'adresse de la requête : le lien doit ramener au serveur local.
+ */
+export function linkBase(event: H3Event) {
+  const official = cmsConfig.site.url
+  if (import.meta.dev || usePlatform().trustedHost || !official) return getRequestURL(event).origin
+  return official.replace(/\/$/, '')
+}
+
+/**
  * Les pages en ligne de ces types de contenu, dans une langue : publiées, avec une adresse, et pas masquées des
  * moteurs de recherche. Les mêmes que dans le plan du site.
  */

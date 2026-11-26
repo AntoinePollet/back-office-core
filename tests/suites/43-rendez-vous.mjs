@@ -380,6 +380,19 @@ export default async function (t) {
     check((await visitor.get('/api/appointments/feed.ics')).status === 404 && (await visitor.get('/api/appointments/feed.ics?t=faux')).status === 404, 'agenda servi sans signature')
   })
 
+  await step('agenda à abonner : renouveler l\'adresse ferme l\'ancienne ; administrateur seulement', async () => {
+    const { feedUrl } = await board()
+    const refused = [(await marc.call('/api/cms/appointments/feed', { method: 'POST' })).status, (await visitor.call('/api/cms/appointments/feed', { method: 'POST' })).status]
+    check(refused.join() === '403,401', 'renouvellement sans en avoir le droit : ' + refused.join())
+    check((await visitor.get(feedUrl.replace(B, ''))).status === 200, 'un refus a fermé l\'adresse')
+    const renewed = await claire.json('/api/cms/appointments/feed', { method: 'POST' })
+    check(renewed.feedUrl !== feedUrl && renewed.feedUrl.startsWith(`${B}/api/appointments/feed.ics?t=`), JSON.stringify(renewed))
+    check((await visitor.get(feedUrl.replace(B, ''))).status === 404, 'l\'ancienne adresse répond encore')
+    const feed = await visitor.get(renewed.feedUrl.replace(B, ''))
+    check(feed.status === 200 && feed.text.includes('SUMMARY:Première consultation — Nadia Morel'), 'la nouvelle adresse ne sert pas l\'agenda')
+    check((await board()).feedUrl === renewed.feedUrl, 'l\'écran montre encore l\'ancienne adresse')
+  })
+
   await step('site : choisir une prestation et un créneau, réserver ; le créneau pris entre-temps est signalé', async () => {
     const site = await t.newPage({ context: await t.newContext() })
     await site.goto(B + '/rendez-vous', { waitUntil: 'networkidle0' })

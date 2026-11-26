@@ -85,6 +85,20 @@ export default async function (t) {
     await claire.json('/api/cms/modules/plausible', { method: 'PUT', body: { values: { domain: 'cabinet-durand.fr' } } })
   })
 
+  await step('Plausible : changer l\'adresse de l\'instance demande de saisir à nouveau la clé', async () => {
+    // La clé enregistrée est envoyée à cette adresse : la changer seule suffirait à la faire partir vers un autre serveur.
+    const save = body => claire.call('/api/cms/modules/plausible', { method: 'PUT', body })
+    const host = async () => (await one('plausible')).settings.find(s => s.key === 'host').value
+    const alone = await save({ values: { host: 'https://stats.exemple.fr' } })
+    check(alone.status === 400 && alone.json.message.includes('saisissez à nouveau Clé d\'API'), alone.text.slice(0, 300))
+    check(await host() === '', 'adresse enregistrée malgré le refus : ' + await host())
+    check((await save({ values: { host: 'https://stats.exemple.fr' }, secrets: { apiKey: PLAUSIBLE_KEY } })).status === 200 && await host() === 'https://stats.exemple.fr', 'adresse refusée avec la clé')
+    // Un autre réglage se change toujours sans la clé ; revenir à plausible.io la redemande.
+    check((await save({ values: { domain: 'cabinet-durand.fr' } })).status === 200, 'autre réglage refusé')
+    check((await save({ values: { host: '' } })).status === 400, 'retour à plausible.io accepté sans la clé')
+    check((await save({ values: { host: '' }, secrets: { apiKey: PLAUSIBLE_KEY } })).status === 200 && await host() === '', 'retour à plausible.io refusé')
+  })
+
   await step('mesure d\'audience entièrement désactivée : plus de balise, plus d\'écran Audience', async () => {
     check((await toggle('plausible', false)).json.enabled === false, 'désactivation')
     check(!(await home()).includes('plausible.io'), 'balise encore présente')

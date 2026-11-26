@@ -1,6 +1,6 @@
 import { isPrivateKey } from '../../../shared/backup'
 import { eq } from 'drizzle-orm'
-import { RESIZABLE_TYPES, cropRect, imageQuery, imageVariant } from '../../../shared/media'
+import { RESIZABLE_TYPES, cropRect, imageQuery, imageVariant, isPlainKey } from '../../../shared/media'
 import { canSeeTrashItem } from '../../../shared/trash'
 import type { ImagesBinding } from '../../platform/types'
 
@@ -26,16 +26,19 @@ async function cropLocally(images: ImagesBinding, body: ReadableStream, source: 
  * Seules les largeurs et proportions des listes fermées de shared/media.ts sont servies (voir `imageVariant`).
  */
 export default defineEventHandler(async (event) => {
-  const key = getRouterParam(event, 'key')
-  // Les sauvegardes sont rangées dans le même stockage : elles ne se lisent jamais par l'adresse publique des fichiers.
-  if (key && isPrivateKey(decodeURIComponent(key))) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
+  let key = ''
+  try { key = decodeURIComponent(getRouterParam(event, 'key') ?? '') }
+  catch { /* adresse mal écrite : aucun fichier ne porte cette clé */ }
+  // Seule une clé bien formée est cherchée : avec `./` ou `../`, le stockage désignerait un autre fichier que celui
+  // contrôlé ici. Les sauvegardes sont rangées dans le même stockage : elles ne se lisent jamais par l'adresse publique.
+  if (!isPlainKey(key) || isPrivateKey(key)) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
   const bucket = useBucket(event)
   // Un fichier à la corbeille n'est plus servi au public. Seul l'écran « Corbeille » l'affiche encore (`?corbeille=1`),
   // à une personne connectée qui a le droit de l'y voir, et sans mise en cache.
-  const trashed = key ? await trashedMedia(event, decodeURIComponent(key)) : false
+  const trashed = await trashedMedia(event, key)
   if (trashed && !(getQuery(event).corbeille && await requireUser(event).then(user => canSeeTrashItem(user, { kind: 'media' }), () => false)))
     throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
-  const object = key ? await bucket.get(decodeURIComponent(key)) : null
+  const object = await bucket.get(key)
   if (!object) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
 
   const type = object.httpMetadata?.contentType ?? 'application/octet-stream'
@@ -50,9 +53,9 @@ export default defineEventHandler(async (event) => {
     // Un recadrage dépend du fichier (dimensions, point d'intérêt) : on le relit. Une simple réduction, non.
     const cropping = query.r !== undefined || query.f !== undefined
     const [row] = cropping && !trashed
-      ? await useDb(event).select({ key: schema.media.key, width: schema.media.width, height: schema.media.height, focus: schema.media.focus }).from(schema.media).where(eq(schema.media.id, decodeURIComponent(key!).split('/')[0] ?? ''))
+      ? await useDb(event).select({ key: schema.media.key, width: schema.media.width, height: schema.media.height, focus: schema.media.focus }).from(schema.media).where(eq(schema.media.id, key.split('/')[0] ?? ''))
       : []
-    const media = row?.key === decodeURIComponent(key!) ? row : { width: null, height: null, focus: null }
+    const media = row?.key === key ? row : { width: null, height: null, focus: null }
     const found = imageVariant(query, media)!
     // Une demande hors liste (largeur, proportions) ou dont le point d'intérêt n'est pas celui du fichier est ramenée
     // à la seule adresse de cette version, par redirection : une seule image calculée par version. Même règle pour un
@@ -91,7 +94,7 @@ export default defineEventHandler(async (event) => {
       catch (error) {
         // Une image que le service ne sait pas traiter reste affichable : on sert l'originale.
         console.error('[cms] redimensionnement impossible, image d\'origine servie', error)
-        const original = await bucket.get(decodeURIComponent(key!))
+        const original = await bucket.get(key)
         if (!original) throw createError({ statusCode: 404, message: 'Fichier introuvable.' })
         removeResponseHeader(event, 'x-cms-image')
         setResponseHeaders(event, { ...common, 'content-type': type, 'cache-control': trashed ? NO_CACHE : 'public, max-age=300' })

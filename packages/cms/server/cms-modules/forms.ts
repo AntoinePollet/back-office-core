@@ -75,7 +75,7 @@ export async function storeSubmission(event: H3Event, id: string, def: FormDefin
   await db.insert(schema.formSubmissions).values(row)
   const { retentionDays } = moduleOptions<{ retentionDays: number }>('forms')
   await db.delete(schema.formSubmissions).where(lt(schema.formSubmissions.createdAt, new Date(Date.now() - retentionDays * 86_400_000)))
-  emitCmsEvents(event, [{ name: 'form.submitted', module: 'forms', ...formEvent(id, def, row.id, values, getRequestURL(event).origin, from) }])
+  emitCmsEvents(event, [{ name: 'form.submitted', module: 'forms', ...formEvent(id, def, row.id, values, linkBase(event), from) }])
   return row
 }
 

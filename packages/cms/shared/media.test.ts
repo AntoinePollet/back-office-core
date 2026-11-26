@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
   IMAGE_RATIOS, IMAGE_WIDTHS, canHaveFocus, cmsImageSrcset, cmsImageUrl, cmsObjectPosition, cropRect, cropSize, imageQuery,
-  imageVariant, isFocusInput, normalizeFocus, parseRatio, snapRatio,
+  imageVariant, isFocusInput, isPlainKey, normalizeFocus, parseRatio, snapRatio,
 } from './media.ts'
 
 const photo = { url: '/media/abc/photo.jpg', mime: 'image/jpeg', width: 2000, height: 1000 }
@@ -143,4 +143,9 @@ test('route /media : une seule adresse par version, le reste est redirigé', () 
   for (const w of [undefined, '', '0', '-5', 'abc']) assert.equal(imageVariant({ w }, photo), null)
   // Nombre de versions possibles par fichier.
   assert.equal(IMAGE_WIDTHS.length * (1 + IMAGE_RATIOS.length), 140)
+})
+
+test('clé de stockage : jamais de morceau vide, « . » ou « .. »', () => {
+  for (const key of ['a1b2c3/photo.png', '_sauvegardes/2026-11-20T03-17-05Z_auto_ab12cd.ndjson.gz', 'a/b/c.d', 'a..b/c', '.cache/x']) assert.ok(isPlainKey(key), key)
+  for (const key of ['', '.', '..', './a', 'a/./b', 'a/../b', '../a', 'a/..', '/a', 'a/', 'a//b', 'a\\b', 'a\0b']) assert.ok(!isPlainKey(key), JSON.stringify(key))
 })

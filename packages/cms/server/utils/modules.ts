@@ -44,6 +44,12 @@ export type ModuleSettingField = {
   required?: boolean
   /** Réglage de l'hébergement utilisé tant que rien n'est saisi : clé de `runtimeConfig` et nom de la variable à afficher. */
   env?: { key: string; name: string }
+  /**
+   * Ce réglage dit à quelle adresse le module envoie ces clés d'API (l'adresse d'une instance, par exemple) : le
+   * changer demande de les saisir à nouveau. Sinon, changer l'adresse suffirait à faire partir vers un autre serveur
+   * une clé enregistrée, que personne ne peut pourtant relire.
+   */
+  protects?: string[]
 }
 
 export type ModuleSettings = Record<string, string>
@@ -208,14 +214,8 @@ export function requireKnownModule(id: string) {
   return found
 }
 
-/** Secret du site (NUXT_AUTH_SECRET) : chiffre les clés d'API et signe les liens envoyés par e-mail. */
+/** Secret du site (NUXT_AUTH_SECRET) : chiffre les clés d'API et signe les liens envoyés par e-mail (voir server/utils/secret.ts). */
 export const cmsSiteSecret = (event: H3Event) => siteSecret(event)
-
-function siteSecret(event: H3Event) {
-  const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
-  if (!secret) throw createError({ statusCode: 500, message: 'Variable NUXT_AUTH_SECRET manquante.' })
-  return secret
-}
 
 type Row = typeof schema.moduleSettings.$inferSelect
 async function loadRow(event: H3Event, id: string): Promise<Row | undefined> {
@@ -308,6 +308,12 @@ export async function saveModuleSettings(event: H3Event, definition: CmsModuleDe
     if (field.type === 'text') {
       const value = String(body.values?.[field.key] ?? row?.values[field.key] ?? '').trim()
       if (value.length > 500) throw createError({ statusCode: 400, message: `${field.label} : 500 caractères au maximum.` })
+      // L'adresse où part une clé d'API change : la clé enregistrée ne la suit pas, il faut la saisir à nouveau.
+      if (value !== (row?.values[field.key] ?? '')) {
+        const kept = (field.protects ?? []).filter(key => row?.secrets[key] && body.secrets?.[key] === undefined)
+        const labels = kept.map(key => definition.settings?.find(f => f.key === key)?.label ?? key)
+        if (labels.length) throw createError({ statusCode: 400, message: `${field.label} change : saisissez à nouveau ${labels.join(', ')}. Une clé enregistrée n'est pas envoyée à une nouvelle adresse.` })
+      }
       if (value) values[field.key] = value
       continue
     }

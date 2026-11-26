@@ -21,8 +21,7 @@ export function trustedClientIp(event: H3Event) {
 }
 
 function createAuth(event: H3Event) {
-  const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')
-  if (!secret) throw createError({ statusCode: 500, message: 'Variable NUXT_AUTH_SECRET manquante.' })
+  const secret = siteSecret(event)
 
   return betterAuth({
     // L'adresse vient de la requête : la même installation fonctionne sur n'importe quel domaine client.

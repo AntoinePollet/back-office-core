@@ -24,5 +24,5 @@ export default defineEventHandler(async (event) => {
   await db.delete(schema.previewLinks).where(lt(schema.previewLinks.expiresAt, new Date(now.getTime() - 30 * 86400_000)))
   // Le lien lui-même n'est jamais inscrit au journal : seulement son nom et sa durée.
   logActivity(event, { action: 'preview_link.created', actor: user, details: { name: label, days } })
-  return { id: row.id, label, expiresAt: row.expiresAt, url: `${getRequestURL(event).origin}/?preview=${token}` }
+  return { id: row.id, label, expiresAt: row.expiresAt, url: `${linkBase(event)}/?preview=${token}` }
 })

@@ -1,4 +1,5 @@
 // Limitation des tentatives de connexion (packages/cms/server/utils/rate-limit.ts). Sans navigateur.
+import { config } from '../lib/config.mjs'
 import { check } from '../lib/harness.mjs'
 
 export const meta = { title: 'limitation des tentatives de connexion' }
@@ -6,6 +7,7 @@ export const meta = { title: 'limitation des tentatives de connexion' }
 // Échecs tolérés par compte avant le blocage (MAX_FAILURES.email dans rate-limit.ts).
 const MAX = 8
 const MARC = { email: 'marc@example.com', password: 'mot-de-passe-de-marc' }
+const LEA = { email: 'lea@example.com', password: 'mot-de-passe-de-lea' }
 
 export default async function (t) {
   const { step, admin } = t
@@ -13,12 +15,14 @@ export default async function (t) {
   const visitor = () => t.http()
   const attempt = (email, password) => visitor().signIn(email, password)
 
-  await step('préparation : un second compte', async () => {
+  await step('préparation : deux autres comptes', async () => {
     const claire = t.http()
     check((await claire.signIn(admin.email, admin.password)).status === 200, 'connexion de l\'administratrice refusée')
-    const { link } = await claire.json('/api/cms/users', { method: 'POST', body: { name: 'Marc Petit', email: MARC.email, role: 'editor' } })
-    const set = await visitor().post(link.replace(/^.*\/admin\/invite\//, '/api/cms/invite/'), { password: MARC.password })
-    check(set.status === 200, 'choix du mot de passe refusé : ' + set.status)
+    for (const [name, who] of [['Marc Petit', MARC], ['Léa Fabre', LEA]]) {
+      const { link } = await claire.json('/api/cms/users', { method: 'POST', body: { name, email: who.email, role: 'editor' } })
+      const set = await visitor().post(link.replace(/^.*\/admin\/invite\//, '/api/cms/invite/'), { password: who.password })
+      check(set.status === 200, `choix du mot de passe refusé (${name}) : ${set.status}`)
+    }
   })
 
   await step(`${MAX} mauvais mots de passe : chacun refusé normalement (401)`, async () => {
@@ -62,5 +66,19 @@ export default async function (t) {
   await step('le compte bloqué l\'est toujours', async () => {
     const r = await attempt(admin.email, admin.password)
     check(r.status === 429, 'statut ' + r.status)
+  })
+
+  await step('rafale de tentatives simultanées : pas plus de tentatives essayées que la limite', async () => {
+    // Comptées après coup, des tentatives lancées ensemble liraient toutes un compteur encore à zéro et seraient toutes
+    // essayées. Une adresse IP à part : seul le compteur du compte joue ici.
+    const headers = { [config.ipHeader]: '203.0.113.210' }
+    const tries = Array.from({ length: 3 * MAX }, (_, i) => visitor().call('/api/auth/sign-in/email', { method: 'POST', body: { email: LEA.email, password: `mauvais-en-rafale-${i}` }, headers }))
+    const codes = (await Promise.all(tries)).map(r => r.status)
+    check(codes.every(c => c === 401 || c === 429), codes.join())
+    const tried = codes.filter(c => c === 401).length
+    check(tried === MAX, `${tried} tentatives essayées pour une limite de ${MAX} : ${codes.join()}`)
+    // Le compte est bloqué, comme après autant d'échecs l'un après l'autre.
+    const after = await visitor().call('/api/auth/sign-in/email', { method: 'POST', body: LEA, headers })
+    check(after.status === 429, 'connexion après la rafale : ' + after.status)
   })
 }

@@ -13,6 +13,60 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+Version de sécurité, à la suite d'une relecture du core. Un seul point est grave, et ne touche que les sites sur
+**serveur Node avec un stockage S3** ; les autres durcissent ce qui existait.
+
+### Correctifs
+
+- **Serveur Node avec stockage S3 : les sauvegardes se lisaient sans connexion.** L'adresse `/media/./_sauvegardes/…`
+  contournait la règle qui ferme ce dossier, et `/media/.` donnait la liste du bucket, donc le nom des sauvegardes ;
+  avec `..`, un autre bucket ouvert aux mêmes clés d'accès était atteint. Une clé de fichier contenant `.`, `..` ou un
+  morceau vide n'atteint plus le stockage. Les sites chez Cloudflare (R2) n'étaient pas concernés, ni ceux qui rangent
+  leurs fichiers sur le disque d'un serveur Linux.
+- **Serveur Node, fichiers sur un disque qui ne distingue pas la casse (macOS, Windows)** : `/media/_SAUVEGARDES/<nom>`
+  servait une sauvegarde à qui en connaissait le nom exact. Le dossier est fermé quelle que soit la casse.
+- **Serveur Node : les liens des e-mails ne suivent plus l'en-tête `Host` de la requête.** Quelqu'un pouvait demander
+  un lien de nouveau mot de passe pour un autre compte avec un `Host` à lui : l'e-mail, bien envoyé par le site,
+  conduisait alors vers son serveur. Ces liens (mot de passe, confirmations, notifications des workflows, agenda)
+  portent maintenant l'adresse officielle du site (`site.url`). Chez Cloudflare, rien ne change : le réseau n'achemine
+  une requête que vers le domaine demandé.
+- **En-têtes de sécurité** sur toutes les réponses : `X-Content-Type-Options`, `Referrer-Policy`, et
+  `Strict-Transport-Security` quand la demande est arrivée en HTTPS. Le back-office (`/admin`) ne s'affiche plus dans
+  le cadre d'un autre site (détournement de clic). Un en-tête que le site règle lui-même est laissé tel quel.
+- **L'adresse d'un webhook, dans un workflow, est chiffrée** dans la base et dans les sauvegardes, comme les clés
+  d'API : elle porte souvent son propre jeton (Slack, Zapier, Make…). Les adresses déjà enregistrées le sont à la
+  première ouverture de l'écran « Workflows ».
+- **Les appels sortants n'atteignent plus un réseau privé.** La vérification des liens (« Santé du site ») et les
+  webhooks contrôlent maintenant chaque redirection, et, sur un serveur Node, l'adresse que désigne le nom de domaine.
+- **Tentatives de connexion : une rafale ne passe plus sous la limite.** Chaque tentative (mot de passe, code de
+  double authentification) est comptée avant d'être vérifiée ; lancées en même temps, elles étaient toutes essayées.
+- **Module Plausible** : changer l'« Adresse de Plausible » demande de saisir à nouveau la clé d'API. La clé
+  enregistrée, que personne ne peut relire, ne part donc plus vers une autre adresse.
+- **`NUXT_AUTH_SECRET` trop court** (moins de 32 caractères) : signalé dans les journaux au démarrage. Le site continue
+  de fonctionner.
+
+### Nouveautés
+
+- **Rendez-vous : l'adresse de l'agenda se renouvelle.** En bas des réglages, « Renouveler l'adresse » remplace
+  l'adresse à abonner : l'ancienne cesse de répondre. Jusque-là, elle ne pouvait être retirée à quelqu'un qu'en
+  changeant `NUXT_AUTH_SECRET`.
+
+### À faire dans votre site
+
+- **Serveur Node avec stockage S3 : mettre à jour sans attendre.** Les sauvegardes contiennent des données
+  personnelles en clair (adresses e-mail des comptes, messages reçus, inscrits, rendez-vous, paiements) ; les mots de
+  passe et les clés d'API y sont chiffrés. Pour savoir si la faille a servi : chercher, dans les journaux du serveur
+  frontal ou du stockage, des demandes `/media/.`, `/media/./…`, `/media/%2e…` ou une lecture du dossier
+  `_sauvegardes/` qui ne vient pas du back-office.
+- **Serveur Node : déclarer `site.url`** dans `cms.config.ts` si ce n'est pas fait. Sans elle, les liens des e-mails
+  prennent encore l'adresse de la requête, et le site le signale à son démarrage.
+- Un webhook qui vise le serveur lui-même ou un réseau privé (`localhost`, `10.…`, `192.168.…`) est refusé à
+  l'enregistrement et n'est plus appelé. En développement, rien ne change.
+- Si le back-office est affiché dans un cadre (`<iframe>`) depuis un autre domaine, il ne s'y affichera plus.
+- `Strict-Transport-Security` engage le domaine à répondre en HTTPS pendant un an (ses sous-domaines ne sont pas
+  engagés). C'est déjà le cas chez Cloudflare et derrière le Caddy fourni.
+- Rien d'autre : aucune migration de base, aucun réglage à reprendre.
+
 ## 0.15.0 — 2026-11-26
 
 ### Nouveautés

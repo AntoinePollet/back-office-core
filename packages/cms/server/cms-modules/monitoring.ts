@@ -14,7 +14,7 @@ import type { CmsModuleDefinition, ModuleSettings, ModuleWorkflowEvent, Template
 
 const STATE_KEY = 'monitoring-state'
 const version = () => String(useRuntimeConfig().public.cmsVersion ?? '')
-const adminUrl = (event: H3Event) => `${getRequestURL(event).origin}/admin/monitoring`
+const adminUrl = (event: H3Event) => `${linkBase(event)}/admin/monitoring`
 /** Adresse surveillée : celle des réglages, sinon celle du site. */
 const checkedUrl = (settings: ModuleSettings) => settings.checkUrl || cmsConfig.site.url || ''
 

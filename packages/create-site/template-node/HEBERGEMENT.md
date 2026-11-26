@@ -40,6 +40,10 @@ docker compose up -d --build
 Le site répond sur `https://<SITE_DOMAIN>` : Caddy obtient le certificat tout seul. Ouvrir `/admin` et **créer tout
 de suite le compte administrateur** : tant qu'aucun compte n'existe, n'importe quel visiteur peut le créer.
 
+**Déclarer l'adresse du site** dans `cms.config.ts` (`site: { url: 'https://<SITE_DOMAIN>' }`) : sur un serveur Node,
+c'est elle que portent les liens envoyés par e-mail (nouveau mot de passe, confirmations, notifications). Sans elle,
+ces liens prennent l'adresse de la requête, que son expéditeur choisit : le site le signale à son démarrage.
+
 Sans Caddy (un autre serveur frontal existe déjà : Nginx, Traefik, celui de l'hébergeur…), ne lancer que le site
 (`docker compose up -d --build site`) et faire suivre les requêtes vers son port 3000. Garder `NUXT_TRUST_PROXY=true`
 si ce serveur frontal transmet l'adresse du visiteur dans `X-Forwarded-For`, et le retirer si le site est exposé
@@ -55,7 +59,7 @@ premier d'entre eux, jamais ce que le visiteur a pu écrire lui-même dans l'en-
 | `SITE_DOMAIN` | Domaine servi par Caddy |
 | `NUXT_DATA_DIR` | Dossier de données dans le conteneur (`/data`, monté sur le volume `donnees`) |
 | `NUXT_S3_ENDPOINT`, `NUXT_S3_BUCKET`, `NUXT_S3_REGION`, `NUXT_S3_ACCESS_KEY_ID`, `NUXT_S3_SECRET_ACCESS_KEY` | Fichiers de la médiathèque dans un stockage compatible S3 plutôt que sur le disque |
-| `NUXT_S3_BACKUP_BUCKET` | Bucket à part pour les sauvegardes de la base |
+| `NUXT_S3_BACKUP_BUCKET` | Bucket à part pour les sauvegardes de la base (conseillé : elles contiennent les données personnelles du site) |
 | `NUXT_EMAIL_FROM`, `NUXT_BREVO_API_KEY`, `NUXT_RESEND_API_KEY` | Envoi d'e-mails (voir README.md) |
 
 ## Mettre à jour le site

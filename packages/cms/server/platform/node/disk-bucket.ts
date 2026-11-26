@@ -2,6 +2,7 @@ import { createReadStream, promises as fs } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
+import { isPlainKey } from '../../../shared/media'
 import type { Bucket, BucketOptions } from '../types'
 
 /**
@@ -15,7 +16,7 @@ const RESERVED = ['.meta', '.tmp']
 /** Les morceaux d'une clé, ou null si elle sortirait du dossier ou toucherait aux dossiers internes. */
 function segments(key: string) {
   const parts = key.split('/')
-  if (!key || parts.some(p => !p || p === '.' || p === '..' || /[\0\\]/.test(p)) || RESERVED.includes(parts[0]!)) return null
+  if (!isPlainKey(key) || RESERVED.includes(parts[0]!)) return null
   return parts
 }
 

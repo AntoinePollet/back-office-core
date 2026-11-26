@@ -1,9 +1,14 @@
 import { AwsClient } from 'aws4fetch'
+import { isPlainKey } from '../../../shared/media'
 import type { Bucket, BucketListed } from '../types'
 
 /**
  * Stockage de fichiers dans un service compatible S3 (MinIO, Scaleway, OVH, AWS, R2…), sous la forme de R2.
  * Les adresses sont du type `<adresse du service>/<bucket>/<clé>` (« path-style »), acceptées par tous ces services.
+ *
+ * Une adresse est résolue avant d'être envoyée : une clé `./x` y deviendrait `x`, `.` le bucket lui-même (sa liste),
+ * et `../autre/x` un fichier d'un autre bucket. Seule une clé bien formée (`isPlainKey`) atteint donc le service :
+ * lire une autre clé ne trouve rien, l'écrire est une erreur.
  */
 
 export type S3Options = { endpoint: string; bucket: string; region: string; accessKeyId: string; secretAccessKey: string }
@@ -21,7 +26,10 @@ const tag = (xml: string, name: string) => { const found = xml.match(new RegExp(
 export function s3Bucket(options: S3Options): Bucket {
   const client = new AwsClient({ accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey, service: 's3', region: options.region })
   const base = `${options.endpoint.replace(/\/+$/, '')}/${encodeURIComponent(options.bucket)}`
-  const urlOf = (key: string, query = '') => `${base}/${key.split('/').map(encodeURIComponent).join('/')}${query}`
+  const urlOf = (key: string, query = '') => {
+    if (!isPlainKey(key)) throw new Error(`[cms] clé de fichier refusée : ${JSON.stringify(key)}`)
+    return `${base}/${key.split('/').map(encodeURIComponent).join('/')}${query}`
+  }
 
   /** Appelle le service ; toute réponse en erreur (hors celles de `accepted`) lève une erreur lisible dans les journaux. */
   const call = async (what: string, url: string, init: RequestInit = {}, accepted: number[] = []) => {
@@ -35,6 +43,7 @@ export function s3Bucket(options: S3Options): Bucket {
 
   return {
     async get(key) {
+      if (!isPlainKey(key)) return null
       const response = await call('la lecture', urlOf(key), {}, [404])
       if (response.status === 404 || !response.body) {
         await response.body?.cancel().catch(() => {})
@@ -53,7 +62,7 @@ export function s3Bucket(options: S3Options): Bucket {
     },
     async delete(key) {
       // Un fichier déjà absent n'est pas une erreur.
-      for (const one of [key].flat()) await call('la suppression', urlOf(one), { method: 'DELETE' }, [404])
+      for (const one of [key].flat()) if (isPlainKey(one)) await call('la suppression', urlOf(one), { method: 'DELETE' }, [404])
     },
     async list({ prefix, cursor, limit }) {
       const query = new URLSearchParams({ 'list-type': '2', 'encoding-type': 'url' })

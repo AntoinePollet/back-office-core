@@ -412,7 +412,9 @@ tant qu'aucun compte n'existe, n'importe quel visiteur peut le créer.
 
 Le secret `NUXT_AUTH_SECRET` reste enregistré chez Cloudflare : inutile de le fournir aux déploiements suivants.
 Le changer (`pnpm exec wrangler secret put NUXT_AUTH_SECRET`) déconnecte tous les utilisateurs, rend illisibles les
-clés d'API des modules et **invalide la double authentification de tous les comptes** (voir « Double authentification »).
+clés d'API des modules et les adresses de webhook des workflows, et **invalide la double authentification de tous les
+comptes** (voir « Double authentification »). Tout le chiffrement du site repose sur ce secret : il doit être long et
+tiré au hasard (`openssl rand -hex 32`). S'il fait moins de 32 caractères, le site le signale dans ses journaux.
 
 ### Les fois suivantes
 
@@ -450,7 +452,9 @@ pnpm exec wrangler secret put NUXT_EMAIL_FROM     # « Nom du site <contact@exem
 ```
 
 Les clés saisies dans le back-office sont chiffrées avec `NUXT_AUTH_SECRET` : si ce secret change, il faut les saisir
-à nouveau.
+à nouveau. Il en va de même de l'adresse d'un webhook, dans un workflow : elle porte souvent son propre jeton (Slack,
+Zapier, Make…), elle est donc chiffrée dans la base et dans les sauvegardes. Un webhook ne peut pas viser le serveur
+lui-même ni un réseau privé.
 
 ## Modules
 
@@ -618,7 +622,9 @@ const booking = useCmsAppointments()
 - **Le professionnel** voit ses rendez-vous jour par jour, peut en saisir un lui-même (pris par téléphone : sans les
   délais imposés aux visiteurs), en annuler un avec un mot d'explication, exporter le tout en CSV, et **abonner son
   agenda** (Google Agenda, Outlook, Apple) à l'adresse donnée en bas des réglages. Cette adresse donne accès aux noms
-  et coordonnées : elle ne se partage pas.
+  et coordonnées : elle ne se partage pas. Si elle a été donnée à quelqu'un qui ne doit plus voir les rendez-vous,
+  « Renouveler l'adresse » (au même endroit, administrateurs) la remplace : l'ancienne cesse aussitôt de répondre, et
+  les agendas abonnés sont à réabonner à la nouvelle.
 - **Acompte.** Avec le module Stripe actif et réglé, une prestation peut demander un acompte : le visiteur est conduit
   à la page de paiement de Stripe, son créneau est gardé une demi-heure, et le rendez-vous n'est confirmé qu'à
   réception du paiement (qui figure dans « Paiements »). Un acompte jamais réglé rend le créneau. Le remboursement
@@ -1150,7 +1156,8 @@ depuis l'écran **Sauvegardes** du back-office. On y voit la liste, l'état de l
 | --- | --- |
 | Contenu | Toutes les tables de la base : contenus, historique, médiathèque (fiches et dossiers), comptes, rôles, réglages, workflows et leur journal, messages reçus, paiements. Les tables ajoutées par une mise à jour du core y entrent sans rien changer. |
 | Laissé de côté | Les connexions en cours (`session`), les liens à usage unique (`verification`, `cms_invites`), les compteurs de tentatives de connexion. |
-| Secrets | Les mots de passe (déjà hachés) et tout jeton sont **chiffrés avec `NUXT_AUTH_SECRET`** ; les clés d'API des modules le sont déjà dans la base. Un fichier de sauvegarde seul ne permet donc ni de se connecter ni de lire une clé. |
+| Secrets | Les mots de passe (déjà hachés) et tout jeton sont **chiffrés avec `NUXT_AUTH_SECRET`** ; les clés d'API des modules et les adresses de webhook des workflows le sont déjà dans la base. Un fichier de sauvegarde seul ne permet donc ni de se connecter ni de lire une clé. |
+| Données personnelles | **En clair dans le fichier**, comme dans la base : adresses e-mail des comptes, messages reçus, inscrits à la lettre, rendez-vous, paiements. Une sauvegarde se garde donc comme la base elle-même ; un bucket à part (voir « Les fichiers », plus bas) la sépare des fichiers du site. |
 | Durée | 30 jours (`NUXT_BACKUP_RETENTION_DAYS` pour en changer, dans `vars` de `wrangler.jsonc`) ; les trois plus récentes sont toujours gardées. |
 | Format | Un fichier `.ndjson.gz` : du texte compressé, une valeur JSON par ligne (`gunzip -c fichier | less`). |
 | Fichiers (images, PDF) | **Pas dans la sauvegarde** : ils sont dans le même stockage R2. Voir « Les fichiers » plus bas. |

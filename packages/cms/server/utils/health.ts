@@ -4,8 +4,9 @@ import { adminEntryPath } from '../../shared/admin-paths'
 import type { AnyField, CmsDefinition } from '../../shared/format'
 import {
   HEALTH_LIMITS, type HealthFileIssue, type HealthReport, type HealthUse, type LinkVerdict, classifyHref, contentLinks, healthPathKey, isCorePath,
-  isHeavyImage, isPrivateHost, lacksAlt, verdictForStatus,
+  isHeavyImage, lacksAlt, verdictForStatus,
 } from '../../shared/health'
+import { PrivateAddressError } from '../../shared/outbound'
 import { contentImageIds, seoMediaLink } from '../../shared/seo'
 
 type Values = Record<string, unknown>
@@ -137,6 +138,7 @@ export type ExternalCheck = { url: string; verdict: LinkVerdict; status: number 
 /**
  * Appelle une adresse externe pour savoir si elle répond. D'abord sans télécharger la page (HEAD) ; certains sites
  * refusent cette forme d'appel, la page est alors demandée normalement. Ne lève jamais d'erreur.
+ * Ni l'adresse ni aucune de ses redirections ne peut désigner la machine ou un réseau privé (`fetchOutside`).
  * `allowLocal` : en développement et dans les tests seulement, autorise une adresse de la machine.
  */
 export async function checkExternalLink(raw: string, allowLocal = false): Promise<ExternalCheck> {
@@ -144,11 +146,10 @@ export async function checkExternalLink(raw: string, allowLocal = false): Promis
   try { url = new URL(raw) }
   catch { return { url: raw, verdict: 'broken', status: null, detail: 'Adresse mal écrite.' } }
   if (!/^https?:$/.test(url.protocol)) return { url: raw, verdict: 'unknown', status: null, detail: 'Seules les adresses http et https sont vérifiées.' }
-  if (!allowLocal && isPrivateHost(url.hostname)) return { url: raw, verdict: 'unknown', status: null, detail: 'Adresse d\'un réseau privé : non vérifiée.' }
-  const call = (method: 'HEAD' | 'GET') => fetch(url, {
-    method, redirect: 'follow', signal: AbortSignal.timeout(HEALTH_LIMITS.externalTimeoutMs),
+  const call = (method: 'HEAD' | 'GET') => fetchOutside(url, {
+    method, signal: AbortSignal.timeout(HEALTH_LIMITS.externalTimeoutMs),
     headers: { 'user-agent': 'Mozilla/5.0 (compatible; verification-de-liens)', 'accept': 'text/html,*/*;q=0.8' },
-  })
+  }, allowLocal)
   try {
     let response = await call('HEAD')
     // HEAD refusé ou mal géré : la réponse à une demande normale fait foi.
@@ -161,6 +162,7 @@ export async function checkExternalLink(raw: string, allowLocal = false): Promis
     return { url: raw, verdict, status: response.status, detail: verdict === 'ok' ? '' : `Réponse ${response.status}.` }
   }
   catch (error) {
+    if (error instanceof PrivateAddressError) return { url: raw, verdict: 'unknown', status: null, detail: 'Adresse d\'un réseau privé : non vérifiée.' }
     const timeout = (error as Error)?.name === 'TimeoutError'
     return { url: raw, verdict: 'down', status: null, detail: timeout ? `Pas de réponse en ${HEALTH_LIMITS.externalTimeoutMs / 1000} secondes.` : 'Site injoignable (nom de domaine inconnu, ou connexion refusée).' }
   }
