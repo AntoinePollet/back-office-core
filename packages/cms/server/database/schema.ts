@@ -420,6 +420,34 @@ export const formSubmissions = sqliteTable('cms_form_submissions', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_form_submissions_form').on(t.form, t.createdAt)])
 
+export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed'
+/** Report d'un inscrit dans la liste du service d'envoi (Brevo, Resend) : fait, ou en échec avec sa raison. */
+export type NewsletterSync = { provider: string; ok: boolean; detail: string; at: number }
+
+/**
+ * Inscrit à la lettre d'information (module `newsletter`). Une ligne par adresse e-mail. L'inscription ne vaut
+ * qu'une fois confirmée par le lien reçu par e-mail : la ligne garde la date de la demande et celle de la
+ * confirmation, qui font la preuve du consentement. Une demande jamais confirmée est effacée au bout de quelques jours.
+ */
+export const newsletterSubscribers = sqliteTable('cms_newsletter_subscribers', {
+  id: text('id').primaryKey(),
+  /** Adresse en minuscules : une même personne ne s'inscrit qu'une fois. */
+  email: text('email').notNull().unique(),
+  /** Langue du site au moment de l'inscription : celle de l'e-mail de confirmation. */
+  locale: text('locale').notNull(),
+  status: text('status').$type<NewsletterStatus>().notNull(),
+  /** Page du site où l'inscription a été faite (chemin, sans paramètres). */
+  source: text('source'),
+  /** D'où venait le visiteur (annonce, e-mail, autre site…) ; null : rien de relevé. */
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Dernier envoi de l'e-mail de confirmation : pas deux envois coup sur coup à la même adresse. */
+  confirmationSentAt: integer('confirmation_sent_at', { mode: 'timestamp_ms' }),
+  confirmedAt: integer('confirmed_at', { mode: 'timestamp_ms' }),
+  unsubscribedAt: integer('unsubscribed_at', { mode: 'timestamp_ms' }),
+  sync: text('sync', { mode: 'json' }).$type<NewsletterSync | null>(),
+}, t => [index('cms_newsletter_status').on(t.status, t.createdAt)])
+
 /**
  * Paiement reçu par Stripe Checkout (module `stripe`). Une ligne par session Checkout : la référence Stripe est unique,
  * un même événement reçu deux fois ne crée donc jamais deux paiements. Le produit est recopié tel qu'il était à l'achat.
@@ -453,9 +481,129 @@ export const payments = sqliteTable('cms_payments', {
   origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
   /** Envoi de ce paiement à la régie publicitaire comme conversion (module Google Ads) ; null : rien à envoyer. */
   conversion: text('conversion', { mode: 'json' }).$type<import('../../shared/conversions').ConversionState | null>(),
+  /** Facture établie par Stripe (in_…), s'il y en a une : son PDF se télécharge depuis « Paiements ». */
+  invoice: text('invoice'),
+  /** Abonnement (sub_…) dont ce paiement est une échéance. Pour une échéance suivante, `sessionId` porte la référence de la facture. */
+  subscription: text('subscription'),
+  /** Remise obtenue par un code promo, en plus petite unité de la devise. */
+  discountAmount: integer('discount_amount').notNull().default(0),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_payments_created').on(t.createdAt), index('cms_payments_intent').on(t.paymentIntent)])
+
+/**
+ * Abonnement souscrit par Stripe Checkout (module `stripe`, collection déclarée `recurring`). Une ligne par
+ * abonnement Stripe ; son état suit les événements signés de Stripe. Chaque échéance payée est un paiement
+ * (`cms_payments`). Comme les paiements, rien ne se supprime depuis le back-office.
+ */
+export const subscriptions = sqliteTable('cms_subscriptions', {
+  id: text('id').primaryKey(),
+  /** Abonnement (sub_…) : référence unique chez Stripe. */
+  subscriptionId: text('subscription_id').notNull().unique(),
+  collection: text('collection').notNull(),
+  entryId: text('entry_id').notNull(),
+  /** Nom de l'offre au moment de la souscription. */
+  title: text('title').notNull(),
+  /** Montant de chaque échéance, en plus petite unité de la devise, et périodicité. */
+  amount: integer('amount').notNull(),
+  currency: text('currency').notNull(),
+  interval: text('interval').$type<import('../../shared/stripe').RecurringInterval>().notNull(),
+  status: text('status').$type<import('../../shared/stripe').SubscriptionStatus>().notNull(),
+  email: text('email'),
+  name: text('name'),
+  livemode: integer('livemode', { mode: 'boolean' }).notNull(),
+  /** Fin de la période payée : date du prochain prélèvement, ou de la fin si la résiliation est demandée. */
+  currentPeriodEnd: integer('current_period_end', { mode: 'timestamp_ms' }),
+  cancelAtPeriodEnd: integer('cancel_at_period_end', { mode: 'boolean' }).notNull().default(false),
+  canceledAt: integer('canceled_at', { mode: 'timestamp_ms' }),
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_subscriptions_created').on(t.createdAt)])
+
+/**
+ * Rendez-vous pris sur le site (module `appointments`). La prestation est recopiée telle qu'elle était à la
+ * réservation : ses réglages peuvent changer ensuite. `start` et `end` sont des instants ; le battement gardé libre
+ * après le rendez-vous n'y est pas compté (il l'est dans `cms_appointment_slots`).
+ */
+export const appointments = sqliteTable('cms_appointments', {
+  id: text('id').primaryKey(),
+  /** Identifiant de la prestation dans les réglages, et son nom au moment de la réservation. */
+  service: text('service').notNull(),
+  serviceLabel: text('service_label').notNull(),
+  start: integer('start', { mode: 'timestamp_ms' }).notNull(),
+  end: integer('end', { mode: 'timestamp_ms' }).notNull(),
+  /** `pending` : en attente de l'acompte, le créneau est gardé une demi-heure. */
+  status: text('status').$type<import('../../shared/appointments').AppointmentStatus>().notNull(),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  phone: text('phone'),
+  note: text('note'),
+  /** Langue du site au moment de la réservation : celle des e-mails. */
+  locale: text('locale').notNull(),
+  /** Où a lieu le rendez-vous, tel que réglé à la réservation. */
+  location: text('location'),
+  /** D'où venait le visiteur (annonce, e-mail, autre site…) ; null : rien de relevé, ou rendez-vous saisi dans le back-office. */
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  /** Acompte demandé, en plus petite unité de la devise (0 : aucun), et sa devise. */
+  depositAmount: integer('deposit_amount').notNull().default(0),
+  currency: text('currency'),
+  /** Acompte reçu : date de l'événement signé de Stripe. */
+  paidAt: integer('paid_at', { mode: 'timestamp_ms' }),
+  /** Qui a saisi le rendez-vous dans le back-office ; null : le visiteur lui-même. */
+  createdBy: text('created_by'),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
+  /** `visitor`, `staff`, ou `expired` (acompte jamais réglé). */
+  cancelledBy: text('cancelled_by').$type<'visitor' | 'staff' | 'expired'>(),
+  reminderSentAt: integer('reminder_sent_at', { mode: 'timestamp_ms' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+}, t => [index('cms_appointments_start').on(t.start), index('cms_appointments_status').on(t.status, t.start)])
+
+/**
+ * Cases de cinq minutes occupées par les rendez-vous en cours (battement compris). La clé primaire fait le travail :
+ * une case ne s'insère qu'une fois, deux réservations simultanées du même créneau ne peuvent donc pas réussir toutes
+ * les deux. Les cases d'un rendez-vous annulé sont effacées.
+ */
+export const appointmentSlots = sqliteTable('cms_appointment_slots', {
+  at: integer('at').primaryKey(),
+  appointmentId: text('appointment_id').notNull().references(() => appointments.id, { onDelete: 'cascade' }),
+}, t => [index('cms_appointment_slots_appointment').on(t.appointmentId)])
+
+/**
+ * Erreur relevée sur le site (module `monitoring`) : une ligne par erreur distincte (`fingerprint`), avec le nombre de
+ * fois où elle s'est produite. Rien de personnel : ni adresse IP, ni paramètres de l'adresse (voir shared/monitoring.ts).
+ */
+export const errors = sqliteTable('cms_errors', {
+  id: text('id').primaryKey(),
+  /** Ce qui fait que deux erreurs sont la même : origine, nom, message sans ses parties variables, endroit du code. */
+  fingerprint: text('fingerprint').notNull().unique(),
+  source: text('source').$type<import('../../shared/monitoring').ErrorSource>().notNull(),
+  type: text('type').notNull(),
+  message: text('message').notNull(),
+  /** Pile d'appels et contexte de la dernière fois. */
+  stack: text('stack').notNull(),
+  path: text('path').notNull(),
+  method: text('method').notNull(),
+  status: integer('status'),
+  browser: text('browser').notNull(),
+  /** Version du core au moment de la dernière fois. */
+  release: text('release').notNull(),
+  count: integer('count').notNull().default(1),
+  firstAt: integer('first_at', { mode: 'timestamp_ms' }).notNull(),
+  lastAt: integer('last_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Marquée « corrigée » ; elle redevient ouverte si elle se reproduit. */
+  resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+}, t => [index('cms_errors_last').on(t.lastAt)])
+
+/** Vérification du site par lui-même (module `monitoring`), toutes les cinq minutes : a-t-il répondu, en combien de temps. Sept jours sont gardés. */
+export const uptimeChecks = sqliteTable('cms_uptime_checks', {
+  at: integer('at', { mode: 'timestamp_ms' }).primaryKey(),
+  ok: integer('ok', { mode: 'boolean' }).notNull(),
+  status: integer('status'),
+  ms: integer('ms').notNull(),
+  detail: text('detail').notNull(),
+})
 
 export const verification = sqliteTable('verification', {
   id: text('id').primaryKey(),

@@ -1,4 +1,6 @@
 /** Thème du site : les réglages modifiables depuis l'écran Apparence, traduits en variables daisyUI. */
+import { type CustomFont, type Typography, isDefaultTypography, parseTypography, typographyCss } from './fonts'
+
 export type CmsTheme = {
   primary: string
   secondary: string
@@ -14,6 +16,8 @@ export type CmsTheme = {
   depth: boolean
   /** Texture (grain) sur les surfaces colorées. */
   noise: boolean
+  /** Polices et tailles du texte et des titres (voir shared/fonts.ts). Absente : le site garde celles de son code. */
+  typography?: Typography
 }
 
 export const DEFAULT_THEME: CmsTheme = {
@@ -24,16 +28,20 @@ export const DEFAULT_THEME: CmsTheme = {
 const COLORS = ['primary', 'secondary', 'accent', 'neutral', 'base'] as const
 const HEX = /^#[0-9a-f]{6}$/i
 
-/** Vérifie un thème reçu. Renvoie le thème nettoyé, ou un message d'erreur. */
-export function parseTheme(input: any): CmsTheme | string {
+/** Vérifie un thème reçu. Renvoie le thème nettoyé, ou un message d'erreur. `families` : familles de polices envoyées sur ce site. */
+export function parseTheme(input: any, families: string[] = []): CmsTheme | string {
   for (const key of COLORS) if (typeof input?.[key] !== 'string' || !HEX.test(input[key])) return `Couleur invalide : ${key}.`
   const radius = Number(input.radius)
   const border = Number(input.border)
   if (!(radius >= 0 && radius <= 2)) return 'Arrondi invalide.'
   if (!(border >= 0.5 && border <= 2)) return 'Épaisseur de bordure invalide.'
+  const typography = parseTypography(input.typography, families)
+  if (typeof typography === 'string') return typography
   return {
     ...Object.fromEntries(COLORS.map(k => [k, input[k].toLowerCase()])) as Pick<CmsTheme, typeof COLORS[number]>,
     radius, border, depth: !!input.depth, noise: !!input.noise,
+    // Une typographie qui ne règle rien n'est pas enregistrée : le thème garde sa forme d'avant.
+    ...(isDefaultTypography(typography) ? {} : { typography }),
   }
 }
 
@@ -80,6 +88,6 @@ export function themeVars(theme: CmsTheme): Record<string, string> {
   return vars
 }
 
-/** Feuille de style à injecter dans le site. Le sélecteur l'emporte sur les thèmes daisyUI du projet. */
-export const themeCss = (theme: CmsTheme) =>
-  `html:root,html[data-theme]{${Object.entries(themeVars(theme)).map(([k, v]) => `${k}:${v}`).join(';')}}`
+/** Feuille de style à injecter dans le site. Le sélecteur l'emporte sur les thèmes daisyUI du projet. `fonts` : polices envoyées sur ce site. */
+export const themeCss = (theme: CmsTheme, fonts: CustomFont[] = []) =>
+  `html:root,html[data-theme]{${Object.entries(themeVars(theme)).map(([k, v]) => `${k}:${v}`).join(';')}}${typographyCss(theme.typography, fonts).css}`

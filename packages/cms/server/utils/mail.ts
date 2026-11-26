@@ -19,6 +19,15 @@ async function mailProvider(event: H3Event) {
   return first
 }
 
+/**
+ * Le service qui tient les listes de contacts : le module d'envoi d'e-mails en service, s'il sait le faire.
+ * Null sans envoi d'e-mails réglé.
+ */
+export async function contactsProvider(event: H3Event) {
+  const provider = await mailProvider(event)
+  return provider?.sender && provider.definition.contacts ? { id: provider.definition.id, label: provider.definition.label, settings: provider.settings, contacts: provider.definition.contacts } : null
+}
+
 /** Expéditeur saisi : « Nom <adresse> » ou une adresse seule (le nom est alors celui du site). Null s'il est mal écrit. */
 export function parseSender(from: string) {
   const match = /^\s*(.*?)\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(from) ?? /^()\s*(\S+@\S+)\s*$/.exec(from)

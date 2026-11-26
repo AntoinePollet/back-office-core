@@ -9,7 +9,8 @@ import { createGoogle } from './mock-google.mjs'
  * - GET /v3/account → le compte Brevo, ou 401 avec la clé « mauvaise-cle »
  * - POST /client/v4/graphql → statistiques Cloudflare Web Analytics (voir mock-cloudflare.mjs)
  * - POST /turnstile/v0/siteverify → vérification d'un jeton Turnstile ; GET /turnstile/v0/api.js → faux script Turnstile
- * - /echec → 500
+ * - /echec → 500 ; /introuvable → 404 ; /refuse → 403 (vérification des liens)
+ * - Brevo, listes de contacts : GET /v3/contacts/lists/12 → la liste, /99 → 404 ; POST /v3/contacts et …/contacts/remove → 200
  * - toute autre adresse → 200
  * - Resend, sous /resend : POST /resend/emails → { id } ; GET /resend/domains → domaines (cabinet-durand.fr vérifié,
  *   pas-encore.fr en attente), 403 avec la clé « re_mauvaise », 401 « restricted_api_key » avec « re_envoi_seulement » ;
@@ -17,14 +18,23 @@ import { createGoogle } from './mock-google.mjs'
  * - Plausible, sous /plausible : POST /plausible/api/v2/query → statistiques selon les regroupements demandés ;
  *   401 avec la clé « mauvaise-cle-plausible », 400 « site not found » pour le domaine inconnu.fr
  * - Google, sous /google et /google-ads : jeton d'accès et API Google Ads (voir mock-google.mjs)
+ * - API Places (avis Google), sous /google-places : fiche d'un établissement (voir mock-google.mjs)
+ * - Anthropic (assistant de rédaction), sous /anthropic : GET /anthropic/v1/models/<id> et POST /anthropic/v1/messages
+ *   (réponse selon la forme demandée ; 401 avec la clé « sk-ant-mauvaise », 404 pour le modèle « claude-inconnu-9 »)
+ * - Sentry : POST /sentry/api/<projet>/envelope/ → 200 (403 pour le projet 999)
+ * - page surveillée : GET /surveille → 200 ; POST /surveille/_regler { status, delay } change sa réponse
+ * - Search Console, sous /google-sc : propriété et `searchAnalytics/query` (voir mock-google.mjs)
  * - GET /_calls → les appels reçus (pour déboguer à la main)
  * - Stripe, sous /stripe : POST /stripe/v1/checkout/sessions → une session (cs_test_<n>) ; GET /stripe/v1/checkout/sessions →
- *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement »
+ *   liste vide, 401 avec la clé « rk_test_mauvaise », 403 avec « rk_test_sans-droit » ; GET /stripe/checkout/<id> → la « page de paiement » ;
+ *   GET /stripe/v1/invoices/in_… → l'adresse du PDF ; POST /stripe/v1/subscriptions/sub_… → résiliation à l'échéance ;
+ *   403 pour ces deux-là avec la clé « rk_test_sans-factures »
  * - GitHub (avis de nouvelle version) : GET /github/releases/latest → la dernière version publiée du core ;
  *   POST /github/_regler { tag, status, delay } change la suite des réponses (version, panne, lenteur en ms)
  */
 export async function startMock(port) {
   const calls = []
+  const watched = { status: 200, delay: 0 }
   const google = createGoogle()
   const server = http.createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
@@ -35,12 +45,18 @@ export async function startMock(port) {
       let body = null
       try { body = JSON.parse(raw || 'null') }
       catch { body = req.headers['content-type']?.includes('urlencoded') ? Object.fromEntries(new URLSearchParams(raw)) : raw }
-      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, login: req.headers['login-customer-id'] ?? null, developerToken: req.headers['developer-token'] ?? null, body })
+      calls.push({ url: req.url, key: req.headers['api-key'] ?? req.headers.authorization?.replace(/^Bearer /, '') ?? null, auth: req.headers.authorization ?? null, version: req.headers['stripe-version'] ?? null, login: req.headers['login-customer-id'] ?? null, developerToken: req.headers['developer-token'] ?? null, sentryAuth: req.headers['x-sentry-auth'] ?? null, googleKey: req.headers['x-goog-api-key'] ?? null, anthropicKey: req.headers['x-api-key'] ?? null, beta: req.headers['anthropic-beta'] ?? null, fieldMask: req.headers['x-goog-fieldmask'] ?? null, body })
       if (req.url.startsWith('/google')) {
         const { status, json } = google.handle(req, body)
         res.statusCode = status
         return res.end(JSON.stringify(json))
       }
+      // Sentry : une enveloppe d'erreur ; le projet 999 la refuse.
+      if (/^\/sentry\/api\/\d+\/envelope\/$/.test(req.url)) { res.statusCode = req.url.includes('/999/') ? 403 : 200; return res.end('{"id":"recu"}') }
+      // Page surveillée (module de surveillance) : son état se règle par POST /surveille/_regler { status, delay }.
+      if (req.url === '/surveille/_regler') { Object.assign(watched, body); return res.end('{}') }
+      if (req.url === '/surveille') return setTimeout(() => { res.statusCode = watched.status; res.setHeader('content-type', 'text/html'); res.end('<h1>Page surveillée</h1>') }, watched.delay)
+      if (req.url.startsWith('/anthropic/')) return anthropic(req, res, body)
       if (req.url.startsWith('/stripe/')) return stripe(req, res, body)
       if (req.url.startsWith('/github/')) return github(req, res, body)
       if (req.url.startsWith('/resend/')) return resend(req, res)
@@ -56,6 +72,12 @@ export async function startMock(port) {
         return res.end(JSON.stringify(json))
       }
       if (req.url === '/echec') { res.statusCode = 500; return res.end('{}') }
+      // Vérification des liens (écran « Santé du site ») : une page disparue, un site qui refuse les robots.
+      if (req.url === '/introuvable') { res.statusCode = 404; return res.end('{}') }
+      if (req.url === '/refuse') { res.statusCode = 403; return res.end('{}') }
+      // Listes de contacts Brevo (lettre d'information) : la liste 12 existe, la 99 non.
+      if (req.url === '/v3/contacts/lists/12') return res.end('{"id":12,"name":"Lettre du cabinet"}')
+      if (req.url === '/v3/contacts/lists/99') { res.statusCode = 404; return res.end('{"code":"document_not_found","message":"List ID does not exist"}') }
       // Compte Brevo : sert à vérifier une clé d'API. « mauvaise-cle » est refusée, comme une clé inconnue de Brevo.
       if (req.url === '/v3/account') {
         if (req.headers['api-key'] === 'mauvaise-cle') { res.statusCode = 401; return res.end('{"code":"unauthorized","message":"Key not found"}') }
@@ -65,6 +87,36 @@ export async function startMock(port) {
       res.end('{"messageId":"test"}')
     })
   })
+  // Anthropic (assistant de rédaction) : fiche d'un modèle, et une réponse dans la forme demandée (sortie structurée).
+  // Le texte rendu dépend de ce que la forme demande : `alt`, `description`, ou `items` (traduction). Des mots du
+  // contenu envoyé changent la réponse : REFUS (le modèle décline), TROP-LONG (réponse coupée), PANNE (service saturé).
+  function anthropic(req, res, body) {
+    const fail = (status, type, message) => { res.statusCode = status; return res.end(JSON.stringify({ type: 'error', error: { type, message } })) }
+    // La clé arrive dans l'en-tête `x-api-key` ou `Authorization`, selon la version du SDK.
+    if ([req.headers['x-api-key'], req.headers.authorization].some(v => v?.includes('sk-ant-mauvaise'))) return fail(401, 'authentication_error', 'invalid x-api-key')
+    const model = /^\/anthropic\/v1\/models\/([^/?]+)/.exec(req.url)?.[1]
+    if (req.method === 'GET' && model) {
+      if (model === 'claude-inconnu-9') return fail(404, 'not_found_error', `model: ${model}`)
+      return res.end(JSON.stringify({ type: 'model', id: model, display_name: model === 'claude-opus-5-5' ? 'Claude Opus 5.5' : model, created_at: '2026-09-01T00:00:00Z' }))
+    }
+    if (req.method !== 'POST' || !req.url.startsWith('/anthropic/v1/messages')) return fail(404, 'not_found_error', 'Not found')
+    const sent = JSON.stringify(body?.messages ?? '')
+    if (sent.includes('PANNE')) return fail(529, 'overloaded_error', 'Overloaded')
+    const message = (text, stop = 'end_turn') => res.end(JSON.stringify({ id: `msg_${calls.length}`, type: 'message', role: 'assistant', model: body.model, content: text === null ? [] : [{ type: 'text', text }], stop_reason: stop, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 20 } }))
+    if (sent.includes('REFUS')) return message(null, 'refusal')
+    const wanted = Object.keys(body?.output_config?.format?.schema?.properties ?? {})
+    if (sent.includes('TROP-LONG')) return message('{"items":[{"key":"title","te', 'max_tokens')
+    if (wanted.includes('alt')) return message(JSON.stringify({ alt: '« Trois avocats\nautour d\'une table de réunion »' }))
+    if (wanted.includes('description')) return message(JSON.stringify({ description: '  Le cabinet conseille les entreprises\nà chaque étape de leur développement.  ' }))
+    if (wanted.includes('items')) {
+      const user = body.messages.at(-1).content
+      const items = JSON.parse(typeof user === 'string' ? user : user.find(b => b.type === 'text').text)
+      // « [en] » devant chaque texte (après la balise ouvrante pour du HTML) ; un texte marqué n'est pas rendu ; une clé étrangère est ajoutée.
+      const translated = items.filter(i => !i.text.includes('NON-RENDU')).map(i => ({ key: i.key, text: i.html ? i.text.replace(/>([^<]+)</g, '>[en] $1<') : `[en] ${i.text}` }))
+      return message(JSON.stringify({ items: [...translated, { key: 'email', text: 'pirate@example.com' }] }))
+    }
+    return fail(400, 'invalid_request_error', 'output_config.format: unexpected schema')
+  }
   // Stripe : les deux appels du module (créer une session, vérifier la clé) et la page de paiement où le site redirige.
   let sessions = 0
   function stripe(req, res, body) {
@@ -76,6 +128,18 @@ export async function startMock(port) {
     if (req.method === 'POST' && req.url === '/stripe/v1/checkout/sessions') {
       const id = `cs_test_session${String(++sessions).padStart(4, '0')}`
       return res.end(JSON.stringify({ id, object: 'checkout.session', url: `http://localhost:${port}/stripe/checkout/${id}`, amount_total: Number(body['line_items[0][price_data][unit_amount]']) * Number(body['line_items[0][quantity]']) }))
+    }
+    // Facture d'un paiement : son PDF. « in_sans_pdf » n'en a pas encore.
+    const invoice = /^\/stripe\/v1\/invoices\/(in_[A-Za-z0-9_]+)$/.exec(req.url)?.[1]
+    if (req.method === 'GET' && invoice) {
+      if (key === 'rk_test_sans-factures') { res.statusCode = 403; return res.end('{"error":{"type":"invalid_request_error","message":"The provided key does not have the required permissions for this endpoint"}}') }
+      return res.end(JSON.stringify({ id: invoice, object: 'invoice', invoice_pdf: invoice === 'in_sans_pdf' ? null : `http://localhost:${port}/stripe/pdf/${invoice}.pdf`, hosted_invoice_url: null }))
+    }
+    // Résiliation d'un abonnement à la fin de la période payée.
+    const subscription = /^\/stripe\/v1\/subscriptions\/(sub_[A-Za-z0-9_]+)$/.exec(req.url)?.[1]
+    if (req.method === 'POST' && subscription) {
+      if (key === 'rk_test_sans-factures') { res.statusCode = 403; return res.end('{"error":{"type":"invalid_request_error","message":"The provided key does not have the required permissions for this endpoint"}}') }
+      return res.end(JSON.stringify({ id: subscription, object: 'subscription', status: 'active', cancel_at_period_end: body.cancel_at_period_end === 'true', items: { data: [{ current_period_end: 1_900_000_000 }] } }))
     }
     res.statusCode = 404
     res.end('{"error":{"message":"Unrecognized request URL"}}')

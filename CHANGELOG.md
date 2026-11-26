@@ -13,6 +13,108 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Tableau de bord.** Le back-office s'ouvre sur un écran d'accueil au lieu du premier contenu du menu : ce qui attend
+  la personne (demandes de publication à valider, messages non lus, publications programmées en échec, adresses
+  introuvables de la semaine, modules à régler), les contenus en attente de publication, ceux modifiés récemment, un
+  bouton « Créer », quelques chiffres des modules actifs (pages vues, messages, paiements, inscrits à la lettre) et,
+  pour l'administrateur, l'état du site (disponibilité, sauvegardes, envoi d'e-mails). Chacun n'y voit que ce à quoi il
+  a droit. Entrée « Tableau de bord » en tête du menu.
+- **Santé du site.** Nouvel écran (menu Outils) qui examine les contenus en ligne : liens cassés (contenu supprimé ou
+  retiré du site, page du site ou d'un autre site qui ne répond plus), images utilisées sans texte alternatif, images
+  de plus de 1,5 Mo, fichiers de la médiathèque que rien n'utilise, et un résumé du référencement. Les liens sont
+  vérifiés un à un après l'affichage ; chaque problème nomme le contenu et le champ où le corriger.
+- **Données structurées (JSON-LD).** Nouvelle option `structuredData` d'un contenu, avec `sd.article()`, `sd.faq()` et
+  `sd.organization()` (importés de `backoffice-core/config`) : on désigne les champs, `useCmsSeo(entry)` place les
+  blocs dans la page. L'onglet Référencement en montre l'aperçu pendant la saisie. Les blocs sont aussi dans
+  `entry.structuredData`. Voir le README du site.
+- **Fil d'Ariane pour les moteurs de recherche.** `useCmsSeo(entry)` ajoute un `BreadcrumbList` aux pages qui ont une
+  page parente : pour `/services/droit-des-affaires`, les pages uniques d'adresse `/` et `/services` si elles sont en
+  ligne. Rien à déclarer ; `breadcrumb` règle le nom d'une page dans le fil, ou la retire (`false`).
+- **Recherche sur le site.** `useCmsSearch(q)` et la route `/api/search` cherchent dans les pages publiées, sans tenir
+  compte des majuscules ni des accents, et renvoient titre, adresse et extrait avec les mots trouvés à mettre en
+  évidence. `search: false` retire un contenu de la recherche.
+- **Module Lettre d'information** (`newsletter()`, ou à activer dans l'écran Modules) : inscription confirmée par
+  e-mail, écran « Lettre d'information » (inscrits, en attente, désinscrits, export CSV avec le lien de désinscription
+  de chacun), report des inscrits dans une liste Brevo ou une audience Resend, pages de confirmation et de
+  désinscription aux couleurs du site, déclencheurs de workflow. Côté page : `useCmsNewsletter()`.
+
+- **Typographie.** L'écran Apparence règle les polices du site : police du texte et des titres parmi une vingtaine de
+  polices libres servies par le site lui-même (aucune requête vers un service tiers), polices du système, ou polices
+  envoyées (WOFF2, WOFF, TTF, OTF) ; échelle de taille des titres ; réglages fins par niveau (texte courant, H1 à H4 :
+  police, graisse, taille, interligne, espacement). Aperçu en direct. Sans réglage, le site garde ses polices.
+- **Flux RSS.** `feed: true` sur une collection publie ses derniers contenus à `/feeds/<identifiant>.xml` (une adresse
+  par langue), avec résumé, image et, au choix, texte entier. `useCmsFeed('<identifiant>')` l'annonce dans la page.
+- **`/llms.txt`.** Le site sert la liste de ses pages publiées et de leur résumé, en Markdown, à l'intention des
+  assistants. Nouveau réglage `site.description` (la phrase d'introduction) ; `site.llms: false` retire le fichier.
+
+- **Module Prise de rendez-vous** (`appointments()`, ou à activer dans l'écran Modules) : le visiteur choisit une
+  prestation et un créneau libre ; confirmation et rappel par e-mail, lien pour ajouter le rendez-vous à son agenda ou
+  l'annuler, acompte par Stripe en option. Nouvel écran « Rendez-vous » : agenda jour par jour, saisie d'un
+  rendez-vous pris par téléphone, annulation avec un mot d'explication, export CSV, agenda à abonner, et réglages
+  (prestations, horaires, délais, fermetures). Déclencheurs de workflow « rendez-vous pris » et « annulé ». Côté
+  page : `useCmsAppointments()`. Voir le README du site.
+- **Stripe : abonnements, codes promo, factures, stock.** Quatre réglages de `stripe({ … })` : `recurring` sur une
+  collection (abonnement prélevé chaque semaine, mois ou année ; abonnements listés dans « Paiements », résiliation à
+  l'échéance par l'administrateur, trois déclencheurs de workflow), `promoCodes` (champ « Code promo », remise
+  relevée), `invoices` (facture PDF de chaque achat, ouverte depuis le détail d'un paiement) et `stock` sur une
+  collection (achat refusé au-delà du stock, stock diminué à chaque paiement, déclencheur « Un produit est épuisé »).
+  Voir le README du site.
+- **Stripe sans collection vendable.** `stripe()` peut être déclaré sans `collections` : il ne sert alors qu'aux
+  acomptes des rendez-vous.
+- **Module Avis Google** (`googleBusiness()`, ou à activer dans l'écran Modules) : la note, cinq avis et les horaires
+  de l'établissement sur Google Maps. `<CmsGoogleReviews />` les affiche sur le site dans le respect des règles de
+  Google ; `useCmsGoogleBusiness()` donne la fiche pour une mise en page à soi. Écran « Avis Google » (lien pour
+  répondre, lien « Laisser un avis »). Les horaires de la fiche complètent `sd.organization()` quand le site n'en
+  déclare pas. Rien n'est enregistré ; voir le README du site pour la clé d'API et son coût.
+- **Module Assistant de rédaction** (`assistant()`, ou à activer dans l'écran Modules) : par l'API de Claude, propose
+  le texte alternatif d'une image (fiche d'un fichier, « Santé du site »), la description d'une page (onglet
+  Référencement) et la traduction d'un contenu vers une autre langue du site. Rien n'est gardé sans relecture. Les
+  images et textes concernés sont envoyés à Anthropic ; l'usage est facturé au compte de la clé. Voir le README du site.
+- **Module Suivi des erreurs et surveillance** (`monitoring()`, ou à activer dans l'écran Modules) : nouvel écran
+  « Surveillance » (administrateurs). Les erreurs du serveur et du navigateur des visiteurs y sont regroupées, sans
+  donnée personnelle, et peuvent être transmises à Sentry. Le site vérifie toutes les cinq minutes qu'il répond : un
+  e-mail part au deuxième échec de suite, un autre au retour, et à la première apparition d'une erreur. Une « adresse
+  de battement » prévient un service extérieur, seul moyen d'être alerté d'une panne complète de l'hébergement.
+  Trois déclencheurs de workflow. Voir le README du site.
+- **Module Google Search Console** (`searchConsole()`, ou à activer dans l'écran Modules) : nouvel écran « Recherche
+  Google » (clics, affichages, taux de clic, position moyenne, recherches tapées, pages montrées par Google, sur 7, 28
+  ou 90 jours), colonnes « Clics » et « Position » dans « Pages et titres », clics depuis Google sur le tableau de
+  bord. Lecture seule ; la mise en route côté Google (propriété validée, client OAuth, jeton) est décrite dans le
+  README du site.
+
+### Correctifs
+
+- Recherche du site et aperçu des données structurées : le texte tiré d'un contenu mis en forme ne garde plus
+  d'espace avant la ponctuation qui suit un mot en gras ou un lien.
+
+### À faire dans votre site
+
+- **`/llms.txt`** est servi d'office : il ne liste que des pages déjà publiques (celles du plan du site). Pour ne pas
+  le servir : `llms: false` dans `site`. Un fichier `public/llms.txt` existant garde la main.
+- **Typographie** : rien à faire. À savoir si un administrateur règle la taille ou la graisse des titres : ces réglages
+  l'emportent sur les classes du gabarit ; la classe `cms-type-off` en exempte un titre. Avec un en-tête
+  `Content-Security-Policy`, autoriser `font-src 'self'`.
+- Base de données : quatre migrations (0016, inscrits à la lettre d'information ; 0017, rendez-vous ; 0018, abonnements
+  et factures Stripe ; 0019, erreurs et vérifications du site). En local, relancer `pnpm db:migrate`.
+- Dépendances : le core embarque maintenant `@anthropic-ai/sdk` et `zod` (module Assistant de rédaction). Rien à
+  installer dans le site ; ils ne sont chargés que par les routes de l'assistant.
+- **Stripe, si vous déclarez un abonnement** (`recurring`) : cochez quatre événements de plus sur le webhook
+  (`invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`, `customer.subscription.deleted`) ; sans
+  eux, la souscription est enregistrée mais ni les échéances suivantes ni la résiliation. Pour le bouton « Facture
+  PDF » et la résiliation depuis le back-office, la clé limitée demande « Lecture » sur « Invoices » et « Écriture »
+  sur « Subscriptions ». Rien à faire pour un site qui ne vend qu'en une fois.
+- **Fil d'Ariane** : une page qui appelle `useCmsSeo(entry)` et dont une page parente existe dans le back-office reçoit
+  maintenant un bloc `BreadcrumbList`, sans rien changer au code. Le nom des pages parentes est leur `label` dans
+  `cms.config.ts` : s'il n'est pas fait pour être lu par des visiteurs (« Page des services »), ou si le site a
+  plusieurs langues, réglez `breadcrumb` sur ces pages uniques. Si le site écrit déjà son propre fil d'Ariane en
+  JSON-LD, retirez l'un des deux (`breadcrumb: false`, ou `useCmsSeo(entry, { structuredData: false })`).
+- Identifiants réservés : une collection ou une page unique ne peut plus s'appeler `health`, `newsletter`,
+  `appointments` ni `monitoring` (ce sont maintenant des écrans du back-office). Si c'est le cas, renommez-la avec `renamedFrom`.
+- Si une page ou un test du site comptait sur la redirection de `/admin` vers le premier contenu : `/admin` est
+  maintenant le tableau de bord.
+
 ## 0.13.0 — 2026-11-25
 
 ### Nouveautés

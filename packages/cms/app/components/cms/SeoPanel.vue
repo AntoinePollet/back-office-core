@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { CircleCheck, Info, Lightbulb, Monitor, Smartphone, TriangleAlert } from '@lucide/vue'
+import { CircleCheck, Info, Lightbulb, Monitor, Smartphone, TriangleAlert, Sparkles } from '@lucide/vue'
 import { slugify } from '../../../shared/content'
 import { cmsImageUrl } from '../../../shared/media'
+import { breadcrumbBlock, breadcrumbName, breadcrumbTrail, contentBlocks, specsOf, structuredDataJson, summarizeBlock } from '../../../shared/structured-data'
 import { SEO_LIMITS, seoOutlineTips, seoPath, seoPoints, seoTips, seoView, textWidth, truncateToChars, truncateToWidth, type SeoOther, type SeoSite } from '../../../shared/seo'
 
 /**
@@ -26,6 +27,13 @@ const type = route.params.type as string
 const site = useState<{ site: SeoSite } | null>('cms-schema').value!.site
 const { items: mediaItems, load: loadMedia } = useCmsMedia()
 const state = computed(() => props.doc.locales[props.loc]!)
+
+// Module « Assistant de rédaction » : description proposée d'après le contenu du formulaire (enregistré ou non).
+const assistant = useCmsAssistant()
+async function suggestDescription() {
+  const proposed = await assistant.description(type, props.loc, { ...props.doc.shared, ...state.value.values })
+  if (proposed) state.value.values.seo.description = proposed
+}
 const device = ref<'desktop' | 'mobile'>('desktop')
 
 // Les autres pages du site (pour les doublons) et la médiathèque (tailles et textes alternatifs), à la première ouverture.
@@ -99,6 +107,40 @@ const titleHelp = computed(() => {
     : 'Le titre affiché dans Google et dans l\'onglet du navigateur.'
 })
 
+// ───── Données structurées (JSON-LD) ─────
+// Les mêmes blocs que ceux que le site recevra une fois le contenu publié, calculés ici avec la saisie en cours.
+// Le fil d'Ariane suppose les pages parentes en ligne ; sur l'accueil, l'organisme déclaré ailleurs est seulement cité.
+const cmsSchema = useState<{ singletons?: Record<string, any> } | null>('cms-schema')
+const structured = computed(() => {
+  if (!props.def.path) return []
+  const base = origin.value
+  const merged = { ...props.doc.shared, ...state.value.values }
+  const url = base + path.value
+  const ctx = {
+    site: site as { name: string; logo?: string }, base, locale: props.loc,
+    imageUrl: (value: unknown) => {
+      const first = Array.isArray(value) ? value[0] : value
+      const id = first && typeof first === 'object' ? (first as { media?: unknown }).media : first
+      const file = typeof id === 'string' ? media(id) : undefined
+      return file?.mime.startsWith('image/') ? base + file.url : null
+    },
+  }
+  const blocks = contentBlocks(props.def as never, merged, { url, title: view.value.baseTitle, description: view.value.description, image: view.value.imageId }, ctx)
+  const own = (props.def.path as string).replace('[slug]', slug.value)
+  const crumbs = breadcrumbBlock(breadcrumbTrail({
+    def: props.def, path: own, url, locale: props.loc, defaultLocale: props.defaultLocale, base,
+    name: props.def.kind === 'collection' ? String(merged[props.def.titleField] ?? '') : breadcrumbName(props.def as never, props.loc, props.defaultLocale),
+    singletons: cmsSchema.value?.singletons ?? {}, isLive: () => true,
+  }))
+  return crumbs ? [...blocks, crumbs] : blocks
+})
+const structuredSummaries = computed(() => structured.value.map(summarizeBlock))
+const structuredCode = computed(() => { const json = structuredDataJson(structured.value); return json ? JSON.stringify(JSON.parse(json), null, 2) : '' })
+/** Sur l'accueil, l'organisme déclaré sur une autre page unique est ajouté par le serveur. */
+const organizationFrom = computed(() => (props.def.path === '/'
+  ? Object.entries(cmsSchema.value?.singletons ?? {}).filter(([key, d]) => key !== type && specsOf(d).some(s => s.kind === 'organization')).map(([, d]) => d.label as string)
+  : []))
+
 // ───── Aperçu de la carte de partage ─────
 const shareImage = computed(() => {
   const file = view.value.imageId ? media(view.value.imageId) : undefined
@@ -149,6 +191,10 @@ const shareImage = computed(() => {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">Description</legend>
           <textarea v-model="state.values.seo.description" class="textarea w-full" rows="3" data-seo-input="description" />
+          <!-- Module « Assistant de rédaction » : une proposition tirée du contenu de la page, à relire avant d'enregistrer. -->
+          <button v-if="assistant.active.value" type="button" class="btn btn-xs self-start mt-1" :disabled="!!assistant.busy.value" data-seo-suggest @click="suggestDescription">
+            <span v-if="assistant.busy.value" class="loading loading-spinner loading-xs" /><Sparkles v-else :size="13" />{{ state.values.seo.description ? 'Proposer une autre description' : 'Proposer une description' }}
+          </button>
           <p class="label flex justify-between gap-2 whitespace-normal">
             <span>Une ou deux phrases qui résument la page et donnent envie de cliquer.</span>
             <span class="shrink-0" :class="{ 'text-warning': view.description.length > SEO_LIMITS.descriptionMaxChars }">{{ view.description.length }} / {{ SEO_LIMITS.descriptionMaxChars }}</span>
@@ -185,6 +231,28 @@ const shareImage = computed(() => {
           </ol>
           <!-- La page du site, invisible, à la largeur d'un ordinateur : seuls ses titres sont lus. -->
           <iframe v-if="probeSrc" :key="probeKey" ref="probe" :src="probeSrc" title="Lecture des titres de la page" aria-hidden="true" tabindex="-1" class="cms-outline-probe" data-seo-probe />
+        </section>
+
+        <!-- Données structurées -->
+        <section v-if="structuredSummaries.length || organizationFrom.length" class="space-y-2 pt-2 border-t border-base-300" data-seo-structured>
+          <h3 class="text-sm font-semibold pt-3">Données structurées</h3>
+          <p class="text-xs text-base-content/60">
+            Ce que la page dit d'elle-même aux moteurs de recherche, dans un format qu'ils lisent sans deviner. Calculé à partir de votre saisie, sans rien à remplir de plus.
+          </p>
+          <ul class="rounded-box border border-base-300 bg-base-100 divide-y divide-base-300 text-sm">
+            <li v-for="block in structuredSummaries" :key="block.type" class="p-3 space-y-1" :data-seo-block="block.type">
+              <div class="flex items-center gap-2"><span class="font-medium">{{ block.label }}</span><span class="badge badge-sm badge-ghost font-mono">{{ block.type }}</span></div>
+              <div v-for="line in block.lines" :key="line" class="text-base-content/70 break-words">{{ line }}</div>
+              <div v-for="warning in block.warnings" :key="warning" class="text-warning flex gap-1.5" data-seo-block-warning><TriangleAlert :size="14" class="shrink-0 mt-0.5" />{{ warning }}</div>
+            </li>
+            <li v-for="label in organizationFrom" :key="label" class="p-3 text-base-content/70" data-seo-block="organization-from">
+              Les coordonnées de l'organisme, saisies dans « {{ label }} », sont ajoutées à cette page.
+            </li>
+          </ul>
+          <details v-if="structuredCode" class="text-xs">
+            <summary class="cursor-pointer text-base-content/60">Voir le code transmis</summary>
+            <pre class="mt-2 p-3 rounded-box bg-base-200 overflow-x-auto" data-seo-structured-code>{{ structuredCode }}</pre>
+          </details>
         </section>
 
         <!-- Carte de partage -->

@@ -2,6 +2,8 @@
 // Page d'exemple du module « Stripe » : la collection « products » est déclarée vendable dans cms.config.ts.
 // Le bouton n'envoie que le produit et la quantité : le prix payé est celui du back-office.
 const { data: products } = await useCollection('products')
+// Offres d'abonnement (collection déclarée `recurring: 'month'`) : le même bouton, Stripe prélève chaque mois.
+const { data: plans } = await useCollection('plans')
 const { checkout, pending, error } = useCmsCheckout()
 const quantities = reactive<Record<string, number>>({})
 watchEffect(() => { for (const p of products.value ?? []) quantities[p.id] ??= 1 })
@@ -25,7 +27,8 @@ useHead({ title: 'Boutique — Cabinet Durand' })
           <h2 class="card-title">{{ p.title }}</h2>
           <p v-if="p.description" class="text-sm text-base-content/70">{{ p.description }}</p>
           <p v-if="p.price !== null" class="text-xl font-semibold">{{ euros(p.price) }}</p>
-          <div v-if="p.price !== null && p.onSale" class="card-actions items-center">
+          <p v-if="p.stock === 0" class="text-sm text-error" data-product-out>Épuisé.</p>
+          <div v-else-if="p.price !== null && p.onSale" class="card-actions items-center">
             <label class="text-sm">Quantité
               <select v-model.number="quantities[p.id]" class="select select-sm w-20 ml-1" :aria-label="`Quantité : ${p.title}`">
                 <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
@@ -39,5 +42,19 @@ useHead({ title: 'Boutique — Cabinet Durand' })
         </div>
       </article>
     </div>
+
+    <template v-if="plans?.length">
+      <h2 class="text-2xl font-bold pt-4">Abonnements</h2>
+      <div class="grid sm:grid-cols-2 gap-4 items-start">
+        <article v-for="plan in plans" :key="plan.id" class="card bg-base-100 border border-base-300" :data-plan="plan.title">
+          <div class="card-body">
+            <h3 class="card-title">{{ plan.title }}</h3>
+            <p v-if="plan.description" class="text-sm text-base-content/70">{{ plan.description }}</p>
+            <p v-if="plan.price !== null" class="text-xl font-semibold">{{ euros(plan.price) }} <span class="text-sm font-normal text-base-content/60">par mois</span></p>
+            <button v-if="plan.price !== null" class="btn btn-primary" :disabled="pending" @click="checkout('plans', plan.id)">{{ pending ? 'Redirection…' : 'S\'abonner' }}</button>
+          </div>
+        </article>
+      </div>
+    </template>
   </main>
 </template>

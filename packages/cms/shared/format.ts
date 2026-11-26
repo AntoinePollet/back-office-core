@@ -8,7 +8,11 @@
 
 import { type AccessRules, CMS_ACTIONS, DEFAULT_ACCESS } from './access'
 import type { CmsModuleRef } from './modules'
+import { type FeedOptions, feedErrors } from './feeds'
 import { isValidTimeZone } from './schedule'
+import { type BreadcrumbName, type StructuredDataSpec, structuredDataErrors } from './structured-data'
+
+export { sd, WEEKDAYS } from './structured-data'
 
 export const FORMAT_VERSION = 1
 
@@ -217,6 +221,28 @@ type SingletonOpts<F> = {
    * `useCmsSeo(entry)` les applique. L'écran « Référencement » du back-office liste toutes les pages concernées.
    */
   seo?: boolean
+  /**
+   * Le contenu apparaît-il dans la recherche du site (`useCmsSearch`, `/api/search`) ? Défaut : oui s'il a une page
+   * (`path`). `false` l'en retire (mentions légales, page de remerciement…). Une page masquée des moteurs de
+   * recherche ou non publiée n'y figure jamais.
+   */
+  search?: boolean
+  /**
+   * Données structurées (JSON-LD) de la page, pour les moteurs de recherche : quels champs alimentent quel bloc.
+   * `sd.article({ image: 'cover', datePublished: 'date' })`, `sd.faq({ items: 'faq', question: 'question', answer: 'answer' })`,
+   * `sd.organization({ type: 'LocalBusiness', telephone: 'phone', … })`, ou une liste de blocs. Un article ou une FAQ
+   * exigent `path` ; l'organisme se déclare sur la page unique qui porte les coordonnées, avec ou sans adresse.
+   * Le site les reçoit dans `entry.structuredData` et `useCmsSeo(entry)` les place dans la page ; l'onglet
+   * Référencement en montre l'aperçu. Voir `shared/structured-data.ts`.
+   */
+  structuredData?: StructuredDataSpec | readonly StructuredDataSpec[]
+  /**
+   * Nom de la page dans le fil d'Ariane transmis aux moteurs de recherche (« Accueil › Services › Droit des affaires »),
+   * déduit des adresses : un texte, ou un texte par langue (`{ fr: 'Services', en: 'Services' }`). Défaut : `label`
+   * pour une page unique, le titre du contenu pour un élément de collection. `false` : cette page n'est pas dans les
+   * fils d'Ariane, et n'en a pas elle-même.
+   */
+  breadcrumb?: BreadcrumbName | false
   /** Brouillon et publication séparés. Défaut : true. */
   drafts?: boolean
   /** Réservé aux administrateurs : les autres rôles ne voient ni ne modifient ce contenu. Équivaut à retirer tous les droits. */
@@ -247,6 +273,13 @@ type SingletonOpts<F> = {
 type CollectionOpts<F> = SingletonOpts<F> & {
   /** Nom d'un élément, au singulier. Réservé à de futurs libellés ; l'interface n'en dépend pas encore. */
   labelSingular?: string
+  /**
+   * Flux RSS des derniers contenus publiés de la collection, à l'adresse `/feeds/<identifiant>.xml` (et
+   * `/feeds/<langue>/<identifiant>.xml` pour les autres langues). `true`, ou des réglages : champs du résumé, de la
+   * date et de l'image, contenu entier (`content`), titre, nombre d'éléments. Exige `path` avec [slug]. Dans une page,
+   * `useCmsFeed('<identifiant>')` annonce le flux aux navigateurs et aux lecteurs. Voir `shared/feeds.ts`.
+   */
+  feed?: boolean | FeedOptions
   /** Champ texte qui nomme un élément dans les listes et la recherche. */
   titleField: keyof F & string
   /** Champ texte dont on tire l'adresse. Défaut : `titleField`. Utilisé seulement si `path` contient [slug]. */
@@ -273,6 +306,16 @@ export function collection<const F extends Fields>(options: CollectionOpts<F>) {
 
 type Site = {
   name: string
+  /**
+   * Ce qu'est le site, en une phrase : « Cabinet d'avocats en droit des affaires, à Lyon ». Sert d'introduction au
+   * fichier `/llms.txt` et de description aux flux RSS. Un texte, ou un texte par langue.
+   */
+  description?: string | Record<string, string>
+  /**
+   * Le fichier `/llms.txt` (liste des pages publiées et de leur résumé, à l'intention des assistants) est servi par
+   * défaut ; `false` le retire. Un fichier `public/llms.txt` écrit à la main dans le projet prend le dessus.
+   */
+  llms?: boolean
   /** Adresse du site en production, pour les aperçus et le sitemap. */
   url?: string
   /** Codes de langue : 'fr', 'en', 'pt-BR'. */
@@ -339,7 +382,7 @@ const LOCALE = /^[a-z]{2}(-[A-Z]{2})?$/
 export const RESERVED = ['id', 'slug', 'status', 'locale', 'seo', 'position', 'createdAt', 'updatedAt', 'publishedAt']
 
 /** Identifiants de collection réservés : ce sont des pages du back-office. */
-export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups', 'scheduled', 'seo']
+export const RESERVED_TYPES = ['media', 'users', 'workflows', 'appearance', 'account', 'invite', 'login', 'setup', 'new', 'migrations', 'roles', 'reviews', 'modules', 'forms', 'payments', 'audience', 'trash', 'activity', 'backups', 'scheduled', 'seo', 'health', 'newsletter', 'appointments', 'monitoring']
 
 export function validate(config: Config): string[] {
   const errors: string[] = []
@@ -362,6 +405,8 @@ export function validate(config: Config): string[] {
     if (!site.attribution || typeof site.attribution !== 'object' || (days !== undefined && (!Number.isInteger(days) || (days as number) < 1 || (days as number) > 395)))
       errors.push('site.attribution : attendu false, ou { rememberDays: n } avec n entre 1 et 395 jours')
   }
+  if (site.description !== undefined && !(typeof site.description === 'string' ? site.description.trim() : site.description && typeof site.description === 'object' && Object.entries(site.description).every(([l, v]) => site.locales.includes(l) && typeof v === 'string' && !!v.trim())))
+    errors.push('site.description : un texte est attendu, ou un texte par langue ({ fr: \'…\', en: \'…\' })')
   if (site.logo !== undefined && !/^(\/[^/]|https?:\/\/)\S*$/.test(String(site.logo))) errors.push('site.logo : attendu un fichier du dossier public (\'/logo.svg\') ou une adresse complète (https://…)')
 
   const isText = (fields: Fields, key: string) => fields[key]?.type === 'text'
@@ -464,6 +509,7 @@ export function validate(config: Config): string[] {
     seen.add(key)
     if (def.path && !def.path.startsWith('/')) errors.push(`${key}.path doit commencer par /`)
     if (def.seo && !def.path) errors.push(`${key} : seo exige path`)
+    if (def.search && !def.path) errors.push(`${key} : search exige path (la recherche du site mène à des pages)`)
     for (const [action, roles] of Object.entries(def.access ?? {})) {
       if (![...CMS_ACTIONS, 'own'].includes(action)) errors.push(`${key}.access : droit inconnu « ${action} » (edit, publish, delete ou own)`)
       else if (!Array.isArray(roles) || !roles.every(r => r === 'editor' || r === 'writer')) errors.push(`${key}.access.${action} : liste de rôles attendue ('editor', 'writer')`)
@@ -476,6 +522,8 @@ export function validate(config: Config): string[] {
     if (def.renamedFrom && !KEY.test(def.renamedFrom)) errors.push(`${key} : renamedFrom invalide`)
     checkRename(key, key, def.renamedFrom, { ...singletons, ...collections })
     checkFields(key, def.fields, false)
+    errors.push(...structuredDataErrors(key, def as never, site.locales))
+    errors.push(...feedErrors(key, def as never, site.locales))
   }
 
   for (const [key, def] of Object.entries(singletons)) {
@@ -618,6 +666,12 @@ type System = {
   /** La même page dans chaque langue où elle est publiée, langue courante comprise. Sert aux balises hreflang. */
   alternates: { locale: string; path: string; url: string }[]
   status: 'draft' | 'published' | 'changed'
+  /**
+   * Données structurées (JSON-LD) de la page : les blocs déclarés par `structuredData` dans cms.config.ts, l'organisme
+   * sur la page d'accueil, et le fil d'Ariane. Présent quand on lit un seul contenu (`useEntry`, `useSingleton`), pas
+   * dans les listes ni en aperçu. `useCmsSeo(entry)` les place dans la page.
+   */
+  structuredData?: Record<string, unknown>[]
   createdAt: string
   updatedAt: string
   publishedAt: string | null

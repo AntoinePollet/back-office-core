@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { cleanOrigin, originToMetadata } from '../../../shared/attribution'
 import {
-  type CheckoutMetadata, checkQuantity, checkSellable, checkoutParams, encodeForm, safeReturnPath, sellableCollections, STRIPE_MAX_AMOUNT, withSessionId,
+  type CheckoutMetadata, checkQuantity, checkSellable, checkStock, checkoutParams, encodeForm, safeReturnPath, sellableCollections, STRIPE_MAX_AMOUNT, withSessionId,
 } from '../../../shared/stripe'
 import type { AnyField } from '../../../shared/format'
 import { stripeOptions, stripeRequest } from '../../cms-modules/stripe'
@@ -48,6 +48,9 @@ export default defineEventHandler(async (event) => {
 
   const sale = checkSellable(sell, product, options.currency)
   if (!sale.ok) throw createError({ statusCode: 422, message: sale.reason })
+  // Stock suivi (champ `stock` de la collection) : pas de paiement pour ce qui n'est plus disponible.
+  const short = checkStock(sell, product, quantity)
+  if (short) throw createError({ statusCode: 409, message: short })
   if (sale.unitAmount * quantity > STRIPE_MAX_AMOUNT) throw createError({ statusCode: 422, message: 'Montant trop élevé pour un paiement en ligne.' })
 
   const settings = await moduleSettings(event, 'stripe')
@@ -61,6 +64,7 @@ export default defineEventHandler(async (event) => {
   const imageUrl = mediaUrl ? new URL(mediaUrl, cmsConfig.site.url ?? origin).href : null
   const metadata: CheckoutMetadata = {
     cms_collection: type, cms_entry: id, cms_title: name.slice(0, 450), cms_quantity: String(quantity), cms_unit_amount: String(sale.unitAmount), cms_locale: locale,
+    ...(sell.recurring ? { cms_interval: sell.recurring } : {}),
     // Provenance de l'acheteur : contrôlée ici, rendue par Stripe avec la session payée.
     ...originToMetadata(cleanOrigin(body?.origin)),
   }
@@ -75,6 +79,9 @@ export default defineEventHandler(async (event) => {
     locale,
     metadata,
     shippingCountries: options.shipping?.countries ?? null,
+    recurring: sell.recurring ?? null,
+    promoCodes: options.promoCodes,
+    invoices: options.invoices,
   })
 
   await hitRateLimit(event, [limit.key], WINDOW_MS)

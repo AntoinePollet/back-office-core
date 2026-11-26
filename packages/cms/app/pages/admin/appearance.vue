@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { type CustomFont, DEFAULT_TYPOGRAPHY, type Typography, isDefaultTypography, typographyCss } from '../../../shared/fonts'
 import { type CmsTheme, DEFAULT_ADMIN_COLOR, DEFAULT_THEME, isDarkTheme, themeVars } from '../../../shared/theme'
 
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-admin'] })
@@ -23,10 +24,17 @@ async function setAdminColor(color: string | null) {
     toast.error(cmsErrorMessage(e))
   }
 }
-const theme = reactive<CmsTheme>({ ...DEFAULT_THEME, ...saved.value })
+// Typographie : toujours présente dans l'écran ; une typographie qui ne règle rien n'est pas enregistrée dans le thème.
+const emptyTypography = (): Typography => ({ ...DEFAULT_TYPOGRAPHY, levels: {} })
+const full = (t: CmsTheme | null): CmsTheme & { typography: Typography } => ({ ...DEFAULT_THEME, ...t, typography: t?.typography ? { ...t.typography, levels: { ...t.typography.levels } } : emptyTypography() })
+const theme = reactive(full(saved.value))
 const saving = ref(false)
-const dirty = computed(() => JSON.stringify(theme) !== JSON.stringify({ ...DEFAULT_THEME, ...saved.value }))
+const dirty = computed(() => JSON.stringify(theme) !== JSON.stringify(full(saved.value)))
 const vars = computed(() => themeVars(theme))
+// Polices envoyées sur ce site (toutes, pas seulement celles dont le thème enregistré se sert).
+const fonts = ref((await cmsApi<{ fonts: CustomFont[] }>('/api/cms/fonts')).fonts)
+// La typographie en cours de réglage, appliquée au seul bloc d'aperçu.
+const previewCss = computed(() => typographyCss(theme.typography, fonts.value, { root: '.cms-admin [data-cms-theme-preview]', text: '.cms-admin [data-cms-theme-preview]' }).css)
 
 const colors: { key: 'primary' | 'secondary' | 'accent' | 'neutral' | 'base'; label: string; help: string; presets: string[] }[] = [
   { key: 'primary', label: 'Couleur principale', help: 'Boutons et liens importants.', presets: ['#4f46e5', '#0f766e', '#b91c1c', '#c2410c', '#1d4ed8'] },
@@ -57,7 +65,7 @@ async function reset() {
   try {
     cmsSiteUpdated(await cmsApi('/api/cms/theme', { method: 'DELETE' }))
     saved.value = null
-    Object.assign(theme, DEFAULT_THEME)
+    Object.assign(theme, full(null))
     toast.success('Apparence d\'origine rétablie')
   }
   catch (e) {
@@ -74,7 +82,7 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div>
         <h1 class="text-2xl font-bold">Apparence</h1>
-        <p class="text-sm text-base-content/60">Couleurs et formes du site. L'aperçu se met à jour en direct ; le site ne change qu'à l'enregistrement.</p>
+        <p class="text-sm text-base-content/60">Couleurs, formes et polices du site. L'aperçu se met à jour en direct ; le site ne change qu'à l'enregistrement.</p>
       </div>
       <div class="ml-auto flex gap-2">
         <button v-if="saved" class="btn btn-sm" :disabled="saving" @click="reset">Rétablir l'origine</button>
@@ -83,6 +91,7 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
     </div>
 
     <div class="grid lg:grid-cols-[21rem_1fr] gap-6 items-start">
+      <div class="space-y-6 min-w-0">
       <div class="card bg-base-100 border border-base-300 p-5 space-y-4">
         <fieldset v-for="c in colors" :key="c.key" class="fieldset">
           <legend class="fieldset-legend">{{ c.label }}</legend>
@@ -122,12 +131,22 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
         </label>
       </div>
 
+      <div class="card bg-base-100 border border-base-300 p-5 space-y-4">
+        <div>
+          <div class="font-semibold">Typographie</div>
+          <p class="text-sm text-base-content/60">Les polices sont servies par le site lui-même : rien n'est demandé à un service extérieur.</p>
+        </div>
+        <CmsTypography v-model="theme.typography" v-model:fonts="fonts" />
+      </div>
+      </div>
+
       <div class="space-y-6 lg:sticky lg:top-20">
       <div class="card border border-base-300 overflow-hidden">
         <div class="px-4 py-2 text-xs text-base-content/50 border-b border-base-300 bg-base-100 flex justify-between">
           <span>Aperçu</span><span>{{ isDarkTheme(theme) ? 'Thème sombre' : 'Thème clair' }}</span>
         </div>
         <!-- Les variables du thème ne s'appliquent qu'à ce bloc : le back-office garde son apparence. -->
+        <component :is="'style'" v-if="previewCss">{{ previewCss }}</component>
         <div data-cms-theme-preview class="bg-base-100 text-base-content p-8 space-y-6" :style="vars">
           <div class="flex flex-wrap items-center gap-4 text-sm">
             <span class="font-bold text-lg">{{ schema.site.name }}</span>
@@ -136,7 +155,7 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
           </div>
           <div class="py-4">
             <span class="badge badge-accent mb-3">Nouveau</span>
-            <h2 class="text-3xl font-bold mb-2">Un titre de page d'accueil</h2>
+            <h1 class="text-3xl font-bold mb-2">Un titre de page d'accueil</h1>
             <p class="opacity-70 mb-4 max-w-md">Un paragraphe d'introduction, pour juger de la lisibilité du texte sur le fond choisi.</p>
             <div class="flex flex-wrap gap-2">
               <button class="btn btn-primary">Bouton principal</button>
@@ -144,6 +163,13 @@ onBeforeRouteLeave(() => !dirty.value || confirm('Le thème modifié n\'est pas 
               <button class="btn btn-outline">Contour</button>
               <a class="link link-primary self-center">Un lien</a>
             </div>
+          </div>
+          <!-- Les niveaux de titre, pour juger de la typographie. -->
+          <div v-if="!isDefaultTypography(theme.typography)" class="space-y-2 max-w-xl" data-cms-type-sample>
+            <h2 class="text-2xl font-semibold">Un titre de section</h2>
+            <p class="opacity-80">Le texte courant d'une page : quelques lignes suffisent pour voir comment la police se lit, avec ses accents (é, à, ç, œ) et ses chiffres (0123456789). <em>Un passage en italique</em> et <strong>un autre en gras</strong>.</p>
+            <h3 class="text-xl font-semibold">Un sous-titre</h3>
+            <h4 class="text-lg font-semibold">Un intertitre</h4>
           </div>
           <div class="grid sm:grid-cols-3 gap-3">
             <div v-for="label in sampleCards" :key="label" class="card card-border bg-base-200 p-4">

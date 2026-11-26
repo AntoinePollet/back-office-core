@@ -113,6 +113,34 @@
       "when": 1795533188778,
       "tag": "0015_foamy_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1795680441292,
+      "tag": "0016_fresh_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1795689427673,
+      "tag": "0017_chilly_bucky",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1795690816425,
+      "tag": "0018_misty_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795691912230,
+      "tag": "0019_modern_psylocke",
+      "breakpoints": true
     }
   ]
 }

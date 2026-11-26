@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ArrowLeftRight, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, Images, Inbox, LayoutList, LogOut, Megaphone, Menu, Palette, Puzzle, ScrollText, SearchCheck, Settings, ShieldCheck, Signpost, Trash2, Users, Workflow } from '@lucide/vue'
+import { Activity, ArrowLeftRight, CalendarCheck, CalendarClock, ChartLine, ClipboardCheck, Construction, CreditCard, DatabaseBackup, ExternalLink, FileSearch, FileText, Folder, HeartPulse, Images, Inbox, LayoutDashboard, LayoutList, LogOut, Megaphone, Menu, Newspaper, Palette, Puzzle, ScrollText, Search, SearchCheck, Settings, ShieldCheck, Signpost, Star, Trash2, Users, Workflow } from '@lucide/vue'
 import configIcons from '#cms-icons'
 import { roleLabel } from '../../shared/access'
 import { type AvailabilityMode, MODE_LABELS } from '../../shared/availability'
@@ -121,6 +121,9 @@ const nav = computed<NavSection[]>(() => {
   const folder = (key: string, label: string, icon: Component, items: (NavItem | false)[], open = false): NavFolder =>
     ({ folder: true, key, label, icon, items: items.filter((i): i is NavItem => !!i), open })
 
+  // L'accueil : ce qui attend la personne, ses contenus récents, l'état du site.
+  sections.push({ nodes: [{ key: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, to: '/admin' }] })
+
   // Demandes de publication et programmations : la section n'apparaît que s'il y en a, pour ne pas encombrer le menu.
   const todo: NavItem[] = []
   if (reviews.value.length) todo.push({ key: 'reviews', label: 'À valider', icon: ClipboardCheck, to: '/admin/reviews', count: reviews.value.length })
@@ -143,12 +146,18 @@ const nav = computed<NavSection[]>(() => {
       // La médiathèque est une page du back-office, pas un contenu du fichier de configuration.
       { key: 'media', label: 'Médiathèque', icon: Images, to: '/admin/media' },
       hasForms.value && { key: 'forms', label: 'Messages reçus', icon: Inbox, to: '/admin/forms', count: unreadMessages.value },
+      // Module « Lettre d'information » : les inscrits, pour l'administrateur et l'éditeur (ce sont des adresses e-mail).
+      hasModule(m => m.id === 'newsletter') && staff && { key: 'newsletter', label: 'Lettre d\'information', icon: Newspaper, to: '/admin/newsletter' },
+      // Module « Prise de rendez-vous » : l'agenda et ses réglages, pour l'administrateur et l'éditeur.
+      hasModule(m => m.id === 'appointments') && staff && { key: 'appointments', label: 'Rendez-vous', icon: CalendarCheck, to: '/admin/appointments' },
       // Mesure d'audience (Cloudflare Web Analytics, Plausible) : pour l'administrateur et l'éditeur.
       hasModule(m => m.category === 'audience') && staff && { key: 'audience', label: 'Audience', icon: ChartLine, to: '/admin/audience' },
       // Module « Stripe » : les paiements, pour l'administrateur et l'éditeur.
       hasModule(m => m.id === 'stripe') && staff && { key: 'payments', label: 'Paiements', icon: CreditCard, to: '/admin/payments' },
       // Module « Google Ads » : dépense des campagnes et contacts qu'elles amènent, pour l'administrateur et l'éditeur.
       hasModule(m => m.id === 'google-ads') && staff && { key: 'google-ads', label: 'Annonces Google', icon: Megaphone, to: '/admin/google-ads' },
+      // Santé du site : liens cassés, images sans texte alternatif… dans les contenus que la personne peut modifier.
+      all.length > 0 && { key: 'health', label: 'Santé du site', icon: HeartPulse, to: '/admin/health' },
       // Corbeille : pour qui peut supprimer quelque chose (il n'y verra que cela). L'administrateur la trouve dans « Administration ».
       !isAdmin && canOpenTrash(user.value) && { key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' },
     ] as (NavItem | false)[]).filter((i): i is NavItem => !!i),
@@ -158,6 +167,10 @@ const nav = computed<NavSection[]>(() => {
     folder('seo', 'Référencement', SearchCheck, [
       // Vue d'ensemble des pages, pour qui peut modifier au moins un contenu qui a l'onglet Référencement.
       all.some(([, def]) => def.seo) && { key: 'seo', label: 'Pages et titres', icon: FileSearch, to: '/admin/seo' },
+      // Module « Search Console » : recherches, clics et position dans Google, pour l'administrateur et l'éditeur.
+      hasModule(m => m.id === 'search-console') && staff && { key: 'search-console', label: 'Recherche Google', icon: Search, to: '/admin/search-console' },
+      // Module « Avis Google » : la note et les avis de l'établissement sur Google Maps.
+      hasModule(m => m.id === 'google-business') && { key: 'google-business', label: 'Avis Google', icon: Star, to: '/admin/google-business' },
       // Redirections et pages introuvables : pour l'administrateur et l'éditeur.
       staff && { key: 'redirections', label: 'Redirections', icon: Signpost, to: '/admin/redirections' },
     ]),
@@ -174,6 +187,8 @@ const nav = computed<NavSection[]>(() => {
           { key: 'users', label: 'Utilisateurs', icon: Users, to: '/admin/users' },
           { key: 'activity', label: 'Activité', icon: ScrollText, to: '/admin/activity' },
           { key: 'backups', label: 'Sauvegardes', icon: DatabaseBackup, to: '/admin/backups' },
+          // Module « Suivi des erreurs et surveillance » : erreurs relevées, vérifications du site.
+          hasModule(m => m.id === 'monitoring') && { key: 'monitoring', label: 'Surveillance', icon: Activity, to: '/admin/monitoring' },
           canOpenTrash(user.value) && { key: 'trash', label: 'Corbeille', icon: Trash2, to: '/admin/trash' },
           { key: 'migrations', label: 'Structure des contenus', icon: ArrowLeftRight, to: '/admin/migrations' },
         ]
@@ -200,7 +215,8 @@ const groups = computed(() => {
   return [...out]
 })
 
-const isActive = (item: NavItem) => route.params.type === item.key || route.path === item.to || route.path.startsWith(item.to + '/')
+// L'accueil (« /admin ») est le début de toutes les adresses du back-office : lui seul demande l'adresse exacte.
+const isActive = (item: NavItem) => (item.to === '/admin' ? route.path === '/admin' : route.params.type === item.key || route.path === item.to || route.path.startsWith(item.to + '/'))
 
 // Dossiers ouverts ou repliés à la main : retenus dans ce navigateur. Sans choix, l'état par défaut du dossier.
 const NAV_KEY = 'cms-nav-folders'

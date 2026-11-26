@@ -9,6 +9,15 @@ async function brevoError(response: Response) {
   return detail ? ` : ${String(detail).slice(0, 200)}` : ''
 }
 
+const jsonHeaders = (settings: ModuleSettings) => ({ 'api-key': settings.apiKey ?? '', 'content-type': 'application/json', 'accept': 'application/json' })
+
+/** Numéro d'une liste Brevo, tel que saisi dans les réglages de la lettre d'information. */
+function listNumber(list: string) {
+  const id = Number(list.replace(/^#/, ''))
+  if (!Number.isInteger(id) || id < 1) throw new Error('Une liste Brevo est désignée par son numéro (Contacts → Listes, colonne « ID »).')
+  return id
+}
+
 /** Envoi d'e-mails par Brevo (https://www.brevo.com). */
 export const brevoModule: CmsModuleDefinition = {
   id: 'brevo',
@@ -41,6 +50,32 @@ export const brevoModule: CmsModuleDefinition = {
     const account = await response.json().catch(() => ({})) as { companyName?: string; email?: string }
     const name = account.companyName || account.email
     return name ? `Connexion réussie au compte Brevo « ${name} ».` : 'Connexion à Brevo réussie.'
+  },
+
+  // Listes de contacts : pour la lettre d'information. Une liste Brevo est désignée par son numéro.
+  contacts: {
+    async add(event, settings, list, email) {
+      const response = await fetch(`${apiUrl(event)}/contacts`, {
+        method: 'POST', headers: jsonHeaders(settings), signal: AbortSignal.timeout(10_000),
+        // `updateEnabled` : une adresse déjà connue de Brevo est ajoutée à la liste au lieu d'être refusée.
+        body: JSON.stringify({ email, listIds: [listNumber(list)], updateEnabled: true }),
+      })
+      if (!response.ok) throw new Error(`Brevo a refusé l'ajout à la liste (${response.status})${await brevoError(response)}`)
+    },
+    async remove(event, settings, list, email) {
+      const response = await fetch(`${apiUrl(event)}/contacts/lists/${listNumber(list)}/contacts/remove`, {
+        method: 'POST', headers: jsonHeaders(settings), signal: AbortSignal.timeout(10_000), body: JSON.stringify({ emails: [email] }),
+      })
+      // 400 : l'adresse n'était pas (ou plus) dans la liste. Le résultat voulu est atteint.
+      if (!response.ok && response.status !== 400) throw new Error(`Brevo a refusé le retrait de la liste (${response.status})${await brevoError(response)}`)
+    },
+    async check(event, settings, list) {
+      const response = await fetch(`${apiUrl(event)}/contacts/lists/${listNumber(list)}`, { headers: jsonHeaders(settings), signal: AbortSignal.timeout(10_000) })
+      if (response.status === 404) throw new Error(`Brevo ne connaît pas la liste nº ${list} (Contacts → Listes, colonne « ID »).`)
+      if (!response.ok) throw new Error(`Brevo a répondu ${response.status}${await brevoError(response)}`)
+      const found = await response.json().catch(() => ({})) as { name?: string }
+      return found.name || `nº ${list}`
+    },
   },
 
   mail: {

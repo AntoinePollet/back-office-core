@@ -99,6 +99,8 @@ export function noteNotFound(event: H3Event, pathname: string) {
   const key = canonicalPath(pathname)
   if (!key || isReservedPath(key) || isNoise(key, getRequestHeader(event, 'user-agent') ?? null)) return
   if ('preview' in getQuery(event)) return
+  // Vérification des liens par l'écran « Santé du site » : ce n'est pas un visiteur.
+  if (getRequestHeader(event, 'x-cms-health')) return
   const known = pending.get(key)
   if (!known && pending.size >= BUFFER_MAX) return
   const referrer = cleanReferrer(getRequestHeader(event, 'referer'), getRequestHost(event))

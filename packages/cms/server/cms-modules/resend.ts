@@ -24,6 +24,8 @@ async function resendError(response: Response) {
   }
 }
 
+const detail = async (response: Response) => { const error = await resendError(response); return error.message ? ` : ${error.message}` : '' }
+
 /** Adresse d'essai de Resend : elle n'envoie qu'à l'adresse du compte Resend. */
 const TEST_DOMAIN = 'resend.dev'
 
@@ -70,6 +72,30 @@ export const resendModule: CmsModuleDefinition = {
     if (!found) throw new Error(`Le domaine « ${domain} » n'est pas ajouté dans Resend (« Domains ») : les e-mails seraient refusés.`)
     if (found.status !== 'verified') throw new Error(`Le domaine « ${domain} » n'est pas encore vérifié dans Resend (état : ${found.status}). Ajoutez les enregistrements DNS indiqués par Resend, puis réessayez.`)
     return `Connexion à Resend réussie : le domaine « ${domain} » est vérifié.`
+  },
+
+  // Listes de contacts : pour la lettre d'information. Chez Resend, une liste est une « audience », désignée par son identifiant.
+  contacts: {
+    async add(event, settings, list, email) {
+      const response = await fetch(`${apiUrl(event)}/audiences/${encodeURIComponent(list)}/contacts`, {
+        method: 'POST', headers: headers(settings), signal: AbortSignal.timeout(10_000), body: JSON.stringify({ email, unsubscribed: false }),
+      })
+      if (!response.ok) throw new Error(`Resend a refusé l'ajout à l'audience (${response.status})${await detail(response)}`)
+    },
+    async remove(event, settings, list, email) {
+      const response = await fetch(`${apiUrl(event)}/audiences/${encodeURIComponent(list)}/contacts/${encodeURIComponent(email)}`, {
+        method: 'DELETE', headers: headers(settings), signal: AbortSignal.timeout(10_000),
+      })
+      // 404 : l'adresse n'était pas (ou plus) dans l'audience. Le résultat voulu est atteint.
+      if (!response.ok && response.status !== 404) throw new Error(`Resend a refusé le retrait de l'audience (${response.status})${await detail(response)}`)
+    },
+    async check(event, settings, list) {
+      const response = await fetch(`${apiUrl(event)}/audiences/${encodeURIComponent(list)}`, { headers: headers(settings), signal: AbortSignal.timeout(10_000) })
+      if (response.status === 404) throw new Error(`Resend ne connaît pas l'audience « ${list} » (« Audiences », identifiant de l'audience).`)
+      if (!response.ok) throw new Error(`Resend a répondu ${response.status}${await detail(response)}`)
+      const found = await response.json().catch(() => ({})) as { name?: string }
+      return found.name || list
+    },
   },
 
   mail: {

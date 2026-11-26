@@ -3,8 +3,8 @@ import { createHmac } from 'node:crypto'
 import { test } from 'node:test'
 import { collection, defineCms, f, singleton } from './format.ts'
 import {
-  STATUS_FROM, checkQuantity, checkSellable, checkoutParams, dashboardUrl, encodeForm, formatAmount, formatShipping, keyMode,
-  paymentFromSession, safeReturnPath, sellableCollections, signStripePayload, statusFromEvent, stripe, stripeLocale,
+  STATUS_FROM, checkQuantity, checkSellable, checkStock, checkoutParams, dashboardUrl, encodeForm, formatAmount, formatShipping, invoiceFromObject, keyMode,
+  paymentFromSession, subscriptionFromObject, safeReturnPath, sellableCollections, signStripePayload, statusFromEvent, stripe, stripeLocale,
   toMinorUnits, verifyStripeSignature, withSessionId,
 } from './stripe.ts'
 
@@ -27,7 +27,7 @@ test('stripe() : déclaration valide, valeurs par défaut, et la vérification n
   const cfg = config(stripe({ collections: { products: { price: 'price', name: 'label', image: 'image', available: 'onSale' } } }))
   const mod = cfg.modules[0]!
   assert.equal(mod.id, 'stripe')
-  assert.deepEqual(mod.options, { collections: { products: { price: 'price', name: 'label', image: 'image', available: 'onSale' } }, currency: 'eur', shipping: null, successPath: '/merci', cancelPath: null })
+  assert.deepEqual(mod.options, { collections: { products: { price: 'price', name: 'label', image: 'image', available: 'onSale' } }, currency: 'eur', shipping: null, successPath: '/merci', cancelPath: null, promoCodes: false, invoices: false })
   assert.equal('check' in mod, false)
   assert.deepEqual(Object.keys(sellableCollections(cfg)), ['products'])
   assert.deepEqual(sellableCollections({}), {})
@@ -35,7 +35,9 @@ test('stripe() : déclaration valide, valeurs par défaut, et la vérification n
 
 test('stripe() refuse une déclaration mal écrite, avec un message qui dit où', () => {
   const bad = (s: () => ReturnType<typeof stripe>, re: RegExp) => assert.throws(() => config(s()), re)
-  bad(() => stripe({ collections: {} }), /aucune collection vendable/)
+  // Sans collection vendable, le module ne sert qu'aux acomptes des rendez-vous : c'est accepté.
+  assert.deepEqual(stripe().options.collections, {})
+  assert.deepEqual(config(stripe({ collections: {} })).modules[0].options.collections, {})
   bad(() => stripe({ collections: { articles: { price: 'price' } } }), /collections\.articles : la collection « articles » n'existe pas/)
   bad(() => stripe({ collections: { home: { price: 't' } } } as never), /page unique/)
   bad(() => stripe({ collections: { products: { price: 'prix' } } }), /collections\.products\.price : le champ « prix » n'existe pas/)
@@ -158,6 +160,7 @@ test('session reçue par le webhook : produit, montant, acheteur, livraison (deu
   assert.deepEqual({ ...p, shipping: undefined }, {
     sessionId: 'cs_test_1', paymentIntent: 'pi_1', collection: 'products', entryId: 'abc', title: 'Panneau', quantity: 2, unitAmount: 4990,
     amount: 9980, currency: 'eur', email: 'jeanne@example.com', name: 'Jeanne Martin', shipping: undefined, livemode: false, origin: null,
+    invoice: null, subscription: null, discountAmount: 0,
   })
   // Provenance de l'acheteur : relue dans les métadonnées, contrôlée, canal recalculé.
   const ad = paymentFromSession({ ...session, metadata: { ...session.metadata, cms_o_source: 'google', cms_o_medium: 'cpc', cms_o_campaign: 'printemps', cms_o_click: 'gclid', cms_o_click_id: 'x1' } })!
@@ -176,4 +179,55 @@ test('session reçue par le webhook : produit, montant, acheteur, livraison (deu
   assert.deepEqual(STATUS_FROM.paid, ['pending'])
   assert.equal(dashboardUrl({ paymentIntent: 'pi_1', sessionId: 'cs', livemode: false }), 'https://dashboard.stripe.com/test/payments/pi_1')
   assert.equal(dashboardUrl({ paymentIntent: 'pi_1', sessionId: 'cs', livemode: true }), 'https://dashboard.stripe.com/payments/pi_1')
+})
+
+// ───────────────────────── Abonnements, codes promo, factures, stock ─────────────────────────
+
+test('stripe() : abonnement, stock, codes promo et factures déclarés ; écritures refusées', () => {
+  const options = stripe({ collections: { products: { price: 'price', recurring: 'month', stock: 'price' } }, promoCodes: true, invoices: true }).options
+  assert.deepEqual([options.promoCodes, options.invoices, options.collections.products.recurring], [true, true, 'month'])
+  assert.deepEqual([stripe().options.promoCodes, stripe().options.invoices], [false, false])
+  assert.throws(() => stripe({ collections: { products: { price: 'price', recurring: 'day' as never } } }), /recurring/)
+  assert.throws(() => stripe({ collections: { products: { price: 'price', stock: '' } } }), /stock/)
+  assert.throws(() => config(stripe({ collections: { products: { price: 'price', stock: 'label' } } })), /stock : le champ « label » doit être un nombre/)
+})
+
+test('stock : illimité s\'il n\'est pas suivi ou pas saisi, refus au-delà', () => {
+  const sell = { price: 'price', stock: 'stock' }
+  assert.equal(checkStock({ price: 'price' }, { stock: 0 }, 1), null)
+  assert.equal(checkStock(sell, { stock: null }, 3), null)
+  assert.equal(checkStock(sell, { stock: 3 }, 3), null)
+  assert.equal(checkStock(sell, { stock: 2 }, 3), 'Il n\'en reste que 2.')
+  assert.equal(checkStock(sell, { stock: 0 }, 1), 'Ce produit est épuisé.')
+})
+
+test('session : abonnement (périodicité, métadonnées sur l\'abonnement), code promo, facture d\'un paiement en une fois', () => {
+  const input = { currency: 'eur', unitAmount: 2900, quantity: 1, name: 'Offre', image: null, successUrl: 'https://s/merci', cancelUrl: 'https://s/', locale: 'fr', metadata: { cms_collection: 'plans', cms_entry: 'e1', cms_title: 'Offre', cms_quantity: '1', cms_unit_amount: '2900', cms_locale: 'fr', cms_interval: 'month' }, shippingCountries: null }
+  const once = Object.fromEntries(checkoutParams({ ...input, promoCodes: true, invoices: true }))
+  assert.deepEqual([once.mode, once.allow_promotion_codes, once['invoice_creation[enabled]'], once['payment_intent_data[metadata][cms_entry]']], ['payment', 'true', 'true', 'e1'])
+  assert.equal(once['line_items[0][price_data][recurring][interval]'], undefined)
+  const recurring = Object.fromEntries(checkoutParams({ ...input, recurring: 'month', invoices: true }))
+  assert.deepEqual([recurring.mode, recurring['line_items[0][price_data][recurring][interval]'], recurring['subscription_data[metadata][cms_entry]'], recurring['subscription_data[metadata][cms_interval]']], ['subscription', 'month', 'e1', 'month'])
+  // Stripe refuse ces deux réglages pour un abonnement (il a toujours ses factures, et pas de paiement isolé).
+  assert.ok(!('invoice_creation[enabled]' in recurring) && !Object.keys(recurring).some(k => k.startsWith('payment_intent_data')))
+  assert.equal(Object.fromEntries(checkoutParams({ ...input, recurring: 'year', promoCodes: true })).allow_promotion_codes, 'true')
+})
+
+test('session payée : facture, abonnement et remise relevés', () => {
+  const p = paymentFromSession({ id: 'cs_test_1', amount_total: 2610, currency: 'eur', metadata: { cms_collection: 'plans', cms_entry: 'e1' }, invoice: 'in_1', subscription: { id: 'sub_1' }, total_details: { amount_discount: 290 } })!
+  assert.deepEqual([p.invoice, p.subscription, p.discountAmount, p.amount], ['in_1', 'sub_1', 290, 2610])
+  const plain = paymentFromSession({ id: 'cs_test_2', amount_total: 100, currency: 'eur', metadata: { cms_collection: 'products', cms_entry: 'e2' } })!
+  assert.deepEqual([plain.invoice, plain.subscription, plain.discountAmount], [null, null, 0])
+})
+
+test('abonnement et facture lus aux deux endroits possibles selon la version de l\'API', () => {
+  assert.deepEqual(subscriptionFromObject({ id: 'sub_1', status: 'active', cancel_at_period_end: true, current_period_end: 1_800_000_000 }), { subscriptionId: 'sub_1', status: 'active', cancelAtPeriodEnd: true, currentPeriodEnd: 1_800_000_000_000, canceledAt: null })
+  assert.deepEqual(subscriptionFromObject({ id: 'sub_1', status: 'canceled', canceled_at: 1_700_000_000, items: { data: [{ current_period_end: 1_800_000_000 }] } }), { subscriptionId: 'sub_1', status: 'canceled', cancelAtPeriodEnd: false, currentPeriodEnd: 1_800_000_000_000, canceledAt: 1_700_000_000_000 })
+  assert.equal(subscriptionFromObject({ id: 'sub_1', status: 'inconnu' }), null)
+  assert.equal(subscriptionFromObject({ status: 'active' }), null)
+  const old = invoiceFromObject({ id: 'in_2', subscription: 'sub_1', billing_reason: 'subscription_cycle', amount_paid: 2900, currency: 'EUR', customer_email: 'a@b.fr', payment_intent: 'pi_2', livemode: true, lines: { data: [{ period: { end: 1_800_000_000 } }] } })!
+  assert.deepEqual(old, { invoiceId: 'in_2', subscriptionId: 'sub_1', reason: 'subscription_cycle', amount: 2900, currency: 'eur', email: 'a@b.fr', name: null, paymentIntent: 'pi_2', livemode: true, periodEnd: 1_800_000_000_000 })
+  assert.equal(invoiceFromObject({ id: 'in_3', parent: { subscription_details: { subscription: 'sub_9' } } })!.subscriptionId, 'sub_9')
+  assert.equal(invoiceFromObject({ id: 'in_4' }), null)
+  assert.equal(dashboardUrl({ paymentIntent: null, sessionId: 'in_2', livemode: true }), 'https://dashboard.stripe.com/invoices/in_2')
 })
