@@ -1,9 +1,11 @@
-import { defineCms, collection, section, singleton, f, type InferEntry } from 'backoffice-core/config'
+import { defineCms, collection, section, singleton, f, sd, type InferEntry } from 'backoffice-core/config'
 import { analytics, brevo, forms, resend, stripe, turnstile } from 'backoffice-core/modules'
 
 const config = defineCms({
   site: {
     name: 'Cabinet Durand', url: 'https://cabinet-durand.fr', locales: ['fr', 'en'], defaultLocale: 'fr',
+    // Ce qu'est le site, en une phrase : introduction de /llms.txt et description des flux RSS.
+    description: { fr: 'Cabinet d\'avocats en droit des affaires, à Lyon.', en: 'Business law firm in Lyon.' },
     // Référencement : fin du titre de chaque page, et image de partage des pages qui n'en ont pas (fichier de public/).
     titleSuffix: 'Cabinet Durand',
     shareImage: '/partage.png',
@@ -47,6 +49,8 @@ const config = defineCms({
       icon: 'house',
       path: '/',
       seo: true,
+      // Données structurées : les questions fréquentes de la page, lues dans le répéteur « faq ».
+      structuredData: sd.faq({ items: 'faq', question: 'question', answer: 'answer' }),
       fields: {
         // Sections du formulaire : pure présentation, les noms des champs et les données ne changent pas.
         ...section({ label: 'Bandeau', help: 'Le haut de la page d\'accueil.' }, {
@@ -85,6 +89,8 @@ const config = defineCms({
       group: 'Site',
       drafts: false,
       adminOnly: true,
+      // L'organisme derrière le site : ses coordonnées sont transmises aux moteurs de recherche sur la page d'accueil.
+      structuredData: sd.organization({ type: 'LegalService', telephone: 'phone', email: 'email', streetAddress: 'address', addressCountry: sd.value('FR') }),
       fields: {
         phone: f.text({ label: 'Téléphone', format: 'tel', localized: false, width: 'half' }),
         email: f.text({ label: 'E-mail de contact', format: 'email', localized: false, width: 'half' }),
@@ -103,6 +109,8 @@ const config = defineCms({
       titleField: 'title',
       seo: true,
       orderable: true,
+      // Flux RSS des derniers services publiés : /feeds/services.xml (résumé, image et texte entier de chaque élément).
+      feed: { description: 'excerpt', content: 'body' },
       list: { columns: ['category'], thumbnail: 'cover' },
       fields: {
         title: f.text({ label: 'Titre', required: true }),

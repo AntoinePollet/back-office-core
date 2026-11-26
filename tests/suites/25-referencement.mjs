@@ -91,10 +91,11 @@ export default async function (t) {
     check(api.title === 'Droit des affaires' && api.shareTitle === null && api.shareDescription === null && api.noindex === false, 'seo de l\'API : ' + JSON.stringify(api))
   })
 
-  await step('site : image de partage par défaut, page sans titre, données structurées sur l\'accueil seulement', async () => {
+  await step('site : image de partage par défaut, page sans titre, nom du site sur l\'accueil seulement', async () => {
     const social = await head('/services/droit-social')
     check(social.metas['og:image'] === S + '/partage.png' && social.metas['twitter:card'] === 'summary_large_image', 'image par défaut : ' + social.metas['og:image'] + ' ' + social.metas['twitter:card'])
-    check(social.jsonLd.length === 0, 'données structurées hors de l\'accueil : ' + JSON.stringify(social.jsonLd))
+    // Hors de l'accueil : pas de bloc « WebSite », seulement le fil d'Ariane déduit des adresses (voir 36-donnees-structurees).
+    check(social.jsonLd.length === 1 && JSON.stringify(social.jsonLd[0]['@graph'].map(b => b['@type'])) === '["BreadcrumbList"]', 'données structurées hors de l\'accueil : ' + JSON.stringify(social.jsonLd))
     const home = await head('/')
     // Page unique sans titre de référencement : le suffixe du site sert de titre.
     check(home.title === 'Cabinet Durand' && home.metas['og:title'] === 'Cabinet Durand', 'titre de l\'accueil : ' + home.title)

@@ -84,6 +84,32 @@ export const brevo = () => ({ id: 'brevo' as const })
  */
 export const resend = () => ({ id: 'resend' as const })
 
+// ───────────────────────── Lettre d'information ─────────────────────────
+
+export type NewsletterOptions = {
+  /**
+   * Page du site où conduire le visiteur après avoir confirmé son inscription ('/newsletter/merci'). Sans ce réglage,
+   * le core affiche lui-même une page de confirmation, aux couleurs de l'écran Apparence.
+   */
+  confirmedPath?: string
+  /** Page du site où conduire le visiteur après sa désinscription. Sans ce réglage : une page du core. */
+  unsubscribedPath?: string
+}
+
+/**
+ * Inscription à la lettre d'information, avec confirmation par e-mail (voir `shared/newsletter.ts`). Les inscrits
+ * sont listés dans l'écran « Lettre d'information » et, si une liste est désignée dans les réglages du module,
+ * reportés chez Brevo ou Resend, d'où part la lettre. Demande un module d'envoi d'e-mails réglé (`brevo()`, `resend()`).
+ * Côté site : `const newsletter = useCmsNewsletter()`. Peut aussi s'activer depuis le back-office, sans cette ligne.
+ */
+export function newsletter(options: NewsletterOptions = {}) {
+  for (const key of ['confirmedPath', 'unsubscribedPath'] as const) {
+    const path = options[key]
+    if (path !== undefined && !/^\/[^/\s]\S*$/.test(String(path))) fail(`newsletter() : ${key} doit être une page du site ('/newsletter/merci')`)
+  }
+  return { id: 'newsletter' as const, options: { ...options } }
+}
+
 // ───────────────────────── Mesure d'audience ─────────────────────────
 
 /** Fournisseurs de mesure d'audience connus, tous sans cookie : Cloudflare Web Analytics, Plausible. */

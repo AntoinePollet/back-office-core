@@ -4,5 +4,6 @@ import { desc } from 'drizzle-orm'
 export default defineEventHandler(async (event) => {
   await requireUser(event)
   const rows = await useDb(event).select().from(schema.media).orderBy(desc(schema.media.createdAt))
-  return rows.map(toAdminMedia)
+  // Les polices envoyées depuis l'écran Apparence sont rangées dans le même stockage, mais se gèrent là-bas.
+  return rows.filter(row => !isFontMime(row.mime)).map(toAdminMedia)
 })

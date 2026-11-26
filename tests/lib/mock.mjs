@@ -9,7 +9,8 @@ import { createGoogle } from './mock-google.mjs'
  * - GET /v3/account → le compte Brevo, ou 401 avec la clé « mauvaise-cle »
  * - POST /client/v4/graphql → statistiques Cloudflare Web Analytics (voir mock-cloudflare.mjs)
  * - POST /turnstile/v0/siteverify → vérification d'un jeton Turnstile ; GET /turnstile/v0/api.js → faux script Turnstile
- * - /echec → 500
+ * - /echec → 500 ; /introuvable → 404 ; /refuse → 403 (vérification des liens)
+ * - Brevo, listes de contacts : GET /v3/contacts/lists/12 → la liste, /99 → 404 ; POST /v3/contacts et …/contacts/remove → 200
  * - toute autre adresse → 200
  * - Resend, sous /resend : POST /resend/emails → { id } ; GET /resend/domains → domaines (cabinet-durand.fr vérifié,
  *   pas-encore.fr en attente), 403 avec la clé « re_mauvaise », 401 « restricted_api_key » avec « re_envoi_seulement » ;
@@ -56,6 +57,12 @@ export async function startMock(port) {
         return res.end(JSON.stringify(json))
       }
       if (req.url === '/echec') { res.statusCode = 500; return res.end('{}') }
+      // Vérification des liens (écran « Santé du site ») : une page disparue, un site qui refuse les robots.
+      if (req.url === '/introuvable') { res.statusCode = 404; return res.end('{}') }
+      if (req.url === '/refuse') { res.statusCode = 403; return res.end('{}') }
+      // Listes de contacts Brevo (lettre d'information) : la liste 12 existe, la 99 non.
+      if (req.url === '/v3/contacts/lists/12') return res.end('{"id":12,"name":"Lettre du cabinet"}')
+      if (req.url === '/v3/contacts/lists/99') { res.statusCode = 404; return res.end('{"code":"document_not_found","message":"List ID does not exist"}') }
       // Compte Brevo : sert à vérifier une clé d'API. « mauvaise-cle » est refusée, comme une clé inconnue de Brevo.
       if (req.url === '/v3/account') {
         if (req.headers['api-key'] === 'mauvaise-cle') { res.statusCode = 401; return res.end('{"code":"unauthorized","message":"Key not found"}') }

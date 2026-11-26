@@ -132,5 +132,7 @@ export async function readPublic(event: H3Event, type: string, slug?: string) {
     // L'image de partage est enregistrée comme un champ image.
     ...items.flatMap(i => (i.seo ? [{ fields: { image: { type: 'image' as const, label: '' } }, values: i.seo as Record<string, unknown> }] : [])),
   ], preview)
+  // Données structurées : pour la lecture d'un seul contenu publié (une page), pas pour une liste ni un brouillon.
+  if (!preview && (slug !== undefined || def.kind === 'singleton')) await attachStructuredData(event, type, def, locale, items, base)
   return { def, locale, preview, items, positionOf: (id: string) => byId.get(id)?.position, sorted: !!found, paging: found?.paging ?? null }
 }

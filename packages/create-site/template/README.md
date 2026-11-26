@@ -79,7 +79,8 @@ description pour les moteurs de recherche, titre et description propres au parta
 liste de conseils ; l'écran « Référencement » du menu récapitule toutes les pages (état, points à voir, doublons).
 
 Dans la page, une ligne suffit : `useCmsSeo(entry)` écrit le titre, la description, les balises de partage (`og:`,
-`twitter:`), l'adresse canonique, les liens entre langues et, sur l'accueil, le nom du site pour Google.
+`twitter:`), l'adresse canonique, les liens entre langues, le nom du site pour Google sur l'accueil, et les données
+structurées de la page (voir plus bas).
 
 Deux réglages du site, dans `cms.config.ts`, valent pour toutes les pages et sont repris par l'aperçu du back-office :
 
@@ -93,8 +94,8 @@ site: {
 
 - Titre de référencement vide : le titre du contenu est utilisé (collections) ; pour une page unique, le suffixe seul.
 - Titre et description de partage vides : ceux du référencement sont repris. Remplis, ils ne reçoivent pas le suffixe.
-- Une page sans suffixe : `useCmsSeo(entry, { titleSuffix: false })`. Sans le bloc de données structurées de
-  l'accueil (le site écrit déjà le sien) : `useCmsSeo(home, { structuredData: false })`.
+- Une page sans suffixe : `useCmsSeo(entry, { titleSuffix: false })`. Sans aucune donnée structurée (le site écrit
+  déjà les siennes) : `useCmsSeo(entry, { structuredData: false })`.
 - Les valeurs sont aussi dans `entry.seo` (`title`, `description`, `shareTitle`, `shareDescription`, `image`, `noindex`).
 - Les seuils des conseils (longueurs, taille d'image…) sont regroupés et expliqués dans `shared/seo.ts` du core.
 - L'onglet montre aussi les **titres de la page** (H1 à H6), lus dans la page elle-même, affichée sans être vue avec la
@@ -102,6 +103,168 @@ site: {
   titre du contenu (ou l'accroche d'une page unique), puis des `<h2>` et `<h3>` sans sauter de niveau. Les boutons
   « Titre de section (H2) » et « Sous-titre (H3) » des textes mis en forme produisent ces deux niveaux : dans le
   gabarit, ne mettez pas ce texte sous un titre de niveau plus bas que H1.
+
+### Données structurées (JSON-LD)
+
+Les moteurs de recherche lisent mieux une page qui dit ce qu'elle est : un article, des questions fréquentes, un
+établissement avec son adresse et ses horaires. On déclare, sur un contenu, quels champs alimentent quel bloc ;
+`useCmsSeo(entry)` place le résultat dans la page, et l'onglet Référencement en montre l'aperçu pendant la saisie.
+
+```ts
+import { defineCms, collection, singleton, f, sd, WEEKDAYS } from 'backoffice-core/config'
+
+articles: collection({
+  …, path: '/actualites/[slug]', titleField: 'title',
+  structuredData: sd.article({ image: 'cover', datePublished: 'date', author: 'author' }),
+}),
+home: singleton({
+  …, path: '/',
+  structuredData: sd.faq({ items: 'faq', question: 'question', answer: 'answer' }),   // un répéteur et ses sous-champs
+}),
+settings: singleton({
+  label: 'Coordonnées',
+  structuredData: sd.organization({
+    type: 'LocalBusiness',                    // ou plus précis : 'LegalService', 'Restaurant', 'Dentist', 'Store'…
+    telephone: 'phone', email: 'email', streetAddress: 'street', postalCode: 'zip', addressLocality: 'city',
+    addressCountry: sd.value('FR'),           // une valeur fixe à la place d'un champ
+    openingHours: { items: 'hours', days: 'days', opens: 'opens', closes: 'closes' },
+  }),
+  fields: {
+    …,
+    hours: f.repeater({ label: 'Horaires', fields: {
+      days: f.select({ label: 'Jours', multiple: true, options: WEEKDAYS }),
+      opens: f.text({ label: 'Ouverture', placeholder: '09:00' }), closes: f.text({ label: 'Fermeture', placeholder: '18:00' }),
+    } }),
+  },
+}),
+```
+
+- `sd.article()` : sans option, le titre du contenu, la description et l'image de l'onglet Référencement, et la date
+  de mise en ligne sont utilisés. `type: 'BlogPosting'` ou `'NewsArticle'` au besoin.
+- `sd.organization()` se déclare sur la page unique qui porte les coordonnées, qu'elle ait une adresse ou non. Le bloc
+  est émis sur la page d'accueil, et sur cette page si elle en a une.
+- Le **fil d'Ariane** n'a rien à déclarer : il est déduit des adresses. La page `/services/droit-des-affaires` a pour
+  parents les pages uniques d'adresse `/` et `/services`, si elles existent et sont en ligne. Leur nom est leur
+  `label` ; pour un autre nom, ou un nom par langue : `breadcrumb: 'Services'` ou `breadcrumb: { fr: 'Services', en: 'Services' }`.
+  `breadcrumb: false` retire une page des fils d'Ariane.
+- Rien n'est inventé : une propriété dont le champ est vide est absente, et un bloc sans l'essentiel (une FAQ sans
+  question) n'est pas émis. Rien non plus en aperçu ni sur une page masquée des moteurs de recherche.
+- Les blocs sont dans `entry.structuredData` quand on lit un seul contenu (`useEntry`, `useSingleton`), pas dans les
+  listes. Pour vérifier une page en ligne : l'outil « Test des résultats enrichis » de Google.
+
+## Recherche sur le site
+
+`useCmsSearch` cherche dans les pages publiées, sans tenir compte des majuscules ni des accents. Chaque mot doit se
+trouver dans la page ; celles dont le titre correspond viennent d'abord.
+
+```vue
+<script setup lang="ts">
+const route = useRoute()
+const q = ref(String(route.query.q ?? ''))
+const { data: results, status } = useCmsSearch(q)          // options : { limit: 10, types: ['services'], locale: 'en' }
+</script>
+
+<template>
+  <input v-model="q" type="search" aria-label="Rechercher sur le site">
+  <p v-if="q.trim().length >= 2 && status !== 'pending' && !results?.items.length">Aucune page ne correspond.</p>
+  <ul>
+    <li v-for="r in results?.items" :key="`${r.type}:${r.id}`">
+      <NuxtLink :to="r.path">{{ r.title }}</NuxtLink>
+      <!-- L'extrait arrive en morceaux : ceux qui correspondent à la recherche sont à mettre en évidence. -->
+      <p><template v-for="(part, i) in r.excerpt" :key="i"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></p>
+    </li>
+  </ul>
+</template>
+```
+
+- Sont cherchés les contenus qui ont une page (`path`) : leurs champs texte, texte long et texte mis en forme, répéteurs
+  compris. `search: false` dans `cms.config.ts` en retire un (mentions légales, page de remerciement).
+- Jamais de brouillon, ni de page masquée des moteurs de recherche.
+- Chaque résultat donne `title`, `path`, `url`, `typeLabel`, `excerpt` et `image` (la vignette `list.thumbnail` de la
+  collection, si elle en a une). `results.total` est le nombre de pages trouvées.
+- Sans le composable : `GET /api/search?q=…&locale=fr&limit=10&types=services,articles`.
+- La recherche relit les contenus publiés à chaque demande, puis la réponse est gardée en cache comme celle des
+  contenus. C'est fait pour un site de quelques centaines de pages, pas pour un catalogue de dizaines de milliers.
+
+## Flux RSS et llms.txt
+
+Une collection dont chaque élément a sa page peut publier un **flux RSS** de ses derniers contenus :
+
+```ts
+articles: collection({
+  …, path: '/actualites/[slug]', titleField: 'title',
+  feed: true,
+  // ou, pour choisir les champs : feed: { description: 'excerpt', date: 'date', image: 'cover', content: 'body', limit: 30 },
+}),
+```
+
+- Adresse : `/feeds/articles.xml` ; pour une autre langue, `/feeds/en/articles.xml`.
+- Sans réglage : la date de mise en ligne, la description de l'onglet Référencement (sinon le début du texte) et la
+  vignette de la liste (`list.thumbnail`). `content` joint le texte entier : les lecteurs de flux affichent alors
+  l'article complet.
+- Dans une page (ou dans `app.vue` pour tout le site), `const feed = useCmsFeed('articles')` annonce le flux dans
+  l'en-tête, pour les navigateurs et les lecteurs, et renvoie son adresse pour un lien « S'abonner ».
+- Brevo, Mailchimp et d'autres savent envoyer une lettre à chaque nouveauté d'un flux RSS : c'est un moyen simple
+  d'alimenter la lettre d'information.
+
+Le site sert aussi **`/llms.txt`** : la liste des pages publiées avec leur résumé, en Markdown, à l'intention des
+assistants (format llmstxt.org). Ce sont les mêmes pages que dans le plan du site, rien de plus. Deux réglages :
+
+```ts
+site: {
+  …,
+  description: 'Cabinet d\'avocats en droit des affaires, à Lyon.',   // la phrase d'introduction ; ou un texte par langue
+  llms: false,                                                         // pour ne pas servir ce fichier
+},
+```
+
+Un fichier `public/llms.txt` écrit à la main prend le dessus. `/llms.txt?locale=en` donne les pages d'une autre langue.
+
+## Santé du site et tableau de bord
+
+Le back-office s'ouvre sur un **tableau de bord** : ce qui attend la personne connectée (demandes de publication,
+messages non lus, publications programmées en échec, modules à régler), les contenus en attente de publication, ceux
+modifiés récemment, quelques chiffres des modules actifs et, pour l'administrateur, l'état du site (disponibilité,
+sauvegardes, envoi d'e-mails). Chaque ligne mène à l'écran qui la détaille. Rien à régler.
+
+L'écran **Santé du site** (menu Outils) examine les contenus en ligne que la personne peut modifier :
+
+- **liens** : un champ lien qui vise un contenu supprimé ou retiré du site, une page du site qui ne répond plus, un
+  autre site dont la page a disparu (404) ou qui ne répond pas. Les pages du site sont vérifiées par le navigateur,
+  les autres sites par le serveur, quelques-uns à la fois ; un site qui refuse les vérifications automatiques
+  (c'est fréquent pour les réseaux sociaux) est dit « non vérifiable », pas cassé ;
+- **images sans texte alternatif**, parmi celles qui sont utilisées, avec un lien vers leur fiche dans la médiathèque ;
+- **images lourdes** (plus de 1,5 Mo) ;
+- **fichiers inutilisés** : ceux qu'aucun contenu, brouillon ou réglage ne cite.
+
+Ce sont les versions publiées qui sont examinées : une correction disparaît de la liste une fois publiée. Les seuils
+sont regroupés dans `shared/health.ts` du core.
+
+## Typographie
+
+L'écran **Apparence** règle aussi les polices du site :
+
+- une **police pour le texte** et une **pour les titres**, parmi une vingtaine de polices libres (Inter, DM Sans,
+  Lora, Fraunces, Playfair Display…), les polices du système (rien à télécharger), ou les vôtres ;
+- une **échelle** pour la taille des titres (compacte, normale, ample) ;
+- des **réglages fins**, niveau par niveau (texte courant, H1 à H4) : police, graisse, taille, interligne,
+  espacement des lettres. Un réglage laissé vide n'est pas touché.
+
+L'aperçu suit en direct ; le site change à l'enregistrement. Sans réglage, rien ne change : le site garde les polices
+de son code.
+
+- **Rien ne part vers un service tiers.** Les polices proposées voyagent avec le core et sont servies par le site
+  (`/_cms/fonts/…`) ; seules celles qui sont choisies sont chargées, et celle du texte est préchargée. L'adresse des
+  visiteurs n'est transmise à personne, il n'y a rien à ajouter au bandeau de consentement.
+- **Vos polices** : « Envoyer » accepte des fichiers WOFF2 (de préférence), WOFF, TTF ou OTF, 2 Mo au plus, un par
+  graisse et par style, ou un seul fichier variable. La famille, la graisse et le style sont devinés d'après le nom du
+  fichier et se corrigent dans l'écran. Vérifiez que la licence de la police autorise son usage sur un site web.
+- **Les titres réglés ici l'emportent sur les classes du gabarit** (`text-3xl`, `font-bold`) : c'est le back-office qui
+  décide. Un titre qui doit garder le style prévu par le code porte la classe `cms-type-off`. Les grands titres se
+  réduisent d'eux-mêmes sur un téléphone.
+- Le code du site peut se servir des polices choisies : variables `--cms-font-body` et `--cms-font-heading`.
+- Si le site pose un en-tête `Content-Security-Policy` : `font-src 'self'` suffit.
+- Les seuils et la liste des polices sont dans `shared/fonts.ts` du core.
 
 ## Reprendre des contenus existants
 
@@ -331,6 +494,7 @@ export default defineCms({
 | `analytics()` | La fréquentation du site dans l'écran « Audience » (administrateurs et éditeurs) : visites, pages vues, courbe par jour, pages les plus vues, sites d'origine. Par Cloudflare Web Analytics, sans cookie ni bandeau de consentement. Réglages : jeton de la balise, identifiant du site, identifiant du compte, jeton d'API en lecture. |
 | `plausible()` | La même chose par Plausible (plausible.io ou votre propre instance), sans cookie. Réglages : domaine du site, clé « Stats API », adresse de l'instance (facultative). `analytics({ provider: 'plausible' })` revient au même. |
 | `turnstile()` | Un anti-robots pour les formulaires du site (Cloudflare Turnstile), le plus souvent invisible pour les visiteurs. Réglages : clé du site, clé secrète. Côté page : `<CmsTurnstile />`. |
+| `newsletter()` | L'inscription à la lettre d'information, confirmée par e-mail. Inscrits visibles dans « Lettre d'information » (administrateurs et éditeurs), exportables, et reportés dans une liste Brevo ou une audience Resend. Réglage : la liste (facultative). Demande `brevo()` ou `resend()` réglé. Côté page : `useCmsNewsletter()`. |
 
 ### Brancher un formulaire sur une page
 
@@ -360,6 +524,48 @@ envoyer plus de cinq messages en dix minutes. Les messages sont conservés 365 j
 Pour être prévenu par e-mail à chaque message : dans le back-office, **Workflows → Créer un workflow**, déclencheur
 « Un formulaire du site est envoyé », action « Envoyer un e-mail » avec `{{ form.summary }}` dans le message et
 `{{ fields.email }}` dans « Répondre à ».
+
+### Lettre d'information
+
+Le site recueille les inscriptions ; il n'envoie pas la lettre lui-même. Le visiteur donne son adresse, reçoit un
+e-mail, et n'est inscrit qu'après avoir cliqué sur le lien de cet e-mail : c'est ce qui prouve que l'adresse est la
+sienne. L'écran **Lettre d'information** garde la date de la demande, celle de la confirmation et la page d'origine.
+
+```vue
+<script setup lang="ts">
+const newsletter = useCmsNewsletter()
+</script>
+
+<template>
+  <p v-if="newsletter.sent.value">Merci ! Un e-mail vient de vous être envoyé : cliquez sur son lien pour confirmer.</p>
+  <form v-else @submit.prevent="newsletter.submit()">
+    <input v-model="newsletter.email.value" type="email" autocomplete="email">
+    <input v-model="newsletter.trap.value" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <p v-if="newsletter.error.value">{{ newsletter.error.value }}</p>
+    <button :disabled="newsletter.pending.value">S'inscrire</button>
+  </form>
+</template>
+```
+
+- Le module s'active dans l'écran Modules, ou avec `newsletter()` dans `cms.config.ts`. Il a besoin d'un envoi
+  d'e-mails réglé (Brevo ou Resend) : sans lui, l'e-mail de confirmation ne peut pas partir et l'inscription est refusée.
+- **Envoyer la lettre** : dans les réglages du module, désignez une liste Brevo (son numéro : Contacts → Listes,
+  colonne « ID ») ou une audience Resend (son identifiant). Chaque inscription confirmée y est ajoutée, chaque
+  désinscription retirée ; les inscrits déjà là se reportent d'un clic depuis l'écran. La lettre part ensuite de Brevo
+  ou de Resend, avec leur propre lien de désinscription. Une désinscription faite depuis une de leurs lettres est tenue
+  par eux : elle n'apparaît pas dans le back-office.
+- **Avec un autre outil** : « Exporter les inscrits » donne un fichier CSV où chaque inscrit a son lien de
+  désinscription, à placer dans la lettre. Ce lien mène à une page qui pose la question ; c'est son bouton qui
+  désinscrit (les messageries ouvrent les liens d'un e-mail avant la personne).
+- La réponse du formulaire est la même que l'adresse soit déjà inscrite ou non. Un visiteur ne peut pas faire plus de
+  cinq demandes en dix minutes ; une demande jamais confirmée est effacée au bout de sept jours. `<CmsTurnstile />`
+  placé dans le formulaire le protège des robots.
+- Les pages de confirmation et de désinscription sont affichées par le core, en français ou en anglais, aux couleurs
+  de l'écran Apparence. Pour y mettre les vôtres : `newsletter({ confirmedPath: '/lettre/merci', unsubscribedPath: '/lettre/au-revoir' })`.
+- Workflows : « Quelqu'un confirme son inscription » et « Quelqu'un se désinscrit », avec `{{ subscriber.email }}` et
+  `{{ subscriber.unsubscribeUrl }}`.
+- Les liens envoyés par e-mail sont signés avec `NUXT_AUTH_SECRET` : s'il change, les liens déjà envoyés ne valent plus.
+- « Effacer » un inscrit supprime son adresse du back-office et de la liste du service d'envoi (demande d'effacement).
 
 ### Provenance des contacts (annonces, e-mails, moteurs de recherche)
 

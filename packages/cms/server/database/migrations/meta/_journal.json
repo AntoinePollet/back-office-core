@@ -113,6 +113,13 @@
       "when": 1795533188778,
       "tag": "0015_foamy_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1795680441292,
+      "tag": "0016_fresh_vision",
+      "breakpoints": true
     }
   ]
 }

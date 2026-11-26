@@ -420,6 +420,34 @@ export const formSubmissions = sqliteTable('cms_form_submissions', {
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, t => [index('cms_form_submissions_form').on(t.form, t.createdAt)])
 
+export type NewsletterStatus = 'pending' | 'confirmed' | 'unsubscribed'
+/** Report d'un inscrit dans la liste du service d'envoi (Brevo, Resend) : fait, ou en échec avec sa raison. */
+export type NewsletterSync = { provider: string; ok: boolean; detail: string; at: number }
+
+/**
+ * Inscrit à la lettre d'information (module `newsletter`). Une ligne par adresse e-mail. L'inscription ne vaut
+ * qu'une fois confirmée par le lien reçu par e-mail : la ligne garde la date de la demande et celle de la
+ * confirmation, qui font la preuve du consentement. Une demande jamais confirmée est effacée au bout de quelques jours.
+ */
+export const newsletterSubscribers = sqliteTable('cms_newsletter_subscribers', {
+  id: text('id').primaryKey(),
+  /** Adresse en minuscules : une même personne ne s'inscrit qu'une fois. */
+  email: text('email').notNull().unique(),
+  /** Langue du site au moment de l'inscription : celle de l'e-mail de confirmation. */
+  locale: text('locale').notNull(),
+  status: text('status').$type<NewsletterStatus>().notNull(),
+  /** Page du site où l'inscription a été faite (chemin, sans paramètres). */
+  source: text('source'),
+  /** D'où venait le visiteur (annonce, e-mail, autre site…) ; null : rien de relevé. */
+  origin: text('origin', { mode: 'json' }).$type<import('../../shared/attribution').StoredOrigin | null>(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  /** Dernier envoi de l'e-mail de confirmation : pas deux envois coup sur coup à la même adresse. */
+  confirmationSentAt: integer('confirmation_sent_at', { mode: 'timestamp_ms' }),
+  confirmedAt: integer('confirmed_at', { mode: 'timestamp_ms' }),
+  unsubscribedAt: integer('unsubscribed_at', { mode: 'timestamp_ms' }),
+  sync: text('sync', { mode: 'json' }).$type<NewsletterSync | null>(),
+}, t => [index('cms_newsletter_status').on(t.status, t.createdAt)])
+
 /**
  * Paiement reçu par Stripe Checkout (module `stripe`). Une ligne par session Checkout : la référence Stripe est unique,
  * un même événement reçu deux fois ne crée donc jamais deux paiements. Le produit est recopié tel qu'il était à l'achat.

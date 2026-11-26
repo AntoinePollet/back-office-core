@@ -13,6 +13,65 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+### Nouveautés
+
+- **Tableau de bord.** Le back-office s'ouvre sur un écran d'accueil au lieu du premier contenu du menu : ce qui attend
+  la personne (demandes de publication à valider, messages non lus, publications programmées en échec, adresses
+  introuvables de la semaine, modules à régler), les contenus en attente de publication, ceux modifiés récemment, un
+  bouton « Créer », quelques chiffres des modules actifs (pages vues, messages, paiements, inscrits à la lettre) et,
+  pour l'administrateur, l'état du site (disponibilité, sauvegardes, envoi d'e-mails). Chacun n'y voit que ce à quoi il
+  a droit. Entrée « Tableau de bord » en tête du menu.
+- **Santé du site.** Nouvel écran (menu Outils) qui examine les contenus en ligne : liens cassés (contenu supprimé ou
+  retiré du site, page du site ou d'un autre site qui ne répond plus), images utilisées sans texte alternatif, images
+  de plus de 1,5 Mo, fichiers de la médiathèque que rien n'utilise, et un résumé du référencement. Les liens sont
+  vérifiés un à un après l'affichage ; chaque problème nomme le contenu et le champ où le corriger.
+- **Données structurées (JSON-LD).** Nouvelle option `structuredData` d'un contenu, avec `sd.article()`, `sd.faq()` et
+  `sd.organization()` (importés de `backoffice-core/config`) : on désigne les champs, `useCmsSeo(entry)` place les
+  blocs dans la page. L'onglet Référencement en montre l'aperçu pendant la saisie. Les blocs sont aussi dans
+  `entry.structuredData`. Voir le README du site.
+- **Fil d'Ariane pour les moteurs de recherche.** `useCmsSeo(entry)` ajoute un `BreadcrumbList` aux pages qui ont une
+  page parente : pour `/services/droit-des-affaires`, les pages uniques d'adresse `/` et `/services` si elles sont en
+  ligne. Rien à déclarer ; `breadcrumb` règle le nom d'une page dans le fil, ou la retire (`false`).
+- **Recherche sur le site.** `useCmsSearch(q)` et la route `/api/search` cherchent dans les pages publiées, sans tenir
+  compte des majuscules ni des accents, et renvoient titre, adresse et extrait avec les mots trouvés à mettre en
+  évidence. `search: false` retire un contenu de la recherche.
+- **Module Lettre d'information** (`newsletter()`, ou à activer dans l'écran Modules) : inscription confirmée par
+  e-mail, écran « Lettre d'information » (inscrits, en attente, désinscrits, export CSV avec le lien de désinscription
+  de chacun), report des inscrits dans une liste Brevo ou une audience Resend, pages de confirmation et de
+  désinscription aux couleurs du site, déclencheurs de workflow. Côté page : `useCmsNewsletter()`.
+
+- **Typographie.** L'écran Apparence règle les polices du site : police du texte et des titres parmi une vingtaine de
+  polices libres servies par le site lui-même (aucune requête vers un service tiers), polices du système, ou polices
+  envoyées (WOFF2, WOFF, TTF, OTF) ; échelle de taille des titres ; réglages fins par niveau (texte courant, H1 à H4 :
+  police, graisse, taille, interligne, espacement). Aperçu en direct. Sans réglage, le site garde ses polices.
+- **Flux RSS.** `feed: true` sur une collection publie ses derniers contenus à `/feeds/<identifiant>.xml` (une adresse
+  par langue), avec résumé, image et, au choix, texte entier. `useCmsFeed('<identifiant>')` l'annonce dans la page.
+- **`/llms.txt`.** Le site sert la liste de ses pages publiées et de leur résumé, en Markdown, à l'intention des
+  assistants. Nouveau réglage `site.description` (la phrase d'introduction) ; `site.llms: false` retire le fichier.
+
+### Correctifs
+
+- Recherche du site et aperçu des données structurées : le texte tiré d'un contenu mis en forme ne garde plus
+  d'espace avant la ponctuation qui suit un mot en gras ou un lien.
+
+### À faire dans votre site
+
+- **`/llms.txt`** est servi d'office : il ne liste que des pages déjà publiques (celles du plan du site). Pour ne pas
+  le servir : `llms: false` dans `site`. Un fichier `public/llms.txt` existant garde la main.
+- **Typographie** : rien à faire. À savoir si un administrateur règle la taille ou la graisse des titres : ces réglages
+  l'emportent sur les classes du gabarit ; la classe `cms-type-off` en exempte un titre. Avec un en-tête
+  `Content-Security-Policy`, autoriser `font-src 'self'`.
+- Base de données : une migration (0016, inscrits à la lettre d'information). En local, relancer `pnpm db:migrate`.
+- **Fil d'Ariane** : une page qui appelle `useCmsSeo(entry)` et dont une page parente existe dans le back-office reçoit
+  maintenant un bloc `BreadcrumbList`, sans rien changer au code. Le nom des pages parentes est leur `label` dans
+  `cms.config.ts` : s'il n'est pas fait pour être lu par des visiteurs (« Page des services »), ou si le site a
+  plusieurs langues, réglez `breadcrumb` sur ces pages uniques. Si le site écrit déjà son propre fil d'Ariane en
+  JSON-LD, retirez l'un des deux (`breadcrumb: false`, ou `useCmsSeo(entry, { structuredData: false })`).
+- Identifiants réservés : une collection ou une page unique ne peut plus s'appeler `health` ni `newsletter` (ce sont
+  maintenant des écrans du back-office). Si c'est le cas, renommez-la avec `renamedFrom`.
+- Si une page ou un test du site comptait sur la redirection de `/admin` vers le premier contenu : `/admin` est
+  maintenant le tableau de bord.
+
 ## 0.13.0 — 2026-11-25
 
 ### Nouveautés

@@ -13,6 +13,7 @@ import { analyticsModule } from '../cms-modules/analytics'
 import { turnstileModule } from '../cms-modules/turnstile'
 import { googleAdsModule } from '../cms-modules/google-ads'
 import { consentModule } from '../cms-modules/consent'
+import { newsletterModule } from '../cms-modules/newsletter'
 
 /**
  * Modules : ce qu'un module apporte au serveur, et le registre où ils sont inscrits.
@@ -99,6 +100,17 @@ export type CmsModuleDefinition = {
     sender: (settings: ModuleSettings) => { name: string; email: string } | null
     send: (event: H3Event, settings: ModuleSettings, message: MailMessage) => Promise<void>
   }
+  /**
+   * Le module tient des listes de contacts (Brevo, Resend) : un inscrit à la lettre d'information peut y être
+   * ajouté ou retiré. `list` : l'identifiant de la liste, tel qu'il est saisi dans les réglages de la lettre.
+   * Chaque fonction lève une erreur lisible en cas de refus.
+   */
+  contacts?: {
+    add: (event: H3Event, settings: ModuleSettings, list: string, email: string) => Promise<void>
+    remove: (event: H3Event, settings: ModuleSettings, list: string, email: string) => Promise<void>
+    /** Vérifie que la liste existe ; renvoie son nom. */
+    check: (event: H3Event, settings: ModuleSettings, list: string) => Promise<string>
+  }
   /** Déclencheurs de workflow apportés par le module. */
   workflowEvents?: () => ModuleWorkflowEvent[]
   /** Lien vers l'écran du module dans le back-office, s'il en a un en plus de ses réglages. */
@@ -115,7 +127,7 @@ export type CmsModuleDefinition = {
 
 /** Construit au premier usage : les modules intégrés utilisent eux-mêmes ce fichier, ils ne sont pas encore chargés à son import. */
 let builtin: Map<string, CmsModuleDefinition> | undefined
-const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, stripeModule, turnstileModule, googleAdsModule, consentModule].map(m => [m.id, m])))
+const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, newsletterModule, stripeModule, turnstileModule, googleAdsModule, consentModule].map(m => [m.id, m])))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {
@@ -187,6 +199,9 @@ export function requireKnownModule(id: string) {
   if (!found) throw createError({ statusCode: 404, message: 'Module inconnu.' })
   return found
 }
+
+/** Secret du site (NUXT_AUTH_SECRET) : chiffre les clés d'API et signe les liens envoyés par e-mail. */
+export const cmsSiteSecret = (event: H3Event) => siteSecret(event)
 
 function siteSecret(event: H3Event) {
   const secret = useRuntimeConfig(event).authSecret || (import.meta.dev ? 'secret-de-developpement-a-ne-pas-utiliser-en-production' : '')

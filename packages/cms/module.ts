@@ -13,6 +13,7 @@ import cloudflareDev from 'nitro-cloudflare-dev'
  *   pour ne pas embarquer toute la bibliothèque dans le back-office ;
  * - déduit de ce fichier, sous `#cms-types`, le type de chaque contenu : les pages du site ont l'autocomplétion des champs ;
  * - transmet aux pages du site les réglages de référencement (`site.titleSuffix`, `site.shareImage`), lus par `useCmsSeo`.
+ * - sert les polices proposées par l'écran Apparence (dossier `fonts/`) sous `/_cms/fonts/` ;
  * - branche le core sur l'hébergement choisi (`cms: { target }` dans le nuxt.config.ts du site) : Cloudflare ou serveur Node.
  */
 
@@ -64,6 +65,9 @@ export default defineNuxtModule<CmsModuleOptions>({
       nuxt.options.nitro.virtual = { ...nuxt.options.nitro.virtual, '#cms-migrations': `export default ${JSON.stringify(migrations)}` }
     }
 
+    // Polices proposées dans l'écran Apparence : servies par le site lui-même, sans service tiers (shared/fonts.ts).
+    nuxt.options.nitro.publicAssets = [...(nuxt.options.nitro.publicAssets ?? []), { dir: resolve(here, 'fonts'), baseURL: '/_cms/fonts', maxAge: 60 * 60 * 24 * 365 }]
+
     const file = resolve(nuxt.options.rootDir, 'cms.config.ts')
     if (!existsSync(file)) throw new Error(`[backoffice-core] Fichier introuvable : ${file}`)
     nuxt.options.alias['#cms-config'] = file
@@ -82,7 +86,7 @@ export default defineNuxtModule<CmsModuleOptions>({
     const config = await createJiti(nuxt.options.rootDir).import<any>(file, { default: true })
     // Réglages de référencement du site, pour `useCmsSeo` : les pages n'embarquent pas toute la configuration.
     const publicConfig = nuxt.options.runtimeConfig.public as Record<string, unknown>
-    publicConfig.cmsSeo = { siteName: String(config.site?.name ?? ''), titleSuffix: String(config.site?.titleSuffix ?? ''), shareImage: String(config.site?.shareImage ?? '') }
+    publicConfig.cmsSeo = { siteName: String(config.site?.name ?? ''), titleSuffix: String(config.site?.titleSuffix ?? ''), shareImage: String(config.site?.shareImage ?? ''), defaultLocale: String(config.site?.defaultLocale ?? '') }
     // Provenance des contacts : lue par le site à l'arrivée du visiteur (`site.attribution`).
     const attribution = config.site?.attribution
     publicConfig.cmsAttribution = { enabled: attribution !== false, rememberDays: attribution ? Number(attribution.rememberDays ?? 0) : 0 }

@@ -125,6 +125,8 @@ export default async function (t) {
 
   await step('écran : état bien visible, liste (date, origine, taille, état), tentative échouée', async () => {
     await clickText(page, 'aside a', 'Sauvegardes')
+    // Le tableau de bord dit aussi « Le site est sauvegardé » : c'est le bandeau de l'écran Sauvegardes qu'on attend.
+    await page.waitForSelector('[data-test="backup-status"]')
     await says(page, 'Le site est sauvegardé')
     check(await page.$eval('[data-test="backup-status"]', e => e.dataset.code + '/' + e.className.includes('alert-success')) === 'ok/true', 'bandeau d\'état')
     const rows = await page.$$eval('main li[data-backup]', els => els.map(e => e.innerText.replace(/\s+/g, ' ')))

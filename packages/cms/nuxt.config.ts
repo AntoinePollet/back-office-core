@@ -26,7 +26,7 @@ export default defineNuxtConfig({
       /** Version du core installée dans ce projet. */
       cmsVersion: version,
       /** Réglages de référencement du site (`site.name`, `site.titleSuffix`, `site.shareImage` de cms.config.ts), remplis par le module. */
-      cmsSeo: { siteName: '', titleSuffix: '', shareImage: '' },
+      cmsSeo: { siteName: '', titleSuffix: '', shareImage: '', defaultLocale: '' },
       /** Provenance des contacts (`site.attribution` de cms.config.ts), remplie par le module. */
       cmsAttribution: { enabled: true, rememberDays: 0 },
       /** Script de Cloudflare Turnstile (module « turnstile »). Ne se change que pour les tests : NUXT_PUBLIC_TURNSTILE_SCRIPT_URL. */

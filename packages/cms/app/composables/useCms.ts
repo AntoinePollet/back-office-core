@@ -6,6 +6,7 @@ export { cmsImageSrcset, cmsImageUrl, cmsObjectPosition } from '../../shared/med
 import type { MediaFolder } from '../../shared/media-folders'
 import type { CmsConfig } from '../../shared/format'
 import { seoPageTitle } from '../../shared/seo'
+import { structuredDataJson } from '../../shared/structured-data'
 import { cmsLiveRead } from './useCmsLive'
 import { cmsBusyTrack } from './cmsBusy'
 
@@ -117,11 +118,84 @@ export function useSingleton<K extends Key<Singletons>>(key: K, options: ReadOpt
   return useFetch<Singletons[K] | null>(`/api/content/${key}`, { ...read, key: readKey, ...cmsLiveRead(readKey) })
 }
 
+// ───────────── Recherche sur le site ─────────────
+
+/** Un morceau d'extrait ; `match` : il correspond à un mot cherché. */
+export type CmsSearchExcerptPart = { text: string; match: boolean }
+/** Un résultat de `useCmsSearch`. */
+export type CmsSearchResult = {
+  type: string; typeLabel: string; id: string; title: string; path: string; url: string
+  excerpt: CmsSearchExcerptPart[]
+  image: import('../../shared/format').Media | null
+}
+export type CmsSearchResults = { items: CmsSearchResult[]; total: number; query: string }
+
+type SearchOptions = ReadOptions & {
+  /** Nombre de résultats (défaut 10, 50 au plus). */
+  limit?: number
+  /** Types de contenu où chercher (défaut : tous ceux qui ont une page). */
+  types?: (keyof Collections | keyof Singletons)[]
+  /** Délai (ms) après la dernière frappe avant de lancer la recherche, dans le navigateur. Défaut : 250. */
+  debounce?: number
+}
+
+/**
+ * Recherche dans les pages publiées du site, sans tenir compte des majuscules ni des accents.
+ *
+ *   const q = ref('')
+ *   const { data: results, status } = useCmsSearch(q)
+ *
+ *   <input v-model="q" type="search">
+ *   <a v-for="r in results?.items" :key="r.id" :href="r.path">
+ *     {{ r.title }}
+ *     <p><template v-for="(part, i) in r.excerpt" :key="i"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></p>
+ *   </a>
+ *
+ * Une recherche de moins de deux caractères ne renvoie rien. Sur une page de résultats (`/recherche?q=…`), passer
+ * `() => route.query.q` : la recherche est faite pendant le rendu sur le serveur. Les contenus cherchés sont ceux qui
+ * ont une page ; `search: false` dans cms.config.ts en retire un.
+ */
+export function useCmsSearch(query: MaybeRefOrGetter<string | null | undefined>, options: SearchOptions = {}) {
+  const { limit, types, debounce = 250, ...rest } = options
+  const text = () => String(toValue(query) ?? '').trim()
+  // La valeur cherchée suit la saisie avec un léger retard : une requête par pause, pas par lettre.
+  const settled = ref(text())
+  if (import.meta.client) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    watch(text, (value) => {
+      clearTimeout(timer)
+      if (!value || !debounce) settled.value = value
+      else timer = setTimeout(() => { settled.value = value }, debounce)
+    })
+    onScopeDispose(() => clearTimeout(timer))
+  }
+  const params = computed(() => ({ ...rest, q: settled.value, ...(limit ? { limit } : {}), ...(types?.length ? { types: types.join(',') } : {}) }))
+  const key = computed(() => cmsKey('recherche', '', params.value))
+  return useFetch<CmsSearchResults>('/api/search', { query: params, key, default: () => ({ items: [], total: 0, query: '' }) })
+}
+
+// ───────────── Flux RSS ─────────────
+
+/**
+ * Annonce le flux RSS d'une collection (`feed: true` dans cms.config.ts) dans l'en-tête de la page : les navigateurs
+ * et les lecteurs de flux le trouvent tout seuls. Renvoie l'adresse du flux, pour un lien « S'abonner ».
+ *
+ *   const feed = useCmsFeed('articles')          // dans la page de la liste, ou dans app.vue pour tout le site
+ *   <a :href="feed">Flux RSS</a>
+ */
+export function useCmsFeed<K extends Key<Collections>>(type: K, options: { locale?: string; title?: string } = {}) {
+  const site = useRuntimeConfig().public.cmsSeo as { siteName?: string; defaultLocale?: string } | undefined
+  const href = `/feeds/${options.locale && options.locale !== site?.defaultLocale ? `${options.locale}/` : ''}${type}.xml`
+  useHead({ link: [{ key: `cms-feed:${href}`, rel: 'alternate', type: 'application/rss+xml', title: options.title ?? site?.siteName ?? '', href }] })
+  return href
+}
+
 type SeoEntry = {
   locale?: string
   path?: string | null
   url?: string | null
   alternates?: { locale: string; url: string }[]
+  structuredData?: Record<string, unknown>[]
   seo?: {
     title: string | null; description: string | null; image: { url: string } | null; noindex: boolean
     shareTitle?: string | null; shareDescription?: string | null
@@ -135,8 +209,9 @@ type SeoOptions = {
    */
   titleSuffix?: string | false
   /**
-   * Sur la page d'accueil, ajoute le bloc de données structurées qui donne à Google le nom du site (`WebSite`).
-   * Défaut : true. À désactiver si le site écrit déjà le sien.
+   * Données structurées (JSON-LD) de la page : sur l'accueil, le bloc qui donne à Google le nom du site (`WebSite`) ;
+   * partout, les blocs du contenu (`structuredData` dans cms.config.ts : article, questions fréquentes, organisme)
+   * et le fil d'Ariane. Défaut : true. À désactiver si le site écrit déjà les siennes.
    */
   structuredData?: boolean
 }
@@ -183,14 +258,20 @@ export function useCmsSeo(entry: MaybeRefOrGetter<SeoEntry>, options: SeoOptions
     robots: () => (e.value?.seo?.noindex || preview.value ? 'noindex, nofollow' : undefined),
   })
   useHead({
-    // Données structurées : seulement ce qui est certain. Sur l'accueil (langue par défaut), le nom du site, que Google
-    // affiche au-dessus de ses résultats. Rien ailleurs : un fil d'Ariane demanderait le nom des pages parentes, que le
-    // back-office ne connaît pas. Jamais en aperçu ni sur une page masquée.
+    // Données structurées. Sur l'accueil (langue par défaut), le nom du site, que Google affiche au-dessus de ses
+    // résultats ; partout, les blocs que le serveur a calculés à partir du contenu publié (article, questions
+    // fréquentes, organisme, fil d'Ariane : `entry.structuredData`). Jamais en aperçu ni sur une page masquée.
     script: computed(() => {
       const page = e.value
-      if (options.structuredData === false || !site?.siteName || !page?.url || page.path !== '/' || page.seo?.noindex || preview.value) return []
-      const data = { '@context': 'https://schema.org', '@type': 'WebSite', 'name': site.siteName, 'url': page.url, ...(page.locale ? { inLanguage: page.locale } : {}) }
-      return [{ type: 'application/ld+json', key: 'cms-website', innerHTML: JSON.stringify(data).replace(/</g, '\\u003c') }]
+      if (options.structuredData === false || !page?.url || page.seo?.noindex || preview.value) return []
+      const scripts: { type: 'application/ld+json'; key: string; innerHTML: string }[] = []
+      if (site?.siteName && page.path === '/') {
+        const data = { '@context': 'https://schema.org', '@type': 'WebSite', 'name': site.siteName, 'url': page.url, ...(page.locale ? { inLanguage: page.locale } : {}) }
+        scripts.push({ type: 'application/ld+json', key: 'cms-website', innerHTML: JSON.stringify(data).replace(/</g, '\\u003c') })
+      }
+      const blocks = structuredDataJson(page.structuredData ?? [])
+      if (blocks) scripts.push({ type: 'application/ld+json', key: 'cms-structured-data', innerHTML: blocks })
+      return scripts
     }),
     htmlAttrs: { lang: () => e.value?.locale },
     link: computed(() => {
@@ -270,6 +351,68 @@ export function useCmsForm<K extends Key<Forms>>(id: K, initial: Partial<Forms[K
     }
   }
   return { values, errors, error, pending, sent, trap, protection, submit }
+}
+
+// ───────────── Lettre d'information (module `newsletter`) ─────────────
+
+/**
+ * Inscription à la lettre d'information, prête à brancher sur une page :
+ *
+ *   const newsletter = useCmsNewsletter()
+ *
+ *   <form v-if="!newsletter.sent.value" @submit.prevent="newsletter.submit()">
+ *     <input v-model="newsletter.email.value" type="email" required>
+ *     <input v-model="newsletter.trap.value" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+ *     <button :disabled="newsletter.pending.value">S'inscrire</button>
+ *     <p v-if="newsletter.error.value">{{ newsletter.error.value }}</p>
+ *   </form>
+ *   <p v-else>Merci ! Un e-mail vient de vous être envoyé : cliquez sur son lien pour confirmer votre inscription.</p>
+ *
+ * L'inscription ne vaut qu'après le clic sur le lien reçu par e-mail. La réponse est la même que l'adresse soit
+ * déjà inscrite ou non. `trap` est un champ piège facultatif, comme pour `useCmsForm` ; `<CmsTurnstile />` placé
+ * dans le formulaire le protège aussi. `locale` : langue de l'e-mail de confirmation (défaut : celle du site).
+ */
+export function useCmsNewsletter(options: { locale?: MaybeRefOrGetter<string | undefined> } = {}) {
+  const email = ref('')
+  const error = ref<string | null>(null)
+  const pending = ref(false)
+  const sent = ref(false)
+  const trap = ref('')
+  const route = useRoute()
+  const protection = cmsFormProtection()
+  if (getCurrentInstance()) provide(CMS_FORM_PROTECTION, protection)
+
+  async function submit() {
+    if (pending.value) return false
+    error.value = null
+    if (protection.active.value && !protection.token.value) {
+      error.value = 'La vérification anti-robots n\'est pas terminée. Patientez une seconde, puis renvoyez le formulaire.'
+      return false
+    }
+    pending.value = true
+    let consumed = protection.active.value
+    try {
+      const origin = cmsOriginToSend()
+      await cmsApi('/api/newsletter/subscribe', {
+        method: 'POST',
+        body: { email: email.value, locale: toValue(options.locale), source: route.path, website: trap.value, ...(origin ? { origin } : {}), ...(protection.active.value ? { turnstile: protection.token.value } : {}) },
+      })
+      sent.value = true
+      email.value = ''
+      return true
+    }
+    catch (e: any) {
+      // Adresse à corriger, trop de demandes : le serveur s'est arrêté avant de vérifier le jeton, il reste valable.
+      if (e?.statusCode === 422 || e?.statusCode === 429) consumed = false
+      error.value = cmsErrorMessage(e, 'L\'inscription a échoué. Réessayez dans un instant.')
+      return false
+    }
+    finally {
+      if (consumed) protection.reset()
+      pending.value = false
+    }
+  }
+  return { email, error, pending, sent, trap, protection, submit }
 }
 
 /** Ce qui relie un formulaire du site à son anti-robots (`<CmsTurnstile>`). */

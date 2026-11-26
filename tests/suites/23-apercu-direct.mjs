@@ -311,6 +311,8 @@ export default async function (t) {
     check(e.seo?.title === 'Essai', 'référencement : ' + JSON.stringify(e.seo))
     // Même forme que l'API publique pour le même contenu.
     const online = await publicService()
+    // (Les données structurées ne sont calculées que pour une page en ligne, jamais pour un aperçu.)
+    delete online.structuredData
     check(Object.keys(e).sort().join() === Object.keys(online).sort().join(), `clés : ${Object.keys(e).sort().join()} / ${Object.keys(online).sort().join()}`)
     check((await draftOf('services', ids.social)).version === 1, 'la préparation a écrit en base')
   })
