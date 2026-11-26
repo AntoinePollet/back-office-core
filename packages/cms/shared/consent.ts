@@ -7,7 +7,8 @@
  * lien toujours accessible (`<CmsConsentLink />`) ; il est redemandé au bout de six mois, ou quand une finalité
  * s'ajoute. Garder le choix lui-même sur l'appareil ne demande pas d'accord.
  *
- * Finalités : « publicité » (`ads`), apportée par le core dès que la provenance des contacts est relevée, et celles
+ * Finalités : « mesure d'audience » (`audience`), apportée par le core quand Google Analytics mesure le site ;
+ * « publicité » (`ads`), apportée par le core dès que la provenance des contacts est relevée ; et celles
  * que le site déclare lui-même (`consent({ purposes: { video: … } })`) pour ses propres contenus.
  *
  * Ce fichier porte la logique pure, partagée par le serveur (configuration envoyée aux pages) et le site (bandeau).
@@ -41,6 +42,13 @@ export const ADS_PURPOSE: ConsentPurpose = {
   description: 'Savoir quelle annonce vous a amené sur ce site, y compris si vous revenez plus tard, et l\'indiquer à la régie publicitaire quand vous nous contactez.',
 }
 
+/** Finalité apportée par le core quand un module de mesure dépose des cookies (Google Analytics). */
+export const AUDIENCE_PURPOSE: ConsentPurpose = {
+  id: 'audience',
+  label: 'Mesure d\'audience',
+  description: 'Compter les visites et les pages vues avec Google Analytics, qui dépose des cookies pour reconnaître un même visiteur d\'une page et d\'une visite à l\'autre.',
+}
+
 const KEY = /^[a-z][a-zA-Z0-9]*$/
 
 /** Finalités déclarées par le site dans `consent({ purposes })` : identifiant → libellé et description. */
@@ -53,16 +61,20 @@ export function consentOptionsErrors(purposes: unknown): string[] {
   const errors: string[] = []
   for (const [id, p] of Object.entries(purposes as Record<string, any>)) {
     if (!KEY.test(id)) errors.push(`consent() : finalité « ${id} » : l'identifiant doit être en camelCase, sans accent`)
-    else if (id === ADS_PURPOSE.id) errors.push('consent() : la finalité « ads » est apportée par le core, elle ne se déclare pas')
+    else if (id === ADS_PURPOSE.id || id === AUDIENCE_PURPOSE.id) errors.push(`consent() : la finalité « ${id} » est apportée par le core, elle ne se déclare pas`)
     if (!p || typeof p.label !== 'string' || !p.label.trim()) errors.push(`consent() : finalité ${id} : label manquant`)
     if (!p || typeof p.description !== 'string' || !p.description.trim()) errors.push(`consent() : finalité ${id} : description manquante (ce que le visiteur accepte, en une phrase)`)
   }
   return errors
 }
 
-/** Finalités à proposer : la publicité si le site relève la provenance des contacts, puis celles du site. */
-export function consentPurposes(custom: ConsentPurposeOptions | undefined, withAds: boolean): ConsentPurpose[] {
+/**
+ * Finalités à proposer : la mesure d'audience si un module de mesure dépose des cookies, la publicité si le site
+ * relève la provenance des contacts, puis celles du site.
+ */
+export function consentPurposes(custom: ConsentPurposeOptions | undefined, withAds: boolean, withAudience = false): ConsentPurpose[] {
   return [
+    ...(withAudience ? [AUDIENCE_PURPOSE] : []),
     ...(withAds ? [ADS_PURPOSE] : []),
     ...Object.entries(custom ?? {}).map(([id, p]) => ({ id, label: p.label, description: p.description })),
   ]

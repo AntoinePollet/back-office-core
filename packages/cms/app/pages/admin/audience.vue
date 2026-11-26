@@ -5,13 +5,16 @@ import type { AudienceStats } from '../../../shared/analytics'
 // L'audience est ouverte à l'administrateur et à l'éditeur (le serveur le vérifie aussi).
 definePageMeta({ layout: 'admin', middleware: ['cms-auth', 'cms-editor'] })
 
+type Source = { id: string; label: string }
 type Answer =
-  | { state: 'ok'; stats: AudienceStats; updatedAt: string; source: string; module: string }
-  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string; source?: string; module?: string }
+  | { state: 'ok'; stats: AudienceStats; updatedAt: string; source: string; module: string; cookies: boolean; sources: Source[] }
+  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string; source?: string; module?: string; sources?: Source[] }
 
 const user = useCmsUser()
 const isAdmin = computed(() => user.value?.role === 'admin')
 const period = ref<7 | 30>(7)
+// Le fournisseur lu, quand plusieurs sont réglés (Cloudflare et Google Analytics, par exemple). Vide : le premier.
+const source = ref('')
 const answer = ref<Answer | null>(null)
 const loading = ref(false)
 let request = 0
@@ -20,7 +23,7 @@ async function load() {
   const mine = ++request
   loading.value = true
   try {
-    const result = await cmsApi<Answer>('/api/cms/audience', { query: { period: period.value } })
+    const result = await cmsApi<Answer>('/api/cms/audience', { query: { period: period.value, ...(source.value ? { source: source.value } : {}) } })
     if (mine === request) answer.value = result
   }
   catch (e) {
@@ -31,7 +34,12 @@ async function load() {
   }
 }
 await load()
-watch(period, load)
+watch([period, source], load)
+
+const sources = computed(() => answer.value?.sources ?? [])
+/** Le fournisseur affiché, d'après la réponse (le serveur peut en avoir choisi un autre que celui demandé). */
+const current = computed(() => answer.value?.module ?? '')
+const cookies = computed(() => answer.value?.state === 'ok' && answer.value.cookies)
 
 const stats = computed(() => (answer.value?.state === 'ok' ? answer.value.stats : null))
 const empty = computed(() => !!stats.value && stats.value.totals.pageViews === 0)
@@ -46,7 +54,10 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
     <div class="flex flex-wrap items-end gap-3 mb-6">
       <div class="min-w-0 grow">
         <h1 class="text-2xl font-bold">Audience</h1>
-        <p class="text-sm text-base-content/60">La fréquentation du site, mesurée sans cookie.</p>
+        <p class="text-sm text-base-content/60">{{ cookies ? 'La fréquentation du site, pour les visiteurs qui ont accepté la mesure d\'audience.' : 'La fréquentation du site, mesurée sans cookie.' }}</p>
+      </div>
+      <div v-if="sources.length > 1" class="join" role="group" aria-label="Source des chiffres">
+        <button v-for="s in sources" :key="s.id" class="btn btn-sm join-item" :class="current === s.id ? 'btn-primary' : ''" :aria-pressed="current === s.id" :data-source="s.id" @click="source = s.id">{{ s.label }}</button>
       </div>
       <div class="join" role="group" aria-label="Période">
         <button v-for="p in [7, 30] as const" :key="p" class="btn btn-sm join-item" :class="period === p ? 'btn-primary' : ''" :aria-pressed="period === p" @click="period = p">{{ p }} jours</button>
@@ -83,7 +94,7 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
           <div class="card bg-base-100 border border-base-300 p-4 sm:p-5">
             <div class="text-sm text-base-content/60">Visites</div>
             <div class="text-3xl font-bold tabular-nums" data-total="visits">{{ format(stats.totals.visits) }}</div>
-            <div class="text-xs text-base-content/50 mt-1">Arrivées sur le site depuis un autre site ou en direct</div>
+            <div class="text-xs text-base-content/50 mt-1">{{ cookies ? 'Sessions ouvertes sur le site' : 'Arrivées sur le site depuis un autre site ou en direct' }}</div>
           </div>
           <div class="card bg-base-100 border border-base-300 p-4 sm:p-5">
             <div class="text-sm text-base-content/60">Pages vues</div>
@@ -136,8 +147,9 @@ const plural = (n: number, one: string, many: string) => (n > 1 ? many : one)
       </div>
 
       <p class="text-xs text-base-content/50 mt-4">
-        Source : {{ answer!.state === 'ok' ? answer!.source : '' }}, sans cookie. Chiffres relus toutes les 5 minutes (dernière lecture {{ cmsFormatWhen(answer!.state === 'ok' ? answer!.updatedAt : new Date()) }}).
-        Les journées sont comptées en heure universelle ; les robots connus sont écartés.
+        Source : {{ answer!.state === 'ok' ? answer!.source : '' }}<template v-if="!cookies">, sans cookie</template>. Chiffres relus toutes les 5 minutes (dernière lecture {{ cmsFormatWhen(answer!.state === 'ok' ? answer!.updatedAt : new Date()) }}).
+        <template v-if="cookies">Seuls les visiteurs qui ont accepté la mesure d'audience dans le bandeau de consentement sont comptés : ces chiffres sont en dessous de la fréquentation réelle. Les journées sont celles du fuseau horaire de la propriété.</template>
+        <template v-else>Les journées sont comptées en heure universelle ; les robots connus sont écartés.</template>
       </p>
     </template>
   </section>

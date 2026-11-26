@@ -3,9 +3,9 @@ import { type AudiencePeriod, type AudienceStats, AudienceError } from '../../sh
 import type { CmsModuleDefinition, ModuleSettings } from '../utils/modules'
 
 /**
- * Mesure d'audience : ce qui est commun aux modules qui la font (Cloudflare Web Analytics, Plausible).
+ * Mesure d'audience : ce qui est commun aux modules qui la font (Cloudflare Web Analytics, Plausible, Google Analytics).
  * Chaque module apporte sa balise et sa lecture des statistiques (`audience` dans sa définition). Plusieurs peuvent être
- * actifs : chacun ajoute sa balise aux pages, et l'écran « Audience » lit le premier qui est réglé.
+ * actifs : chacun ajoute sa balise aux pages, et l'écran « Audience » lit le premier qui est réglé, ou celui qu'on y choisit.
  */
 
 /** Modules de mesure actifs sur ce site. */
@@ -23,15 +23,19 @@ export async function audienceBeacons(event: H3Event) {
   return tags
 }
 
-/** Le module dont l'écran « Audience » lit les statistiques : le premier actif et réglé, sinon le premier actif. */
-async function readerModule(event: H3Event) {
-  let first: { definition: CmsModuleDefinition; settings: ModuleSettings } | null = null
+/**
+ * Le module dont l'écran « Audience » lit les statistiques : celui demandé s'il est réglé, sinon le premier actif et
+ * réglé, sinon le premier actif. `sources` : tous ceux qui sont réglés, pour passer de l'un à l'autre.
+ */
+async function readerModule(event: H3Event, wanted?: string) {
+  const all: { definition: CmsModuleDefinition; settings: ModuleSettings; ready: boolean }[] = []
   for (const definition of await audienceModules(event)) {
     const settings = await moduleSettings(event, definition.id)
-    if (definition.audience!.ready(settings)) return { definition, settings, ready: true }
-    first ??= { definition, settings }
+    all.push({ definition, settings, ready: definition.audience!.ready(settings) })
   }
-  return first && { ...first, ready: false }
+  const ready = all.filter(m => m.ready)
+  const reader = ready.find(m => m.definition.id === wanted) ?? ready[0] ?? all[0]
+  return reader ? { ...reader, sources: ready.map(m => ({ id: m.definition.id, label: m.definition.label })) } : null
 }
 
 // ───────────── Statistiques, gardées quelques minutes ─────────────
@@ -50,32 +54,39 @@ async function cacheKey(id: string, settings: ModuleSettings, period: AudiencePe
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** `source` : nom du module qui fournit les chiffres ; `module` : son identifiant, pour ouvrir ses réglages. */
+/** Un fournisseur réglé, proposé dans l'écran quand il y en a plusieurs. */
+export type AudienceSource = { id: string; label: string }
+
+/**
+ * `source` : nom du module qui fournit les chiffres ; `module` : son identifiant, pour ouvrir ses réglages ;
+ * `cookies` : il ne compte que les visiteurs qui ont donné leur accord ; `sources` : les fournisseurs réglés.
+ */
 export type AudienceAnswer =
-  | { state: 'ok'; stats: AudienceStats; updatedAt: string; source: string; module: string }
-  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string; source?: string; module?: string }
+  | { state: 'ok'; stats: AudienceStats; updatedAt: string; source: string; module: string; cookies: boolean; sources: AudienceSource[] }
+  | { state: 'unconfigured' | 'refused' | 'unavailable'; message: string; source?: string; module?: string; sources?: AudienceSource[] }
 
 /** Ce que l'écran « Audience » affiche : les statistiques, ou pourquoi elles manquent. */
-export async function readAudience(event: H3Event, period: AudiencePeriod): Promise<AudienceAnswer> {
-  const reader = await readerModule(event)
+export async function readAudience(event: H3Event, period: AudiencePeriod, wanted?: string): Promise<AudienceAnswer> {
+  const reader = await readerModule(event, wanted)
   if (!reader?.ready) return { state: 'unconfigured', message: 'La mesure d\'audience n\'est pas encore réglée.', source: reader?.definition.label, module: reader?.definition.id }
-  const { definition, settings } = reader
+  const { definition, settings, sources } = reader
+  const cookies = definition.audience!.cookies === true
   const source = definition.label
   const module = definition.id
   const key = await cacheKey(definition.id, settings, period)
   const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < CACHE_MS) return { state: 'ok', stats: hit.stats, updatedAt: new Date(hit.at).toISOString(), source, module }
+  if (hit && Date.now() - hit.at < CACHE_MS) return { state: 'ok', stats: hit.stats, updatedAt: new Date(hit.at).toISOString(), source, module, cookies, sources }
   try {
     const stats = await definition.audience!.stats(event, settings, period)
     for (const [k, v] of cache) if (Date.now() - v.at >= CACHE_MS) cache.delete(k)
     const at = Date.now()
     cache.set(key, { at, stats })
-    return { state: 'ok', stats, updatedAt: new Date(at).toISOString(), source, module }
+    return { state: 'ok', stats, updatedAt: new Date(at).toISOString(), source, module, cookies, sources }
   }
   catch (error) {
-    if (error instanceof AudienceError) return { state: error.kind, message: error.message, source, module }
+    if (error instanceof AudienceError) return { state: error.kind, message: error.message, source, module, sources }
     console.error('[cms] audience : lecture impossible', error)
-    return { state: 'unavailable', message: 'Les statistiques n\'ont pas pu être lues pour le moment.', source, module }
+    return { state: 'unavailable', message: 'Les statistiques n\'ont pas pu être lues pour le moment.', source, module, sources }
   }
 }
 

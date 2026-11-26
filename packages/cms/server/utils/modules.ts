@@ -15,6 +15,7 @@ import { googleAdsModule } from '../cms-modules/google-ads'
 import { consentModule } from '../cms-modules/consent'
 import { newsletterModule } from '../cms-modules/newsletter'
 import { searchConsoleModule } from '../cms-modules/search-console'
+import { googleAnalyticsModule } from '../cms-modules/google-analytics'
 import { appointmentsModule } from '../cms-modules/appointments'
 import { googleBusinessModule } from '../cms-modules/google-business'
 import { assistantModule } from '../cms-modules/assistant'
@@ -78,6 +79,8 @@ export type ModuleLogo = { style: 'fill' | 'stroke'; paths: string[]; color: str
 export type AudienceCapability = {
   /** Réglages complets et valides : le module peut mesurer et lire. */
   ready: (settings: ModuleSettings) => boolean
+  /** Le fournisseur dépose des cookies : il ne mesure qu'avec l'accord du visiteur (finalité « audience » du module Consentement). */
+  cookies?: boolean
   /** Balise HTML à ajouter à la fin des pages du site, ou null si les réglages ne le permettent pas encore. */
   beacon: (settings: ModuleSettings) => string | null
   /** Statistiques d'une période se terminant aujourd'hui. Lève une `AudienceError` lisible en cas de refus ou de panne. */
@@ -132,7 +135,7 @@ export type CmsModuleDefinition = {
 
 /** Construit au premier usage : les modules intégrés utilisent eux-mêmes ce fichier, ils ne sont pas encore chargés à son import. */
 let builtin: Map<string, CmsModuleDefinition> | undefined
-const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, formsModule, newsletterModule, appointmentsModule, stripeModule, turnstileModule, googleAdsModule, searchConsoleModule, googleBusinessModule, consentModule, monitoringModule, assistantModule].map(m => [m.id, m])))
+const registry = () => (builtin ??= new Map<string, CmsModuleDefinition>([brevoModule, resendModule, analyticsModule, plausibleModule, googleAnalyticsModule, formsModule, newsletterModule, appointmentsModule, stripeModule, turnstileModule, googleAdsModule, searchConsoleModule, googleBusinessModule, consentModule, monitoringModule, assistantModule].map(m => [m.id, m])))
 
 /** Inscrit un module écrit dans le projet client. À appeler au démarrage, depuis un plugin Nitro. */
 export function registerCmsModule(definition: CmsModuleDefinition) {

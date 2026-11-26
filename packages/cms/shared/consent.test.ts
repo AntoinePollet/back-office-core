@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { cleanOrigin, originFromMetadata, originToMetadata } from './attribution.ts'
 import {
-  ADS_PURPOSE, CONSENT_SCRIPT_ID, consentConfigTag, consentLocale, consentOptionsErrors, consentPurposes, consentTexts, isPolicyUrl,
+  ADS_PURPOSE, AUDIENCE_PURPOSE, CONSENT_SCRIPT_ID, consentConfigTag, consentLocale, consentOptionsErrors, consentPurposes, consentTexts, isPolicyUrl,
   readStoredConsent, storedConsent,
 } from './consent.ts'
 import { consent } from './modules.ts'
@@ -14,6 +14,10 @@ test('finalités : la publicité si la provenance est relevée, puis celles du s
   assert.deepEqual(consentPurposes(undefined, true), [ADS_PURPOSE])
   assert.deepEqual(consentPurposes(undefined, false), [])
   assert.deepEqual(consentPurposes({ video: { label: video.label, description: video.description } }, true).map(p => p.id), ['ads', 'video'])
+  // Google Analytics dépose des cookies : sa finalité vient en tête.
+  assert.deepEqual(consentPurposes(undefined, true, true), [AUDIENCE_PURPOSE, ADS_PURPOSE])
+  assert.deepEqual(consentPurposes(undefined, false, true), [AUDIENCE_PURPOSE])
+  assert.equal(consentOptionsErrors({ audience: { label: 'x', description: 'y' } }).length, 1)
   assert.deepEqual(consentOptionsErrors(undefined), [])
   assert.deepEqual(consentOptionsErrors({ video: { label: 'Vidéos', description: 'Afficher les vidéos.' } }), [])
   assert.equal(consentOptionsErrors({ 'mes-videos': { label: 'x', description: 'y' } }).length, 1)

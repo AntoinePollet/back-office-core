@@ -492,6 +492,7 @@ export default defineCms({
 | `forms({ … })` | Des formulaires pour le site. Chaque message est validé par le serveur, enregistré, visible dans « Messages reçus » (administrateurs et éditeurs) et peut déclencher un workflow. |
 | `stripe({ … })` | Le paiement en ligne d'un produit à prix fixe ou d'un abonnement, sur la page de paiement de Stripe ; codes promo, factures PDF et stock en option. Le prix vient du back-office. Paiements visibles dans « Paiements » (administrateurs et éditeurs). Réglages : clé d'API, secret du webhook. |
 | `analytics()` | La fréquentation du site dans l'écran « Audience » (administrateurs et éditeurs) : visites, pages vues, courbe par jour, pages les plus vues, sites d'origine. Par Cloudflare Web Analytics, sans cookie ni bandeau de consentement. Réglages : jeton de la balise, identifiant du site, identifiant du compte, jeton d'API en lecture. |
+| `googleAnalytics()` | La même chose par Google Analytics 4. Il dépose des cookies : il ne mesure que les visiteurs qui l'acceptent dans le bandeau du module Consentement, à activer aussi. Réglages : identifiant de mesure, identifiant de la propriété, connexion Google (celle de Google Ads et de Search Console). |
 | `plausible()` | La même chose par Plausible (plausible.io ou votre propre instance), sans cookie. Réglages : domaine du site, clé « Stats API », adresse de l'instance (facultative). `analytics({ provider: 'plausible' })` revient au même. |
 | `turnstile()` | Un anti-robots pour les formulaires du site (Cloudflare Turnstile), le plus souvent invisible pour les visiteurs. Réglages : clé du site, clé secrète. Côté page : `<CmsTurnstile />`. |
 | `newsletter()` | L'inscription à la lettre d'information, confirmée par e-mail. Inscrits visibles dans « Lettre d'information » (administrateurs et éditeurs), exportables, et reportés dans une liste Brevo ou une audience Resend. Réglage : la liste (facultative). Demande `brevo()` ou `resend()` réglé. Côté page : `useCmsNewsletter()`. |
@@ -657,7 +658,8 @@ Le module **Consentement** s'active dans l'écran Modules. Le core pose alors un
 (jamais dans le back-office ni dans un aperçu) : « Tout refuser » et « Tout accepter » ont la même forme, côte à côte,
 « Personnaliser » montre chaque finalité sans rien cocher d'avance. Rien n'est écrit sur l'appareil avant le choix ; le
 choix est gardé six mois, puis redemandé (ou dès qu'une finalité s'ajoute). Le bandeau est en français ou en anglais
-selon la langue de la page.
+selon la langue de la page. Le core apporte deux finalités : « Mesure de la publicité » quand le site relève la
+provenance des contacts, et « Mesure d'audience » quand le module Google Analytics mesure le site.
 
 **À faire dans le site** : placer le lien qui permet de changer d'avis, dans le pied de page par exemple. Il n'affiche
 rien tant que le module n'est pas actif.
@@ -937,9 +939,10 @@ pour la corriger.
 
 ### Mesure d'audience
 
-Deux fournisseurs, sans cookie : **Cloudflare Web Analytics** (`analytics()`) et **Plausible** (`plausible()`), à
-activer dans l'écran Modules. Chaque module de mesure actif ajoute sa balise aux pages ; l'écran « Audience » lit le
-premier qui est réglé.
+Deux fournisseurs sans cookie, **Cloudflare Web Analytics** (`analytics()`) et **Plausible** (`plausible()`), et un
+qui en dépose, **Google Analytics** (`googleAnalytics()`, voir plus bas). Ils s'activent dans l'écran Modules. Chaque
+module de mesure actif ajoute sa balise aux pages ; l'écran « Audience » lit le premier qui est réglé, et propose de
+passer de l'un à l'autre quand plusieurs le sont.
 
 **Plausible.** Dans Plausible, « Add a website » avec le nom de domaine du site, puis dans les réglages du compte,
 « API Keys » → « New API Key », type *Stats API*. Saisir le domaine et la clé dans **Modules → Plausible** (et, pour
@@ -962,6 +965,37 @@ vidé à l'enregistrement, elle apparaît donc tout de suite. Les statistiques s
 Si le site pose une politique de sécurité du contenu (en-tête `Content-Security-Policy`), y autoriser
 `https://static.cloudflareinsights.com` (script) et `https://cloudflareinsights.com` (envoi des mesures), et pour
 l'anti-robots `https://challenges.cloudflare.com` (script et cadre).
+
+**Google Analytics.** Le module lit une propriété Google Analytics 4 et charge le script de Google sur le site.
+Google Analytics dépose des cookies : contrairement aux deux autres, il lui faut l'accord du visiteur.
+
+- **Activer aussi le module Consentement** (voir « Consentement des visiteurs »). Son bandeau gagne la finalité
+  « Mesure d'audience ». Le script de Google n'est chargé qu'après l'accord ; si le visiteur le retire, la mesure
+  s'arrête tout de suite et les cookies de Google Analytics sont retirés. Sans le module Consentement, rien n'est
+  mesuré.
+- Les chiffres ne comptent donc que les visiteurs qui acceptent : ils sont en dessous de la fréquentation réelle.
+  Pour un décompte complet, garder Cloudflare ou Plausible à côté : l'écran « Audience » montre les deux.
+
+Côté Google, une fois :
+
+1. Dans [Google Analytics](https://analytics.google.com), créer la propriété et son **flux de données web**.
+   Relever l'**ID de mesure** du flux (`G-…`) et l'**ID de la propriété** (Administration → Détails de la propriété,
+   des chiffres). Ne pas coller le code proposé dans les pages : le core charge le script tout seul.
+2. Dans la [console Google Cloud](https://console.cloud.google.com), activer **Google Analytics Data API** dans un
+   projet, et y avoir un **ID client OAuth** (celui des modules Google Ads et Search Console convient).
+3. Créer le **jeton d'actualisation** sur [OAuth Playground](https://developers.google.com/oauthplayground), avec
+   l'autorisation `https://www.googleapis.com/auth/analytics.readonly`, en se connectant avec un compte Google qui a
+   accès à la propriété (le rôle « Lecteur » suffit). Pour un seul jeton commun à plusieurs modules Google, cocher
+   les autorisations de chacun.
+
+Saisir ces valeurs dans **Modules → Google Analytics**, puis « Vérifier la connexion ». Pour une agence, le client
+OAuth et le jeton peuvent venir de l'hébergement (`NUXT_GOOGLE_ADS_CLIENT_ID`, `NUXT_GOOGLE_ADS_CLIENT_SECRET`,
+`NUXT_GOOGLE_ANALYTICS_REFRESH_TOKEN`) : il ne reste alors que les deux identifiants à saisir pour chaque site.
+
+Les changements de page sans rechargement sont comptés par Google Analytics lui-même (« mesure améliorée », active
+par défaut sur un flux web). Avec une politique de sécurité du contenu, autoriser `https://www.googletagmanager.com`
+(script) et `https://*.google-analytics.com` (envoi des mesures). Pensez à nommer Google Analytics dans la politique
+de confidentialité du site.
 
 ### Vendre des produits avec Stripe
 
