@@ -13,6 +13,8 @@ continuent de marcher ; `X.0.0` demande d'adapter les sites.
 <!-- Notez ici chaque changement au fil de l'eau, du point de vue de la personne qui met son site à jour.
      Rubriques possibles : ### Nouveautés, ### Correctifs, ### À faire dans votre site (action demandée au développeur). -->
 
+## 0.14.0 — 2026-11-26
+
 ### Nouveautés
 
 - **Tableau de bord.** Le back-office s'ouvre sur un écran d'accueil au lieu du premier contenu du menu : ce qui attend
