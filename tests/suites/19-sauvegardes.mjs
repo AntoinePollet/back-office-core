@@ -147,8 +147,12 @@ export default async function (t) {
     ids.manual = s.items[0].name
     check(!s.items.some(i => i.name === ids.old), 'la sauvegarde de 40 jours aurait dû être effacée')
     check(s.items.length === 3, 'les sauvegardes de moins de 30 jours doivent rester : ' + s.items.map(i => i.name).join(', '))
-    await page.waitForFunction(() => document.querySelectorAll('main li[data-backup]').length === 4)
-    check((await page.$$eval('main li[data-backup]', els => els[0].innerText)).includes('Manuelle'), 'la nouvelle sauvegarde n\'est pas en tête de liste')
+    // L'écran recharge sa liste après avoir dit « Sauvegarde faite » : on attend d'y voir la nouvelle sauvegarde.
+    // Le nombre de lignes ne le dit pas, il est le même avant et après (une de plus, celle de 40 jours en moins).
+    await page.waitForSelector(`main li[data-backup="${ids.manual}"]`)
+    const shown = await page.$$eval('main li[data-backup]', els => els.map(el => el.innerText))
+    check(shown.length === 4, `${shown.length} lignes affichées`)
+    check(shown[0].includes('Manuelle'), 'la nouvelle sauvegarde n\'est pas en tête de liste')
   })
 
   await step('contenu : tout ce qu\'il faut pour reconstruire le site, aucun secret lisible', async () => {

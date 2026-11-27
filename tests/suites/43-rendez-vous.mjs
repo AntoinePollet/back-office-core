@@ -451,15 +451,25 @@ export default async function (t) {
     await page.click('[data-appointments-tab="past"]')
     await page.waitForSelector('[data-appointment-refund]')
 
-    // Saisir un rendez-vous.
+    // Saisir un rendez-vous. Le jour proposé est aujourd'hui, où il ne reste plus de moment libre en fin de journée :
+    // la saisie se fait pour demain, qui en a à toute heure. Le moment est désigné par son instant, pas par son heure :
+    // tant que la liste de demain n'est pas affichée, celle d'aujourd'hui montre les mêmes heures.
     await page.click('[data-appointments-add]')
-    await page.waitForSelector('[data-appointments-add-dialog][open] [data-add-slots] button')
-    await page.click('[data-add-slots] button')
+    await page.waitForSelector('[data-appointments-add-dialog][open]')
+    const tomorrow = parisDay(1)
+    const service = (await board()).settings.services[0].id
+    const [free] = (await claire.json(`/api/cms/appointments/slots?service=${service}&date=${tomorrow}`)).slots
+    check(free, 'aucun moment libre demain')
+    await page.$eval('[data-appointments-add-dialog] input[name="date"]', (input, day) => { input.value = day; input.dispatchEvent(new Event('input', { bubbles: true })) }, tomorrow)
+    const slot = `[data-appointments-add-dialog][open] [data-add-slots] button[data-slot="${free.at}"]`
+    await page.waitForSelector(slot)
+    await page.click(slot)
     await page.type('[data-appointments-add-dialog] input[name="name"]', 'Tom Leroy')
     await page.type('[data-appointments-add-dialog] input[name="email"]', 'tom@example.com')
     await page.click('[data-add-save]')
     await says(page, 'Rendez-vous enregistré')
-    check((await board()).upcoming.some(a => a.name === 'Tom Leroy'), 'rendez-vous saisi non enregistré')
+    const tom = (await board()).upcoming.find(a => a.name === 'Tom Leroy')
+    check(tom && Date.parse(tom.start) === Date.parse(free.at), 'rendez-vous saisi non enregistré au moment choisi : ' + JSON.stringify(tom))
 
     // Réglages : une valeur refusée est expliquée, une bonne est enregistrée.
     await page.click('[data-appointments-tab="settings"]')

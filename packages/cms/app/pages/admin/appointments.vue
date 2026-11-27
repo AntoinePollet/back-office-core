@@ -377,7 +377,7 @@ async function renewFeed() {
         <div>
           <span class="fieldset-legend">Heure</span>
           <div v-if="freeSlots.length" class="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto" data-add-slots>
-            <button v-for="s in freeSlots" :key="s.at" type="button" class="btn btn-xs" :class="draft.start === s.at ? 'btn-primary' : 'btn-outline'" :aria-pressed="draft.start === s.at" @click="draft.start = s.at">{{ s.time }}</button>
+            <button v-for="s in freeSlots" :key="s.at" type="button" class="btn btn-xs" :class="draft.start === s.at ? 'btn-primary' : 'btn-outline'" :aria-pressed="draft.start === s.at" :data-slot="s.at" @click="draft.start = s.at">{{ s.time }}</button>
           </div>
           <p v-else class="text-sm text-base-content/60">Aucun moment libre ce jour-là dans les horaires réglés.</p>
         </div>
