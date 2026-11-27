@@ -43,7 +43,7 @@ sont alors joints à l'exécution (« Artifacts », gardés 7 jours).
 | `E2E_CHROME` | Chrome ou Chromium trouvé aux emplacements habituels | chemin du navigateur |
 | `E2E_HEADLESS` | `1` | `0` : afficher le navigateur pendant les tests |
 | `E2E_CAPTURES` | `0` | `1` : garder aussi des captures des étapes réussies |
-| `E2E_TIMEOUT` | `10000` | délai maximal (ms) d'une attente dans le navigateur |
+| `E2E_TIMEOUT` | `10000` (`20000` en intégration continue, variable `CI`) | délai maximal (ms) d'une attente dans le navigateur |
 | `E2E_SERVER_TIMEOUT` | `180000` | délai maximal (ms) de démarrage du serveur |
 | `E2E_RESULTS` | `tests/resultats` | dossier des captures et des journaux |
 
