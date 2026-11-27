@@ -315,7 +315,7 @@ async function failGroup(event: H3Event, rows: Row[], def: CmsDefinition | undef
     name: 'schedule.failed', module: 'core', target: first.type,
     summary: `${what} a échoué`,
     context: {
-      entry: { title, type: def?.label ?? first.type, locale: locales.join(', '), adminUrl: `${getRequestURL(event).origin}${adminEntryPath(first.type, first.entryId)}` },
+      entry: { title, type: def?.label ?? first.type, locale: locales.join(', '), adminUrl: `${linkBase(event)}${adminEntryPath(first.type, first.entryId)}` },
       schedule: { action: SCHEDULE_NOUNS[first.action], date: whenText(first.at), by: first.createdByName, error },
     },
   }])

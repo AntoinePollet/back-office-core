@@ -1,9 +1,9 @@
 // Module « Lettre d'information » : inscription confirmée par e-mail, liste Brevo, désinscription, écran.
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, clickText, login, menuLabels, says, until } from '../lib/harness.mjs'
+import { runSql } from '../lib/sqlite.mjs'
 
 /** Fichier de la base locale du serveur de test, pour avancer le temps (sqlite3). */
 function databaseFile() {
@@ -11,7 +11,7 @@ function databaseFile() {
   const dir = path.join(config.tmpDir, 'etat', 'v3', 'd1', 'miniflare-D1DatabaseObject')
   return path.join(dir, fs.readdirSync(dir).find(f => f.endsWith('.sqlite') && f !== 'metadata.sqlite'))
 }
-const sql = query => execFileSync('sqlite3', [databaseFile(), query]).toString().trim()
+const sql = query => runSql(databaseFile(), query)
 
 export const meta = {
   title: 'lettre d\'information : double confirmation, liste Brevo, désinscription, export',

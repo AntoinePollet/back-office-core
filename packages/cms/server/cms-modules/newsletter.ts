@@ -83,7 +83,7 @@ function sameSignature(a: string, b: string) {
 
 const confirmPurpose = (row: Pick<Subscriber, 'createdAt'>) => `confirm:${row.createdAt.getTime()}`
 const link = async (event: H3Event, route: 'confirm' | 'unsubscribe', row: Pick<Subscriber, 'id' | 'createdAt'>) =>
-  `${getRequestURL(event).origin}/api/newsletter/${route}?id=${row.id}&t=${await sign(event, route === 'confirm' ? confirmPurpose(row) : 'leave', row.id)}`
+  `${linkBase(event)}/api/newsletter/${route}?id=${row.id}&t=${await sign(event, route === 'confirm' ? confirmPurpose(row) : 'leave', row.id)}`
 
 /** Lien de désinscription d'un inscrit : toujours le même, tant que le secret du site ne change pas. */
 export const unsubscribeUrl = (event: H3Event, row: Pick<Subscriber, 'id' | 'createdAt'>) => link(event, 'unsubscribe', row)
@@ -178,7 +178,7 @@ export async function syncPending(event: H3Event) {
 // ───────────── Inscription, confirmation, désinscription ─────────────
 
 function subscriberEvent(event: H3Event, name: 'newsletter.subscribed' | 'newsletter.unsubscribed', row: Subscriber, leave: string) {
-  const origin = getRequestURL(event).origin
+  const origin = linkBase(event)
   return {
     name, module: 'newsletter',
     summary: `${row.email} s'est ${name === 'newsletter.subscribed' ? 'inscrit à' : 'désinscrit de'} la lettre d'information`,

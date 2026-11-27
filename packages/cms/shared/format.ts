@@ -316,7 +316,11 @@ type Site = {
    * défaut ; `false` le retire. Un fichier `public/llms.txt` écrit à la main dans le projet prend le dessus.
    */
   llms?: boolean
-  /** Adresse du site en production, pour les aperçus et le sitemap. */
+  /**
+   * Adresse du site en production, pour les aperçus et le sitemap. Sur un serveur Node, c'est aussi celle des liens
+   * envoyés par e-mail (nouveau mot de passe, confirmations) : sans elle, ils prennent l'adresse de la requête, que
+   * son expéditeur choisit. À déclarer dès que le site a son domaine.
+   */
   url?: string
   /** Codes de langue : 'fr', 'en', 'pt-BR'. */
   locales: readonly [string, ...string[]]

@@ -154,4 +154,24 @@ export default async function (t) {
     await clickText(page, 'button', 'Rétablir l\'origine'); await says(page, 'Apparence d\'origine rétablie')
     check(!(await html('/')).text.includes('--color-primary:#b91c1c'), 'le thème est encore appliqué')
   })
+
+  await step('en-têtes de sécurité : sur toute réponse ; le back-office ne s\'affiche pas dans le cadre d\'un autre site', async () => {
+    const visitor = t.http()
+    const NAMES = ['x-content-type-options', 'referrer-policy', 'x-frame-options', 'content-security-policy', 'strict-transport-security']
+    const read = async (url, headers) => { const r = await visitor.call(url, { headers }); return Object.fromEntries(NAMES.map(name => [name, r.headers.get(name)])) }
+    for (const url of ['/', '/api/cms/setup', '/admin', '/admin/login']) {
+      const h = await read(url)
+      check(h['x-content-type-options'] === 'nosniff' && h['referrer-policy'] === 'strict-origin-when-cross-origin', `${url} : ${JSON.stringify(h)}`)
+    }
+    for (const url of ['/admin', '/admin/login']) {
+      const h = await read(url)
+      check(h['x-frame-options'] === 'SAMEORIGIN' && h['content-security-policy']?.includes('frame-ancestors \'self\''), `${url} : ${JSON.stringify(h)}`)
+    }
+    // Les pages du site restent affichables dans un cadre : le back-office les montre dans ses aperçus.
+    const home = await read('/')
+    check(!home['x-frame-options'] && !home['content-security-policy'], 'page du site : ' + JSON.stringify(home))
+    // L'engagement HTTPS n'est pris que pour une demande arrivée en HTTPS (ce serveur de test répond en HTTP).
+    check(!home['strict-transport-security'], 'engagement HTTPS pris en HTTP')
+    check((await read('/', { 'x-forwarded-proto': 'https' }))['strict-transport-security'] === 'max-age=31536000', 'engagement HTTPS absent en HTTPS')
+  })
 }

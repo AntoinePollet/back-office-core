@@ -1,10 +1,10 @@
 // Corbeille (suppression récupérable 30 jours) et journal d'activité (qui a fait quoi et quand).
 // Le serveur fait foi : l'essentiel est vérifié par l'API et par le site ; deux étapes contrôlent les écrans.
-import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, clickText, login, menuLabels, says, until } from '../lib/harness.mjs'
+import { hasSqlite, runSql } from '../lib/sqlite.mjs'
 
 export const meta = { title: 'corbeille (contenus et fichiers) et journal d\'activité', mock: true }
 
@@ -302,15 +302,16 @@ export default async function (t) {
     const doomed = await upload('perimee.png')
     for (const url of [`${E}/services/${old}`, `${E}/services/${fresh}`, `/api/cms/media/${doomed.id}`]) check((await marc.del(url)).status === 200, 'suppression ' + url)
     const file = databaseFile()
-    let done = false
-    if (file) {
-      // 29 jours : encore là, « dernier jour ». Puis 31 jours : parti.
-      try { execFileSync('sqlite3', [file, `update cms_trash set deleted_at = ${Date.now() - 29.5 * 86400_000} where item_id in ('${old}', '${doomed.id}')`]); done = true }
-      catch { /* outil absent */ }
+    if (!file || !hasSqlite()) {
+      info('non vérifié ici : il faut l\'outil sqlite3 pour avancer la date de suppression')
+      // La corbeille est laissée comme l'expiration l'aurait laissée, pour l'étape suivante : sans ces deux éléments.
+      for (const item of (await trash(claire)).filter(i => i.title !== 'Service récent')) check((await claire.del(`/api/cms/trash/${item.id}`)).status === 200, 'ménage de ' + item.title)
+      return
     }
-    if (!done) { info('non vérifié ici : il faut l\'outil sqlite3 pour avancer la date de suppression'); return }
+    // 29 jours : encore là, « dernier jour ». Puis 31 jours : parti.
+    runSql(file, `update cms_trash set deleted_at = ${Date.now() - 29.5 * 86400_000} where item_id in ('${old}', '${doomed.id}')`)
     check((await inTrash(claire, 'Service oublié'))?.daysLeft === 1, 'jours restants : ' + JSON.stringify(await inTrash(claire, 'Service oublié')))
-    execFileSync('sqlite3', [file, `update cms_trash set deleted_at = ${Date.now() - 31 * 86400_000} where item_id in ('${old}', '${doomed.id}')`])
+    runSql(file, `update cms_trash set deleted_at = ${Date.now() - 31 * 86400_000} where item_id in ('${old}', '${doomed.id}')`)
     check((await trash(marc)).map(i => i.title).join() === 'Service récent', 'après le délai : ' + (await trash(marc)).map(i => i.title))
     check((await claire.get(doomed.url + '?corbeille=1')).status === 404, 'le fichier expiré est encore dans le stockage')
     await logged('Corbeille : 2 éléments supprimés définitivement après le délai de récupération')

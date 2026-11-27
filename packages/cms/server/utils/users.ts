@@ -27,7 +27,7 @@ async function createPasswordLink(event: H3Event, userId: string, kind: keyof ty
       : db.delete(invites).where(and(eq(invites.userId, userId), lte(invites.expiresAt, new Date()))),
     db.insert(invites).values({ tokenHash: await sha256(token), userId, expiresAt: new Date(Date.now() + LINK_LIFETIME_MS[kind]) }),
   ])
-  return `${getRequestURL(event).origin}/admin/invite/${token}`
+  return `${linkBase(event)}/admin/invite/${token}`
 }
 
 /**

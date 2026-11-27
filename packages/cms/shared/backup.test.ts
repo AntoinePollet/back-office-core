@@ -27,6 +27,8 @@ test('un nom qui n\'est pas celui d\'une sauvegarde est refusé (pas de chemin d
 test('le dossier des sauvegardes n\'est jamais servi comme un fichier de la médiathèque', () => {
   assert.ok(isPrivateKey(`${BACKUP_PREFIX}2026-11-20T03-17-05Z_auto_ab12cd.ndjson.gz`))
   assert.ok(isPrivateKey(`/${BACKUP_PREFIX}x`))
+  // Sur un disque qui ne distingue pas la casse, c'est le même dossier.
+  assert.ok(isPrivateKey('_SAUVEGARDES/x') && isPrivateKey('_Sauvegardes/x'))
   assert.ok(!isPrivateKey('a1b2c3/photo.png'))
   assert.ok(!isPrivateKey('a1b2c3/_sauvegardes/photo.png'))
 })

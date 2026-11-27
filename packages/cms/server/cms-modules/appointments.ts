@@ -120,7 +120,7 @@ async function depositFor(event: H3Event, service: AppointmentService) {
 
 const SCOPE = 'appointment'
 const linkTo = async (event: H3Event, route: 'manage' | 'ics', row: Pick<Row, 'id'>) =>
-  `${getRequestURL(event).origin}/api/appointments/${route}?id=${row.id}&t=${await signLink(event, SCOPE, row.id)}`
+  `${linkBase(event)}/api/appointments/${route}?id=${row.id}&t=${await signLink(event, SCOPE, row.id)}`
 
 /** Le rendez-vous que désigne un lien reçu par e-mail, ou null si le lien est faux ou si le rendez-vous n'existe plus. */
 export async function appointmentFromLink(event: H3Event) {
@@ -131,9 +131,40 @@ export async function appointmentFromLink(event: H3Event) {
   return row ?? null
 }
 
+// ───────────── Adresse de l'agenda à abonner ─────────────
+
+const FEED_KEY = 'appointments-feed'
+
+/**
+ * Ce que désigne la signature de l'adresse de l'agenda : `all` tant qu'elle n'a jamais été renouvelée (les adresses
+ * déjà données restent bonnes), puis une valeur tirée au hasard à chaque renouvellement. Lue une fois par requête.
+ */
+function feedVersion(event: H3Event): Promise<string> {
+  return (event.context._cmsFeedVersion ??= useDb(event).select().from(schema.settings).where(eq(schema.settings.key, FEED_KEY))
+    .then(([row]) => {
+      const version = (row?.value as { version?: unknown } | null | undefined)?.version
+      return typeof version === 'string' && version ? version : 'all'
+    })) as Promise<string>
+}
+
 /** Adresse de l'agenda à abonner (Google Agenda, Outlook, Apple) : tous les rendez-vous, protégée par sa signature. */
-export const appointmentsFeedUrl = async (event: H3Event) => `${getRequestURL(event).origin}/api/appointments/feed.ics?t=${await signLink(event, 'appointments-feed', 'all')}`
-export const isFeedLink = (event: H3Event) => verifyLink(event, 'appointments-feed', 'all', getQuery(event).t)
+export const appointmentsFeedUrl = async (event: H3Event) => `${linkBase(event)}/api/appointments/feed.ics?t=${await signLink(event, FEED_KEY, await feedVersion(event))}`
+export const isFeedLink = async (event: H3Event) => verifyLink(event, FEED_KEY, await feedVersion(event), getQuery(event).t)
+
+/**
+ * Renouvelle l'adresse de l'agenda : l'ancienne cesse aussitôt de répondre. À faire quand elle a été donnée à
+ * quelqu'un qui ne doit plus voir les rendez-vous (elle porte les noms et les coordonnées) ; les agendas abonnés sont
+ * à réabonner à la nouvelle. Renvoie la nouvelle adresse.
+ */
+export async function renewAppointmentsFeed(event: H3Event, user: Actor) {
+  const value = { version: crypto.randomUUID() }
+  const now = new Date()
+  await useDb(event).insert(schema.settings).values({ key: FEED_KEY, value, updatedAt: now })
+    .onConflictDoUpdate({ target: schema.settings.key, set: { value, updatedAt: now } })
+  event.context._cmsFeedVersion = Promise.resolve(value.version)
+  logActivity(event, { action: 'appointments.feed', category: 'settings', actor: user, target: { kind: 'appointments' }, phrase: 'a renouvelé l\'adresse de l\'agenda des rendez-vous (l\'ancienne ne répond plus)' })
+  return { feedUrl: await appointmentsFeedUrl(event) }
+}
 
 // ───────────── Lecture ─────────────
 
@@ -229,7 +260,7 @@ function appointmentEvent(event: H3Event, name: keyof typeof EVENT_LABELS, row: 
       appointment: {
         service: row.serviceLabel, date: when, duration: formatDuration(durationOf(row)), name: row.name, email: row.email, phone: row.phone ?? '', note: row.note ?? '',
         location: row.location ?? '', deposit: paidText(row), cancelledBy: row.cancelledBy ? CANCELLED_BY[row.cancelledBy] : '',
-        adminUrl: `${getRequestURL(event).origin}/admin/appointments?rdv=${row.id}`,
+        adminUrl: `${linkBase(event)}/admin/appointments?rdv=${row.id}`,
       },
       origin: { channel: CHANNELS[channelOfRow(row.origin)], campaign: row.origin?.campaign ?? '' },
     },

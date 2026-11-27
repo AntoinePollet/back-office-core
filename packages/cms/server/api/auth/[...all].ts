@@ -35,12 +35,16 @@ export default defineEventHandler(async (event) => {
   try { email = String((JSON.parse(raw) as { email?: unknown }).email ?? '').trim().toLowerCase() }
   catch { /* corps illisible : Better Auth répondra par une erreur */ }
   const keys = loginKeys(event, email)
-  await assertLoginAllowed(event, keys)
+  // La tentative est comptée avant d'être vérifiée : une rafale de tentatives simultanées ne passe pas sous la limite.
+  const attempt = await reserveLoginAttempt(event, keys)
 
   // Le corps a été lu pour en tirer l'adresse e-mail : on le remet dans une nouvelle requête.
   const response = await auth.handler(new Request(url, { method: 'POST', headers: event.headers, body: raw }))
-  if (response.status === 401) await recordLoginFailure(event, keys, email)
-  else if (response.ok) {
+    .catch(async (error) => { await releaseLoginAttempt(event, attempt); throw error })
+  if (response.status === 401) await confirmLoginFailure(event, attempt, email)
+  // Tout autre résultat n'est pas un mauvais mot de passe : la tentative n'est plus comptée.
+  else await releaseLoginAttempt(event, attempt)
+  if (response.ok) {
     // Mot de passe juste mais code encore attendu : les échecs ne sont effacés qu'une fois la connexion terminée,
     // sinon redonner son mot de passe offrirait à chaque fois de nouveaux essais de code.
     const data = await response.clone().json().then(d => d as { twoFactorRedirect?: boolean; user?: { id?: string; name?: string; email?: string } } | null, () => null)

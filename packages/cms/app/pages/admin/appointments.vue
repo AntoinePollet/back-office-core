@@ -150,6 +150,18 @@ async function copyFeed() {
   try { await navigator.clipboard.writeText(data.value.feedUrl); toast.success('Adresse copiée') }
   catch { toast.error('Copie impossible : sélectionnez l\'adresse à la main.') }
 }
+// Renouveler l'adresse de l'agenda : l'ancienne ne répond plus (elle a été donnée à quelqu'un qui ne doit plus la lire).
+const renewing = ref(false)
+async function renewFeed() {
+  if (!confirm('Renouveler l\'adresse de l\'agenda ? L\'ancienne cesse aussitôt de répondre : un agenda déjà abonné ne se met plus à jour tant qu\'il n\'est pas abonné à la nouvelle.')) return
+  renewing.value = true
+  try {
+    data.value.feedUrl = (await cmsApi<{ feedUrl: string }>('/api/cms/appointments/feed', { method: 'POST' })).feedUrl
+    toast.success('Nouvelle adresse créée : l\'ancienne ne répond plus')
+  }
+  catch (e) { toast.error(cmsErrorMessage(e, 'L\'adresse n\'a pas pu être renouvelée.')) }
+  finally { renewing.value = false }
+}
 </script>
 
 <template>
@@ -316,6 +328,11 @@ async function copyFeed() {
           <input :value="data.feedUrl" readonly class="input input-sm join-item grow font-mono text-xs" aria-label="Adresse de l'agenda" data-appointments-feed @focus="($event.target as HTMLInputElement).select()">
           <button type="button" class="btn btn-sm join-item" @click="copyFeed"><Copy :size="14" />Copier</button>
         </div>
+        <p class="text-sm text-base-content/60">
+          Elle a été donnée à quelqu'un qui ne doit plus voir les rendez-vous ?
+          <button type="button" class="link" :disabled="renewing" data-appointments-feed-renew @click="renewFeed">{{ renewing ? 'Renouvellement…' : 'Renouveler l\'adresse' }}</button> :
+          l'ancienne cesse de répondre, et les agendas abonnés sont à réabonner à la nouvelle.
+        </p>
       </div>
     </form>
 
@@ -360,7 +377,7 @@ async function copyFeed() {
         <div>
           <span class="fieldset-legend">Heure</span>
           <div v-if="freeSlots.length" class="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto" data-add-slots>
-            <button v-for="s in freeSlots" :key="s.at" type="button" class="btn btn-xs" :class="draft.start === s.at ? 'btn-primary' : 'btn-outline'" :aria-pressed="draft.start === s.at" @click="draft.start = s.at">{{ s.time }}</button>
+            <button v-for="s in freeSlots" :key="s.at" type="button" class="btn btn-xs" :class="draft.start === s.at ? 'btn-primary' : 'btn-outline'" :aria-pressed="draft.start === s.at" :data-slot="s.at" @click="draft.start = s.at">{{ s.time }}</button>
           </div>
           <p v-else class="text-sm text-base-content/60">Aucun moment libre ce jour-là dans les horaires réglés.</p>
         </div>

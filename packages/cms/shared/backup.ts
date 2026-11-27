@@ -51,8 +51,11 @@ export function parseBackupName(name: string): { createdAt: Date; kind: BackupKi
   return Number.isNaN(createdAt.getTime()) ? null : { createdAt, kind: m[7] as BackupKind }
 }
 
-/** Une clé du bucket que le site ne doit jamais servir : les sauvegardes. */
-export const isPrivateKey = (key: string) => key.replace(/^\/+/, '').startsWith(BACKUP_PREFIX)
+/**
+ * Une clé du bucket que le site ne doit jamais servir : les sauvegardes. La casse est ignorée : sur un disque qui ne
+ * la distingue pas (macOS, Windows), `_SAUVEGARDES/` désigne le même dossier.
+ */
+export const isPrivateKey = (key: string) => key.replace(/^\/+/, '').toLowerCase().startsWith(BACKUP_PREFIX)
 
 // ───────────── Ce qui est sauvegardé, protégé, restauré ─────────────
 

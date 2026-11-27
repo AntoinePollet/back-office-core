@@ -127,7 +127,7 @@ export const stripeModule: CmsModuleDefinition = {
   details: (event) => [
     {
       label: 'Adresse du webhook',
-      value: `${getRequestURL(event).origin}${webhookPath}`,
+      value: `${linkBase(event)}${webhookPath}`,
       help: 'Dans Stripe : « Développeurs » → « Webhooks » (Workbench) → « Créer une destination d\'événements » → « Votre compte », '
         + 'format « Instantané » (snapshot), dernière version de l\'API ; type « Endpoint de webhook » ; collez cette adresse.',
     },
@@ -269,7 +269,7 @@ async function decrementStock(event: H3Event, collection: string, entryId: strin
   if (typeof now !== 'number') return
   // Le stock est affiché par le site : la page ne doit pas rester en retard.
   await purgeSiteCache(event).catch(() => false)
-  if (now <= 0) emitCmsEvents(event, [stockEvent(collection, entryId, title, getRequestURL(event).origin)])
+  if (now <= 0) emitCmsEvents(event, [stockEvent(collection, entryId, title, linkBase(event))])
 }
 
 // ───────────── Enregistrement des paiements (webhook) ─────────────
@@ -317,7 +317,7 @@ export async function applyStripeEvent(event: H3Event, stripeEvent: { type?: str
   const appointment = changed.status === 'paid' && changed.collection === APPOINTMENTS.paymentCollection ? await appointmentPaid(event, changed.entryId) : null
   if (changed.status === 'paid' || changed.status === 'failed') {
     const name = changed.status === 'paid' ? 'payment.succeeded' : 'payment.failed'
-    emitCmsEvents(event, [paymentEvent(name, { ...changed, shipping: changed.shipping ?? null }, getRequestURL(event).origin)])
+    emitCmsEvents(event, [paymentEvent(name, { ...changed, shipping: changed.shipping ?? null }, linkBase(event))])
   }
   return `${inserted ? `enregistré (${status})` : `mis à jour (${status})`}${appointment ? ` ; rendez-vous : ${appointment}` : ''}`
 }
@@ -350,7 +350,7 @@ async function startSubscription(event: H3Event, payment: PaymentRow, session: R
     origin: payment.origin, createdAt: now, updatedAt: now,
   }
   const [inserted] = await useDb(event).insert(schema.subscriptions).values(row).onConflictDoNothing({ target: schema.subscriptions.subscriptionId }).returning()
-  if (inserted) emitCmsEvents(event, [subscriptionEvent('subscription.started', inserted, getRequestURL(event).origin)])
+  if (inserted) emitCmsEvents(event, [subscriptionEvent('subscription.started', inserted, linkBase(event))])
 }
 
 /**
@@ -365,7 +365,7 @@ async function applyInvoice(event: H3Event, type: string, object: Record<string,
   const [subscription] = await db.select().from(s).where(eq(s.subscriptionId, invoice.subscriptionId))
   if (!subscription) return 'ignoré : abonnement inconnu'
   const now = new Date()
-  const origin = getRequestURL(event).origin
+  const origin = linkBase(event)
   if (type === 'invoice.payment_failed') {
     const [late] = await db.update(s).set({ status: 'past_due', updatedAt: now }).where(and(eq(s.id, subscription.id), inArray(s.status, ['active', 'trialing']))).returning()
     if (late) emitCmsEvents(event, [subscriptionEvent('subscription.payment_failed', late, origin)])
@@ -401,7 +401,7 @@ async function applySubscription(event: H3Event, type: string, object: Record<st
     ...(found.currentPeriodEnd ? { currentPeriodEnd: new Date(found.currentPeriodEnd) } : {}),
     ...(found.status === 'canceled' ? { canceledAt: new Date(found.canceledAt ?? now.getTime()) } : {}),
   }).where(eq(s.id, before.id)).returning()
-  if (after?.status === 'canceled') emitCmsEvents(event, [subscriptionEvent('subscription.canceled', after, getRequestURL(event).origin)])
+  if (after?.status === 'canceled') emitCmsEvents(event, [subscriptionEvent('subscription.canceled', after, linkBase(event))])
   return `abonnement mis à jour (${found.status}${found.cancelAtPeriodEnd && found.status !== 'canceled' ? ', résiliation demandée' : ''})`
 }
 

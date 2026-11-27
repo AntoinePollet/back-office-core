@@ -14,6 +14,13 @@ export type ImageRatio = typeof IMAGE_RATIOS[number]
 /** Formats que l'on sait redimensionner et recadrer. Les SVG, GIF animés et PDF sont servis tels quels. */
 export const RESIZABLE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
 
+/**
+ * Une clé de fichier bien formée : des morceaux séparés par « / », dont aucun n'est vide, « . » ou « .. ».
+ * Un stockage adressé par une URL (S3) ou par un chemin (disque) résout ces morceaux : `./_sauvegardes/x` y désigne
+ * `_sauvegardes/x`, et `../autre` sort du bucket. Une clé qui en contient est donc refusée avant d'atteindre le stockage.
+ */
+export const isPlainKey = (key: string) => !!key && key.split('/').every(part => !!part && part !== '.' && part !== '..' && !/[\0\\]/.test(part))
+
 /** Plus petite largeur servie qui couvre la largeur voulue. */
 export const snapWidth = (width: number) => IMAGE_WIDTHS.find(w => w >= width) ?? IMAGE_WIDTHS[IMAGE_WIDTHS.length - 1]!
 

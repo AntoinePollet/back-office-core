@@ -41,7 +41,9 @@ export const plausibleModule: CmsModuleDefinition = {
     },
     {
       key: 'host', label: 'Adresse de Plausible', type: 'text', placeholder: PLAUSIBLE_DEFAULT_HOST,
-      help: 'À remplir seulement si vous hébergez votre propre Plausible (Community Edition) : son adresse, par exemple https://stats.mon-domaine.fr. Vide : plausible.io.',
+      help: 'À remplir seulement si vous hébergez votre propre Plausible (Community Edition) : son adresse, par exemple https://stats.mon-domaine.fr. Vide : plausible.io. Changer cette adresse demande de saisir à nouveau la clé d\'API.',
+      // La clé d'API est envoyée à cette adresse.
+      protects: ['apiKey'],
     },
   ],
   adminPage: { to: '/admin/audience', label: 'Voir l\'audience' },

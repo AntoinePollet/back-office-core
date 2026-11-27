@@ -53,8 +53,12 @@ export const config = {
   chrome: findChrome(),
   /** E2E_HEADLESS=0 : affiche le navigateur pendant les tests. */
   headless: env.E2E_HEADLESS !== '0',
-  /** Délai maximal d'une attente dans le navigateur. */
-  timeout: number('E2E_TIMEOUT', 10_000),
+  /**
+   * Délai maximal d'une attente dans le navigateur. Doublé en intégration continue (variable `CI`, posée par GitHub) :
+   * ses machines sont environ deux fois plus lentes qu'un poste de développement, avec des à-coups, et une page
+   * arrivée en retard ne doit pas passer pour un échec. Un vrai défaut échoue toujours, au bout de ce délai.
+   */
+  timeout: number('E2E_TIMEOUT', env.CI ? 20_000 : 10_000),
   /** Délai maximal de démarrage du serveur (première compilation comprise). */
   serverTimeout: number('E2E_SERVER_TIMEOUT', 180_000),
   /** E2E_CAPTURES=1 : garde aussi les captures d'écran des étapes réussies. */

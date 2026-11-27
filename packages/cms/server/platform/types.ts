@@ -75,6 +75,18 @@ export type Platform = {
   cachePurger: (event: H3Event) => (() => Promise<{ success: boolean; errors?: unknown }>) | undefined
   /** Adresse IP du visiteur, telle que l'hébergement la donne de façon fiable. */
   clientIp: (event: H3Event) => string | undefined
+  /**
+   * Vrai si l'en-tête `Host` d'une requête est fiable : l'hébergeur achemine la requête d'après lui (Cloudflare).
+   * Faux s'il arrive tel que l'expéditeur l'a écrit (serveur Node) : les liens envoyés par e-mail prennent alors
+   * l'adresse officielle du site (voir `linkBase`).
+   */
+  trustedHost: boolean
+  /**
+   * Adresses IP que désigne un nom de domaine, là où le serveur peut joindre un réseau privé (serveur Node) : avant
+   * d'appeler une adresse choisie par quelqu'un, le core vérifie qu'elle ne désigne pas ce réseau (shared/outbound.ts).
+   * Absent chez Cloudflare, d'où un Worker ne joint qu'Internet.
+   */
+  resolveHost?: (hostname: string) => Promise<string[]>
   /** Vrai si le core doit déclencher lui-même les tâches planifiées (pas de déclencheur fourni par l'hébergeur). */
   ownScheduler: boolean
   /** Au démarrage du serveur : ce qui doit être prêt (ou échouer) avant la première requête. */

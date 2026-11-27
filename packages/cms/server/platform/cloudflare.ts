@@ -33,5 +33,6 @@ export const platform: Platform = {
     return cache?.purge ? () => cache.purge!({ purgeEverything: true }) : undefined
   },
   clientIp: event => getRequestHeader(event, 'cf-connecting-ip') ?? getRequestIP(event),
+  trustedHost: true,
   ownScheduler: false,
 }

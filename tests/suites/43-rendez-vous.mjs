@@ -1,11 +1,11 @@
 // Module « Prise de rendez-vous » : réglages, créneaux, réservation (y compris simultanée), e-mails, page du visiteur
 // (annulation, fichier d'agenda), back-office (saisie, annulation, export, droits), rappels, acompte par Stripe.
-import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, clickText, login, menuLabels, says, until } from '../lib/harness.mjs'
+import { runSql } from '../lib/sqlite.mjs'
 
 /** Fichier de la base locale du serveur de test, pour avancer le temps (sqlite3). */
 function databaseFile() {
@@ -13,7 +13,7 @@ function databaseFile() {
   const dir = path.join(config.tmpDir, 'etat', 'v3', 'd1', 'miniflare-D1DatabaseObject')
   return path.join(dir, fs.readdirSync(dir).find(f => f.endsWith('.sqlite') && f !== 'metadata.sqlite'))
 }
-const sql = query => execFileSync('sqlite3', [databaseFile(), query]).toString().trim()
+const sql = query => runSql(databaseFile(), query)
 
 export const meta = {
   title: 'prise de rendez-vous : créneaux, réservation, annulation, rappels, acompte',
@@ -380,6 +380,19 @@ export default async function (t) {
     check((await visitor.get('/api/appointments/feed.ics')).status === 404 && (await visitor.get('/api/appointments/feed.ics?t=faux')).status === 404, 'agenda servi sans signature')
   })
 
+  await step('agenda à abonner : renouveler l\'adresse ferme l\'ancienne ; administrateur seulement', async () => {
+    const { feedUrl } = await board()
+    const refused = [(await marc.call('/api/cms/appointments/feed', { method: 'POST' })).status, (await visitor.call('/api/cms/appointments/feed', { method: 'POST' })).status]
+    check(refused.join() === '403,401', 'renouvellement sans en avoir le droit : ' + refused.join())
+    check((await visitor.get(feedUrl.replace(B, ''))).status === 200, 'un refus a fermé l\'adresse')
+    const renewed = await claire.json('/api/cms/appointments/feed', { method: 'POST' })
+    check(renewed.feedUrl !== feedUrl && renewed.feedUrl.startsWith(`${B}/api/appointments/feed.ics?t=`), JSON.stringify(renewed))
+    check((await visitor.get(feedUrl.replace(B, ''))).status === 404, 'l\'ancienne adresse répond encore')
+    const feed = await visitor.get(renewed.feedUrl.replace(B, ''))
+    check(feed.status === 200 && feed.text.includes('SUMMARY:Première consultation — Nadia Morel'), 'la nouvelle adresse ne sert pas l\'agenda')
+    check((await board()).feedUrl === renewed.feedUrl, 'l\'écran montre encore l\'ancienne adresse')
+  })
+
   await step('site : choisir une prestation et un créneau, réserver ; le créneau pris entre-temps est signalé', async () => {
     const site = await t.newPage({ context: await t.newContext() })
     await site.goto(B + '/rendez-vous', { waitUntil: 'networkidle0' })
@@ -438,15 +451,25 @@ export default async function (t) {
     await page.click('[data-appointments-tab="past"]')
     await page.waitForSelector('[data-appointment-refund]')
 
-    // Saisir un rendez-vous.
+    // Saisir un rendez-vous. Le jour proposé est aujourd'hui, où il ne reste plus de moment libre en fin de journée :
+    // la saisie se fait pour demain, qui en a à toute heure. Le moment est désigné par son instant, pas par son heure :
+    // tant que la liste de demain n'est pas affichée, celle d'aujourd'hui montre les mêmes heures.
     await page.click('[data-appointments-add]')
-    await page.waitForSelector('[data-appointments-add-dialog][open] [data-add-slots] button')
-    await page.click('[data-add-slots] button')
+    await page.waitForSelector('[data-appointments-add-dialog][open]')
+    const tomorrow = parisDay(1)
+    const service = (await board()).settings.services[0].id
+    const [free] = (await claire.json(`/api/cms/appointments/slots?service=${service}&date=${tomorrow}`)).slots
+    check(free, 'aucun moment libre demain')
+    await page.$eval('[data-appointments-add-dialog] input[name="date"]', (input, day) => { input.value = day; input.dispatchEvent(new Event('input', { bubbles: true })) }, tomorrow)
+    const slot = `[data-appointments-add-dialog][open] [data-add-slots] button[data-slot="${free.at}"]`
+    await page.waitForSelector(slot)
+    await page.click(slot)
     await page.type('[data-appointments-add-dialog] input[name="name"]', 'Tom Leroy')
     await page.type('[data-appointments-add-dialog] input[name="email"]', 'tom@example.com')
     await page.click('[data-add-save]')
     await says(page, 'Rendez-vous enregistré')
-    check((await board()).upcoming.some(a => a.name === 'Tom Leroy'), 'rendez-vous saisi non enregistré')
+    const tom = (await board()).upcoming.find(a => a.name === 'Tom Leroy')
+    check(tom && Date.parse(tom.start) === Date.parse(free.at), 'rendez-vous saisi non enregistré au moment choisi : ' + JSON.stringify(tom))
 
     // Réglages : une valeur refusée est expliquée, une bonne est enregistrée.
     await page.click('[data-appointments-tab="settings"]')

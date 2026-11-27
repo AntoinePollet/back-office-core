@@ -1,3 +1,4 @@
+import { lookup } from 'node:dns/promises'
 import { resolve } from 'node:path'
 import type { H3Event } from 'h3'
 import { images } from '#cms-images'
@@ -89,10 +90,15 @@ export const platform: Platform = {
   sharedCache: false,
   cachePurger: () => undefined,
   clientIp,
+  trustedHost: false,
+  resolveHost: async hostname => (await lookup(hostname, { all: true })).map(found => found.address),
   ownScheduler: true,
   /** La base est ouverte et mise à niveau tout de suite : une migration qui échoue arrête le démarrage, bien en vue. */
   start() {
     checkS3()
+    // Sans adresse officielle, les liens des e-mails prennent celle de la requête, que son expéditeur écrit lui-même.
+    if (!import.meta.dev && !cmsConfig.site.url)
+      console.warn('[cms] `site.url` n\'est pas déclaré dans cms.config.ts : les liens envoyés par e-mail (nouveau mot de passe, confirmations) prennent l\'adresse de la requête, que n\'importe qui peut choisir. Déclarez l\'adresse du site.')
     sqliteDatabase(resolve(dataDir(), 'cms.sqlite'))
   },
 }

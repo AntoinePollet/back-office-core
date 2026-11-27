@@ -1,9 +1,9 @@
 // Aperçu du site avec les brouillons : mode aperçu qui suit la navigation, et liens d'aperçu à partager.
-import { execFileSync } from 'node:child_process'
 import { readdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
-import { check, login, says } from '../lib/harness.mjs'
+import { check, login, says, until } from '../lib/harness.mjs'
+import { hasSqlite, runSql } from '../lib/sqlite.mjs'
 
 export const meta = { title: 'aperçu du site et liens d\'aperçu partagés' }
 
@@ -137,9 +137,9 @@ export default async function (t) {
   await step('expiration : un lien dont la date est passée ne montre plus rien', async () => {
     const file = databaseFile()
     let done = false
-    if (file) {
-      try { execFileSync('sqlite3', [file, `update cms_preview_links set expires_at = ${Date.now() - 1000} where id = '${links.marc.id}'`]); done = true }
-      catch { /* outil absent */ }
+    if (file && hasSqlite()) {
+      runSql(file, `update cms_preview_links set expires_at = ${Date.now() - 1000} where id = '${links.marc.id}'`)
+      done = true
     }
     if (!done) { info('non vérifié ici : il faut l\'outil sqlite3 pour avancer la date du lien'); return }
     check(await titles(visitor, tokenOf(links.marc.url)) === ONLINE, 'le lien expiré fonctionne encore')
@@ -163,7 +163,8 @@ export default async function (t) {
     await says(page, 'Lien créé pour « Validation du gérant »')
     const url = await page.$eval('.modal-open input[readonly]', i => i.value)
     check(await titles(visitor, tokenOf(url)) === `${CHANGED} | ${COMING}`, 'le lien créé depuis l\'interface ne fonctionne pas')
-    check(await page.evaluate(() => [...document.querySelectorAll('.modal-open li')].some(li => li.textContent.includes('Validation du gérant') && li.textContent.includes('jusqu\'au'))), 'le lien n\'est pas dans la liste')
+    // La fenêtre affiche « Lien créé » puis recharge sa liste : le lien y arrive un instant après.
+    await until(() => page.evaluate(() => [...document.querySelectorAll('.modal-open li')].some(li => li.textContent.includes('Validation du gérant') && li.textContent.includes('jusqu\'au'))), 'le lien dans la liste de la fenêtre « Aperçu »')
     // Un rédacteur a l'aperçu, pas le partage.
     const writer = await t.newPage({ context: await t.newContext() })
     await login(writer, B, LINA)

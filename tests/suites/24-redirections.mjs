@@ -1,9 +1,10 @@
 // Redirections manuelles et pages introuvables : API, site public (serveur et navigation interne), écran du back-office.
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, clickText, login, menuLabels, says, until } from '../lib/harness.mjs'
+import { hasSqlite, runSql } from '../lib/sqlite.mjs'
 
 export const meta = {
   title: 'redirections manuelles, import en lot, pages introuvables',
@@ -275,14 +276,11 @@ export default async function (t) {
   await step('plafond et ménage : 500 adresses au plus, les plus demandées gardées, oubli après 90 jours', async () => {
     const file = databaseFile()
     let done = false
-    if (file) {
+    if (file && hasSqlite()) {
       const now = Date.now()
       const values = Array.from({ length: 520 }, (_, i) => `('/afflux/${i}', ${i < 10 ? 50 : 1}, ${now - i * 1000}, ${now - i * 1000})`).join(',')
-      try {
-        execFileSync('sqlite3', [file, `insert into cms_not_found (path, hits, first_at, last_at) values ${values}, ('/tres-ancienne', 900, ${now - 100 * 86400_000}, ${now - 91 * 86400_000})`])
-        done = true
-      }
-      catch { /* outil absent */ }
+      runSql(file, `insert into cms_not_found (path, hits, first_at, last_at) values ${values}, ('/tres-ancienne', 900, ${now - 100 * 86400_000}, ${now - 91 * 86400_000})`)
+      done = true
     }
     if (!done) { info('non vérifié ici : il faut l\'outil sqlite3 pour remplir la table'); return }
     // La prochaine écriture fait le ménage.

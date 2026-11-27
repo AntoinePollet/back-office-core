@@ -51,6 +51,12 @@ export async function clearRateLimit(event: H3Event, keys: string[]) {
   if (keys.length) await useDb(event).delete(schema.rateLimits).where(inArray(schema.rateLimits.key, keys))
 }
 
+/** Retire une occurrence à chaque compteur, sans descendre sous zéro : elle avait été comptée d'avance, à tort. */
+export async function unhitRateLimit(event: H3Event, keys: string[]) {
+  const { rateLimits } = schema
+  if (keys.length) await useDb(event).update(rateLimits).set({ count: sql`max(${rateLimits.count} - 1, 0)` }).where(inArray(rateLimits.key, keys))
+}
+
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`
 
 // ───────────── Connexion : on compte les échecs ─────────────
@@ -77,17 +83,46 @@ export async function assertLoginAllowed(event: H3Event, keys: LoginKeys) {
   )
 }
 
+/** Une tentative comptée d'avance, avec la valeur de ses compteurs si elle échoue. */
+export type LoginAttempt = { keys: LoginKeys; counts: Map<string, number> }
+
+/**
+ * Réserve une tentative de connexion : elle est comptée avant d'être vérifiée, comme si elle allait échouer, et
+ * refusée (429) si l'un des compteurs dépasse alors son maximum.
+ *
+ * Compter après coup laisserait passer une rafale : des tentatives lancées en même temps liraient toutes le compteur
+ * avant qu'aucune n'y soit inscrite, et seraient toutes essayées. Ici chaque compteur avance en une seule requête :
+ * elles sont toutes comptées, et celles qui dépassent le maximum ne sont pas essayées.
+ *
+ * La suite dit ce qu'il en est : `confirmLoginFailure` si la tentative a échoué, `releaseLoginAttempt` sinon.
+ */
+export async function reserveLoginAttempt(event: H3Event, keys: LoginKeys): Promise<LoginAttempt> {
+  // Déjà trop d'échecs : refus sans rien compter, avec le délai d'attente.
+  await assertLoginAllowed(event, keys)
+  const attempt = { keys, counts: await hitRateLimit(event, loginList(keys), LOGIN_WINDOW_MS) }
+  const over = loginList(keys).some(key => (attempt.counts.get(key) ?? 0) > (key === keys.ip ? MAX_FAILURES.ip : MAX_FAILURES.email))
+  if (over) {
+    await releaseLoginAttempt(event, attempt)
+    await assertLoginAllowed(event, keys)
+    // D'autres tentatives simultanées ont pu rendre leur place entre-temps : celle-ci reste refusée.
+    throw createError({ statusCode: 429, message: 'Trop de tentatives de connexion. Réessayez dans un instant.' })
+  }
+  return attempt
+}
+
+/** La tentative n'était pas un échec (connexion réussie, code encore attendu, demande mal formée) : elle n'est plus comptée. */
+export const releaseLoginAttempt = (event: H3Event, attempt: LoginAttempt) => unhitRateLimit(event, loginList(attempt.keys))
+
 /** Nombre d'échecs de suite, pour un même compte, à partir duquel le journal d'activité le signale (une seule ligne). */
 const FAILURES_NOTED = 3
 
 /**
- * Enregistre un échec de connexion. Le journal d'activité n'en garde que les répétitions, avec retenue : une ligne au
- * 3ᵉ échec de suite d'un compte existant, une quand le compte est bloqué, une quand une adresse IP est bloquée.
- * L'adresse saisie n'est inscrite que si un compte la porte (on ne recopie pas ce que quelqu'un a tapé par erreur
- * dans le champ e-mail) ; le mot de passe essayé n'est jamais lu ici.
+ * La tentative réservée a échoué : elle reste comptée. Le journal d'activité n'en garde que les répétitions, avec
+ * retenue : une ligne au 3ᵉ échec de suite d'un compte existant, une quand le compte est bloqué, une quand une adresse
+ * IP est bloquée. L'adresse saisie n'est inscrite que si un compte la porte (on ne recopie pas ce que quelqu'un a tapé
+ * par erreur dans le champ e-mail) ; le mot de passe essayé n'est jamais lu ici.
  */
-export async function recordLoginFailure(event: H3Event, keys: LoginKeys, email = '') {
-  const counts = await hitRateLimit(event, loginList(keys), LOGIN_WINDOW_MS)
+export async function confirmLoginFailure(event: H3Event, { keys, counts }: LoginAttempt, email = '') {
   const ip = clientIp(event)
   const forEmail = keys.email ? counts.get(keys.email) : undefined
   if (forEmail === FAILURES_NOTED || forEmail === MAX_FAILURES.email) {

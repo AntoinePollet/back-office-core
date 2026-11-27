@@ -134,7 +134,7 @@ export const rateLimits = sqliteTable('cms_rate_limits', {
 export type WorkflowTrigger = { event: string; /** Types de contenu concernés ; vide = tous. */ types: string[] }
 export type WorkflowAction =
   | { kind: 'email'; to: string; subject: string; body: string; /** Adresse à laquelle répondre (une variable est possible). */ replyTo?: string }
-  | { kind: 'webhook'; url: string }
+  | { kind: 'webhook'; /** Adresse appelée. En base, elle est chiffrée (voir `sealWorkflowActions`, server/utils/workflows.ts). */ url: string }
 export type WorkflowStep = { kind: WorkflowAction['kind']; status: 'success' | 'error' | 'skipped'; detail: string; ms: number }
 
 export const workflows = sqliteTable('cms_workflows', {

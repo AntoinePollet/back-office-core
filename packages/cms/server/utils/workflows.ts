@@ -4,6 +4,8 @@ import type { WorkflowAction, WorkflowStep, WorkflowTrigger } from '../database/
 import type { CmsEvent } from './events'
 import type { ModuleWorkflowEvent } from './modules'
 import { adminEntryPath } from '../../shared/admin-paths'
+import { isPrivateHost } from '../../shared/health'
+import { decryptSecret, encryptSecret } from '../../shared/secrets'
 
 type WorkflowRow = typeof schema.workflows.$inferSelect
 type Context = Record<string, Record<string, string>>
@@ -93,7 +95,7 @@ const textToHtml = (text: string) =>
   escapeHtml(text).replace(/https?:\/\/[^\s<]+/g, url => `<a href="${url}">${url}</a>`).replace(/\n/g, '<br>')
 
 function buildContext(event: H3Event, payload: CmsEvent): { context: Context; summary: string } {
-  const origin = getRequestURL(event).origin
+  const origin = linkBase(event)
   const site = { name: cmsConfig.site.name, url: cmsConfig.site.url ?? origin }
   if (payload.module !== undefined) {
     const context: Context = { ...payload.context, site, user: { email: payload.user?.email ?? '' } }
@@ -134,11 +136,37 @@ export async function sampleEvent(event: H3Event, trigger: WorkflowTrigger, user
     return { name: trigger.event, module: fromModule.id, ...sample, at }
   }
   if (trigger.event === 'user.invited')
-    return { name: 'user.invited', email: user.email, recipient: 'Personne de test', link: `${getRequestURL(event).origin}/admin/invite/exemple`, reason: 'invite', user: who, at }
+    return { name: 'user.invited', email: user.email, recipient: 'Personne de test', link: `${linkBase(event)}/admin/invite/exemple`, reason: 'invite', user: who, at }
   const type = trigger.types[0] ?? Object.keys(cmsConfig.collections ?? {})[0] ?? Object.keys(cmsConfig.singletons ?? {})[0]!
   const sample = { type, id: 'exemple', title: 'Contenu d\'exemple', locale: cmsConfig.site.defaultLocale, url: `${cmsConfig.site.url ?? getRequestURL(event).origin}/exemple`, user: who, at }
   if (trigger.event === 'entry.review_requested') return { ...sample, name: 'entry.review_requested', note: 'Message d\'exemple laissé avec la demande.', requester: 'Personne de test' }
   return { ...sample, name: trigger.event as 'entry.published' }
+}
+
+// ───────────── Adresses de webhook : chiffrées en base ─────────────
+
+/** Marque d'une adresse enregistrée chiffrée. Une adresse en clair (« https://… ») date d'avant le chiffrement. */
+const SEALED_URL = 'chiffre:'
+
+/** Une adresse de webhook est-elle encore enregistrée en clair ? */
+export const hasPlainWebhook = (actions: WorkflowAction[]) => actions.some(a => a.kind === 'webhook' && !!a.url && !a.url.startsWith(SEALED_URL))
+
+/**
+ * Les actions telles qu'on les enregistre. L'adresse d'un webhook porte souvent son propre jeton (Slack, Zapier,
+ * Make…) : elle est chiffrée avec le secret du site, comme les clés d'API des modules (shared/secrets.ts). Ni une
+ * copie de la base ni une sauvegarde ne la donnent. Les administrateurs la retrouvent en clair dans l'éditeur.
+ */
+export function sealWorkflowActions(event: H3Event, actions: WorkflowAction[]): Promise<WorkflowAction[]> {
+  return Promise.all(actions.map(async a => (a.kind === 'webhook' && a.url && !a.url.startsWith(SEALED_URL)
+    ? { ...a, url: SEALED_URL + await encryptSecret(cmsSiteSecret(event), a.url) }
+    : a)))
+}
+
+/** Les actions telles qu'on s'en sert. Une adresse devenue illisible (le secret du site a changé) est rendue vide. */
+export function openWorkflowActions(event: H3Event, actions: WorkflowAction[]): Promise<WorkflowAction[]> {
+  return Promise.all(actions.map(async a => (a.kind === 'webhook' && a.url.startsWith(SEALED_URL)
+    ? { ...a, url: await decryptSecret(cmsSiteSecret(event), a.url.slice(SEALED_URL.length)) ?? '' }
+    : a)))
 }
 
 async function runAction(event: H3Event, action: WorkflowAction, context: Context): Promise<Omit<WorkflowStep, 'ms' | 'kind'>> {
@@ -152,7 +180,9 @@ async function runAction(event: H3Event, action: WorkflowAction, context: Contex
     await sendEmail(event, { to, subject: renderTemplate(action.subject, context), html: textToHtml(renderTemplate(action.body, context)), ...(replyTo ? { replyTo } : {}) })
     return { status: 'success', detail: `E-mail envoyé à ${to.join(', ')}` }
   }
-  const response = await fetch(action.url, {
+  if (!action.url) return { status: 'error', detail: 'Adresse du webhook illisible : le secret du site (NUXT_AUTH_SECRET) a changé. Saisissez-la à nouveau dans le workflow.' }
+  // Jamais la machine ni un réseau privé, même par une redirection : l'adresse est saisie dans le back-office.
+  const response = await fetchOutside(action.url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'user-agent': 'backoffice-workflow' },
     body: JSON.stringify(context),
@@ -169,7 +199,7 @@ export async function executeWorkflow(event: H3Event, workflow: Pick<WorkflowRow
   const { context, summary } = buildContext(event, payload)
   const startedAt = new Date()
   const steps: WorkflowStep[] = []
-  for (const action of workflow.actions) {
+  for (const action of await openWorkflowActions(event, workflow.actions)) {
     const t0 = Date.now()
     const result = await runAction(event, action, context).catch((error: Error) => ({
       status: 'error' as const,
@@ -221,6 +251,7 @@ export async function parseWorkflow(event: H3Event, body: any): Promise<{ name: 
     if (a?.kind === 'webhook') {
       const url = String(a.url ?? '').trim()
       if (!/^https?:\/\/\S+$/.test(url) || !URL.canParse(url)) fail(`${n} : l'adresse doit commencer par https://.`)
+      if (!import.meta.dev && isPrivateHost(new URL(url).hostname)) fail(`${n} : cette adresse désigne le serveur lui-même ou un réseau privé. Indiquez l'adresse publique du service à appeler.`)
       return { kind: 'webhook', url }
     }
     return fail(`${n} : type d'action inconnu.`)

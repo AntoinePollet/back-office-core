@@ -14,7 +14,8 @@ import { normalizeBackupCode, normalizeTotpCode, normalizeTwoFactorPolicy, type 
  * Ce fichier complète :
  *  - codes de secours **hachés** (Better Auth les chiffre seulement, donc les garde lisibles avec le secret) ;
  *  - un code d'application accepté **une seule fois** (Better Auth accepterait le même pendant sa minute de validité) ;
- *  - la limite de tentatives de la connexion (server/utils/rate-limit.ts) étendue à l'étape du code ;
+ *  - la limite de tentatives de la connexion (server/utils/rate-limit.ts) étendue à l'étape du code, chaque essai
+ *    étant compté avant d'être vérifié (des essais simultanés ne passent pas sous la limite) ;
  *  - la règle « double authentification obligatoire », la remise à zéro par un administrateur.
  */
 
@@ -147,7 +148,7 @@ const VERIFY_BACKUP = '/two-factor/verify-backup-code'
  * Créée pour une requête : l'état d'une tentative vit dans cette fonction.
  */
 export function twoFactorGuard(event: H3Event, secret: string) {
-  let attempt: { keys: LoginKeys; usedKey: string | null; /** Compte connecté qui confirme son activation. */ enabling: string | null } | null = null
+  let attempt: { reserved: LoginAttempt; usedKey: string | null; /** Compte connecté qui confirme son activation. */ enabling: string | null } | null = null
 
   return {
     id: 'cms-two-factor-guard',
@@ -168,11 +169,11 @@ export function twoFactorGuard(event: H3Event, secret: string) {
 
           if (who) {
             // Même compteur que les mauvais mots de passe : deviner un code n'offre pas d'essais supplémentaires.
-            const keys = loginKeys(event, who.email.toLowerCase())
-            await assertLoginAllowed(event, keys).catch((e) => {
+            // L'essai est compté tout de suite ; il ne le reste que si le code est refusé.
+            const reserved = await reserveLoginAttempt(event, loginKeys(event, who.email.toLowerCase())).catch((e) => {
               throw new APIError('TOO_MANY_REQUESTS', { code: 'TOO_MANY_LOGIN_ATTEMPTS', message: String(e?.message ?? 'Trop de tentatives.') })
             })
-            attempt = { keys, usedKey: null, enabling }
+            attempt = { reserved, usedKey: null, enabling }
           }
 
           if (ctx.path === VERIFY_BACKUP) {
@@ -184,7 +185,7 @@ export function twoFactorGuard(event: H3Event, secret: string) {
           if (who && code && attempt) {
             const usedKey = `totp:${who.id}:${code}`
             if (!await reserveOnce(event, usedKey, USED_CODE_MS)) {
-              await recordLoginFailure(event, attempt.keys)
+              await confirmLoginFailure(event, attempt.reserved)
               attempt = null
               throw new APIError('UNAUTHORIZED', { code: 'CODE_ALREADY_USED', message: 'Ce code a déjà servi. Attendez que votre application en affiche un nouveau.' })
             }
@@ -199,7 +200,8 @@ export function twoFactorGuard(event: H3Event, secret: string) {
           if (!attempt) return
           const returned = ctx.context.returned
           if (!isAPIError(returned)) {
-            await clearLoginFailures(event, attempt.keys)
+            await releaseLoginAttempt(event, attempt.reserved)
+            await clearLoginFailures(event, attempt.reserved.keys)
             if (attempt.enabling && ctx.path === VERIFY_TOTP) await recordSecurityEvent(event, { action: 'two-factor.enabled', userId: attempt.enabling })
             // Connexion terminée par le code : c'est ici qu'elle est inscrite au journal d'activité.
             const signedIn = (returned as { user?: { id?: string; name?: string; email?: string } } | null)?.user
@@ -208,7 +210,8 @@ export function twoFactorGuard(event: H3Event, secret: string) {
           }
           // Un code refusé n'a pas servi : sa réservation est levée.
           if (attempt.usedKey) await clearRateLimit(event, [attempt.usedKey])
-          if (returned.statusCode === 401) await recordLoginFailure(event, attempt.keys)
+          if (returned.statusCode === 401) await confirmLoginFailure(event, attempt.reserved)
+          else await releaseLoginAttempt(event, attempt.reserved)
         }),
       }, {
         // Désactivation : Better Auth n'oublie que l'appareil qui fait la demande. On les oublie tous.
