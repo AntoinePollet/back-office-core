@@ -1,11 +1,11 @@
 // Module « Avis Google » : réglages, vérification, refus traduits, fiche (note, avis, horaires), mémoire d'une heure,
 // rien d'enregistré en base, bloc du site conforme aux règles de Google, horaires dans les données structurées, écran.
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, login, menuLabels, says } from '../lib/harness.mjs'
 import { PLACES_KEY_INVALID, PLACES_KEY_NO_API, PLACE_DOWN, PLACE_NEW, PLACE_UNKNOWN } from '../lib/mock-google.mjs'
+import { runSql } from '../lib/sqlite.mjs'
 
 function databaseFile() {
   if (config.target === 'node') return path.join(config.tmpDir, 'etat', 'cms.sqlite')
@@ -105,7 +105,7 @@ export default async function (t) {
     const before = lookups().length
     await site(); await site('?locale=en'); await admin()
     check(lookups().length === before, `${lookups().length - before} appels pour une fiche déjà lue`)
-    const dump = execFileSync('sqlite3', [databaseFile(), '.dump']).toString()
+    const dump = runSql(databaseFile(), '.dump')
     check(!dump.includes('Jeanne Martin') && !dump.includes('Conseils très clairs') && dump.includes(PLACE), 'un avis est enregistré en base')
   })
 

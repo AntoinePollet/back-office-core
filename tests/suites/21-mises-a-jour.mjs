@@ -1,9 +1,9 @@
 // Avis de nouvelle version du core en bas du menu : GitHub est joué par le faux service.
-import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, login, says } from '../lib/harness.mjs'
+import { hasSqlite, runSql } from '../lib/sqlite.mjs'
 
 export const meta = {
   title: 'avis de nouvelle version (GitHub joué par le faux service)',
@@ -45,9 +45,9 @@ export default async function (t) {
   /** Fait comme si la dernière interrogation de GitHub datait de `ms` millisecondes. Faux si l'outil sqlite3 manque. */
   const lastCheckWas = (ms) => {
     const file = databaseFile()
-    if (!file) return false
-    try { execFileSync('sqlite3', [file, `update cms_settings set value = json_set(value, '$.checkedAt', ${Date.now() - ms}) where key = 'updateCheck'`]); return true }
-    catch { return false }
+    if (!file || !hasSqlite()) return false
+    runSql(file, `update cms_settings set value = json_set(value, '$.checkedAt', ${Date.now() - ms}) where key = 'updateCheck'`)
+    return true
   }
   let current
   let canAge = true

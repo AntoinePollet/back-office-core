@@ -1,11 +1,11 @@
 // Publication programmée (packages/cms/shared/schedule.ts, server/utils/schedule.ts, composant CmsSchedule, écran /admin/scheduled).
 // Le temps est avancé en reculant la date prévue dans la base (sqlite3), puis le déclencheur planifié de Cloudflare
 // est joué par /_cms/dev-scheduled, qui passe par le même chemin qu'en production.
-import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { config } from '../lib/config.mjs'
 import { check, clickText, login, menuLabels, says, until, wait } from '../lib/harness.mjs'
+import { hasSqlite, runSql } from '../lib/sqlite.mjs'
 
 const MARC = { name: 'Marc Petit', email: 'marc@example.com', password: 'mot-de-passe-de-marc', role: 'editor' }
 const LINA = { name: 'Lina Roux', email: 'lina@example.com', password: 'mot-de-passe-de-lina', role: 'writer' }
@@ -59,7 +59,7 @@ export default async function (t) {
   const sitemap = async () => (await visitor.get('/sitemap.xml')).text
   /** Fait arriver l'heure prévue : recule la date en base d'un contenu (toutes ses programmations, ou une action). */
   const due = (id, { action, ago = 60_000 } = {}) => {
-    execFileSync('sqlite3', [file(), `update cms_schedules set at = ${Date.now() - ago} where entry_id = '${id}'${action ? ` and action = '${action}'` : ''}`])
+    runSql(file(), `update cms_schedules set at = ${Date.now() - ago} where entry_id = '${id}'${action ? ` and action = '${action}'` : ''}`)
   }
   /** Joue le déclencheur planifié fréquent, comme Cloudflare toutes les 5 minutes. */
   const tick = (cron = CRON) => visitor.json('/_cms/dev-scheduled', { method: 'POST', body: { cron, scheduledTime: Date.now() } })
@@ -83,8 +83,7 @@ export default async function (t) {
     check(failed.variables.some(v => v.key === 'schedule.error') && failed.targets.some(x => x.key === 'services') && !failed.targets.some(x => x.key === 'categories'), 'variables et cibles : ' + JSON.stringify(failed))
     for (const event of ['entry.published', 'entry.unpublished', 'schedule.failed'])
       await claire.json('/api/cms/workflows', { method: 'POST', body: { name: 'Suivi ' + event, trigger: { event, types: [] }, actions: [{ kind: 'webhook', url: `${M}/suivi` }] } })
-    try { execFileSync('sqlite3', ['-version']) }
-    catch { sqlite = false }
+    sqlite = hasSqlite()
     check(sqlite, 'l\'outil sqlite3 est nécessaire à cette suite (il sert à faire arriver l\'heure prévue)')
   })
   if (!sqlite) return
